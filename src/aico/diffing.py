@@ -1,157 +1,133 @@
 import difflib
 import re
-from collections.abc import Iterable
-from dataclasses import dataclass
 
 
-@dataclass
-class DiffBlock:
-    """Represents a single SEARCH/REPLACE block for a file."""
+def _generate_new_content(
+    original_content: str, search_block: str, replace_block: str
+) -> str | None:
+    """
+    Generates the new file content based on search/replace blocks.
+    Returns None if the search block is not found in the original content.
+    """
+    # Handle file creation
+    if not search_block and not original_content:
+        return replace_block
 
-    file_path: str
-    search_block: str
-    replace_block: str
+    # Handle file deletion
+    if not replace_block and search_block == original_content:
+        return ""
 
+    # Ensure the search block is actually in the original content
+    if search_block not in original_content:
+        return None
 
-def _parse_single_block(block_text: str) -> DiffBlock:
-    """Parses the raw text of a single 'File:' block into a DiffBlock."""
-    if not block_text.strip():
-        raise ValueError("Cannot parse an empty block.")
-
-    lines = block_text.strip().splitlines()
-    file_path_line = lines[0].strip()
-    if not file_path_line.startswith("File: "):
-        raise ValueError(f"Block does not start with 'File: ' prefix: {file_path_line}")
-    file_path = file_path_line.replace("File: ", "", 1).strip()
-    body_lines = lines[1:]
-
-    try:
-        search_start_index = -1
-        divider_index = -1
-        replace_end_index = -1
-
-        # Find the first SEARCH marker, tolerant of whitespace
-        for i, line in enumerate(body_lines):
-            if line.strip() == "<<<<<<< SEARCH":
-                search_start_index = i
-                break
-
-        # Find the last REPLACE marker, tolerant of whitespace
-        for i in range(len(body_lines) - 1, -1, -1):
-            if body_lines[i].strip() == ">>>>>>> REPLACE":
-                replace_end_index = i
-                break
-
-        # If both markers were found, find the divider *between* them
-        if search_start_index != -1 and replace_end_index != -1:
-            for i in range(search_start_index + 1, replace_end_index):
-                if body_lines[i].strip() == "=======":
-                    divider_index = i
-                    break
-
-        if -1 in (search_start_index, divider_index, replace_end_index):
-            raise ValueError("A required SEARCH/REPLACE marker was not found.")
-
-    except ValueError as e:
-        raise ValueError(
-            f"Could not parse SEARCH/REPLACE markers. The block might be malformed. Reason: {e}"
-        ) from e
-
-    search_block = "\n".join(body_lines[search_start_index + 1 : divider_index])
-    replace_block = "\n".join(body_lines[divider_index + 1 : replace_end_index])
-
-    return DiffBlock(
-        file_path=file_path,
-        search_block=search_block,
-        replace_block=replace_block,
-    )
-
-
-def _generate_diff_for_block(
-    diff_block: DiffBlock, original_file_contents: dict[str, str]
-) -> str:
-    """Generates a unified diff string for a single DiffBlock."""
-    original_content = original_file_contents.get(diff_block.file_path, "")
-
-    # Handle Deletion
-    if not diff_block.replace_block.strip():
-        if diff_block.file_path not in original_file_contents:
-            raise ValueError(
-                f"Cannot delete a file that is not in context: {diff_block.file_path}"
-            )
-
-        if diff_block.search_block.strip() != original_content.strip():
-            raise ValueError(
-                f"To delete '{diff_block.file_path}', the SEARCH block must match the entire file content."
-            )
-        new_content = ""
-
-    # Handle Creation
-    elif not diff_block.search_block.strip():
-        if diff_block.file_path in original_file_contents:
-            raise ValueError(
-                f"File '{diff_block.file_path}' already exists; cannot create it."
-            )
-        new_content = diff_block.replace_block
-
-    # Handle Modification
-    else:
-        if diff_block.file_path not in original_file_contents:
-            raise ValueError(
-                f"Cannot modify a file that is not in context: {diff_block.file_path}"
-            )
-
-        if diff_block.search_block not in original_content:
-            search_diff = "".join(
-                difflib.unified_diff(
-                    diff_block.search_block.splitlines(keepends=True),
-                    original_content.splitlines(keepends=True),
-                    fromfile="llm_search_block",
-                    tofile="original_file_content",
-                )
-            )
-            raise ValueError(
-                f"The SEARCH block was not found in '{diff_block.file_path}'.\n"
-                f"--- Diff of SEARCH block vs Original File ---\n{search_diff}"
-            )
-        new_content = original_content.replace(
-            diff_block.search_block, diff_block.replace_block, 1
-        )
-
-    diff: Iterable[str] = difflib.unified_diff(
-        original_content.splitlines(keepends=True),
-        new_content.splitlines(keepends=True),
-        fromfile=f"a/{diff_block.file_path}",
-        tofile=f"b/{diff_block.file_path}",
-    )
-    return "".join(diff)
+    # Use replace with a count of 1 to avoid unintended multiple replacements
+    return original_content.replace(search_block, replace_block, 1)
 
 
 def generate_diff_from_response(
     original_file_contents: dict[str, str], llm_response: str
 ) -> str:
     """
-    Parses the LLM's full response, processes each block, and returns a
-    single unified diff.
+    Parses SEARCH/REPLACE blocks from the LLM response and generates a unified diff.
     """
-    final_diff_parts = []
-    # Use regex to split only on "File: " at the beginning of a line.
-    # The lookahead `(?=...)` keeps the delimiter.
-    response_blocks = re.split(r"^(?=File: )", llm_response.strip(), flags=re.MULTILINE)
+    # Defensive parsing: find the first `File:` block and ignore any text before it.
+    match = re.search(r"^File: ", llm_response, re.MULTILINE)
+    if not match:
+        return (
+            "--- a/LLM_RESPONSE_ERROR\n"
+            "+++ b/LLM_RESPONSE_ERROR\n"
+            "@@ -1,2 +1,3 @@\n"
+            "-Could not find any 'File: ...' blocks in the AI's response.\n"
+            "+This may be due to a malformed response or conversational filler.\n"
+            f"+Full Response:\n{llm_response}"
+        )
 
-    if not response_blocks or not any(b.strip() for b in response_blocks):
-        return "Error: LLM response did not contain any valid 'File:' blocks."
+    clean_response = llm_response[match.start() :]
 
-    for block_text in response_blocks:
-        if not block_text.strip():
+    # Split the response into blocks, each starting with "File: <path>"
+    # (?=...) is a positive lookahead to keep the "File: " delimiter in the split.
+    file_blocks = re.split(r"^(?=File: )", clean_response, flags=re.MULTILINE)
+
+    unified_diff_parts = []
+
+    for block in file_blocks:
+        block = block.strip()
+        if not block:
             continue
 
-        try:
-            diff_block = _parse_single_block(block_text)
-            diff_part = _generate_diff_for_block(diff_block, original_file_contents)
-            final_diff_parts.append(diff_part)
-        except ValueError as e:
-            file_path = block_text.strip().splitlines()[0]
-            return f"Error processing block for '{file_path}': {e}"
+        # Extract file path from the "File: <path>" header
+        header_match = re.match(r"File: (.*?)\n", block)
+        if not header_match:
+            unified_diff_parts.append(
+                f"--- a/BLOCK_PARSE_ERROR\n"
+                f"+++ b/BLOCK_PARSE_ERROR\n"
+                f"@@ -1 +1 @@\n"
+                f"-Could not parse file path from malformed block:\n"
+                f"+{block}\n"
+            )
+            continue
 
-    return "".join(final_diff_parts)
+        file_path = header_match.group(1).strip()
+
+        # Extract SEARCH/REPLACE content
+        search_replace_match = re.search(
+            r"<<<<<<< SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>> REPLACE",
+            block,
+            re.DOTALL,
+        )
+
+        if not search_replace_match:
+            unified_diff_parts.append(
+                f"--- a/{file_path}\n"
+                f"+++ b/{file_path}\n"
+                f"@@ -1 +2 @@\n"
+                f"-Error processing block for '{file_path}': Could not parse SEARCH/REPLACE markers.\n"
+                f"-Block Content:\n+{block}"
+            )
+            continue
+
+        # Use rstrip to handle trailing newlines consistently
+        search_content = search_replace_match.group(1).rstrip("\n")
+        replace_content = search_replace_match.group(2).rstrip("\n")
+
+        from_file = f"a/{file_path}"
+        to_file = f"b/{file_path}"
+
+        original_content = original_file_contents.get(file_path, "")
+
+        new_content_full = _generate_new_content(
+            original_content, search_content, replace_content
+        )
+
+        if new_content_full is None:
+            # Handle case where search block wasn't found in the original file
+            unified_diff_parts.append(
+                f"--- a/{file_path}\n"
+                f"+++ b/{file_path}\n"
+                f"@@ -1 +3 @@\n"
+                f"-Error: The SEARCH block from the AI did not match the content of '{file_path}'.\n"
+                f"-The file content may have changed or the AI made a mistake.\n"
+                f"-Provided SEARCH block:\n+{search_content}"
+            )
+            continue
+
+        original_content_lines = original_content.splitlines(keepends=True)
+        new_content_lines = new_content_full.splitlines(keepends=True)
+
+        if not original_content and not search_content:  # New file
+            from_file = "/dev/null"
+        elif not new_content_full and original_content:  # Deleted file
+            to_file = "/dev/null"
+
+        diff_lines = list(
+            difflib.unified_diff(
+                original_content_lines,
+                new_content_lines,
+                fromfile=from_file,
+                tofile=to_file,
+            )
+        )
+        unified_diff_parts.extend(diff_lines)
+
+    return "".join(unified_diff_parts)

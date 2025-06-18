@@ -1,6 +1,5 @@
-import difflib
 import sys
-from collections.abc import Iterable
+import warnings
 from pathlib import Path
 
 import litellm
@@ -208,16 +207,26 @@ def prompt(
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
 
-    messages.extend([msg.model_dump() for msg in session_data.chat_history])
+    messages.extend(
+        [
+            {"role": msg.role, "content": msg.content}
+            for msg in session_data.chat_history
+        ]
+    )
     messages.append({"role": "user", "content": user_prompt_xml})
 
     # 5. Call LLM
     try:
         # Using a general-purpose, fast model.
-        response = litellm.completion(
-            model="openrouter/google/gemini-2.5-pro",
-            messages=messages,
-        )
+        # Suppress Pydantic warnings that can occur internally within litellm.
+        with warnings.catch_warnings():
+            # litellm can sometimes raise UserWarning for Pydantic serialization.
+            # We can safely ignore these here.
+            warnings.filterwarnings("ignore", category=UserWarning)
+            response = litellm.completion(
+                model="openrouter/google/gemini-2.5-pro",
+                messages=messages,
+            )
         llm_response_content = response.choices[0].message.content or ""
     except Exception as e:
         print(f"Error calling LLM API: {e}", file=sys.stderr)
