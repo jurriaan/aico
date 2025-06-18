@@ -1,17 +1,23 @@
+from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel
 
 
+class Mode(str, Enum):
+    RAW = "raw"
+    DIFF = "diff"
+
+
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str
-    mode: str
+    mode: Mode
 
 
 class LastResponse(BaseModel):
     raw_content: str
-    mode_used: str
+    mode_used: Mode
     processed_content: str
 
 

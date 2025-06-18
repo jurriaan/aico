@@ -1,34 +1,22 @@
-import sys
-from pathlib import Path
 import difflib
+import sys
+from collections.abc import Iterable
+from pathlib import Path
 
 import litellm
 import typer
 from pydantic import ValidationError
+from rich.console import Console
+from rich.markdown import Markdown
 
-from aico.models import ChatMessage, LastResponse, SessionData
+from aico.models import ChatMessage, LastResponse, Mode, SessionData
+from aico.utils import SESSION_FILE_NAME, find_session_file
 
 app = typer.Typer()
 
-SESSION_FILE_NAME = ".ai_session.json"
-
-
-def find_session_file() -> Path | None:
-    """
-    Finds the .ai_session.json file by searching upward from the current directory.
-    """
-    current_dir = Path.cwd().resolve()
-    while True:
-        session_file = current_dir / SESSION_FILE_NAME
-        if session_file.is_file():
-            return session_file
-        if current_dir.parent == current_dir:  # Reached the filesystem root
-            return None
-        current_dir = current_dir.parent
-
 
 @app.command()
-def init():
+def init() -> None:
     """
     Initializes a new AI session in the current directory.
     """
@@ -56,7 +44,7 @@ def init():
 
 
 @app.command()
-def last():
+def last() -> None:
     """
     Prints the last processed response from the AI to standard output.
     """
@@ -85,7 +73,7 @@ def last():
 
 
 @app.command()
-def add(file_path: Path):
+def add(file_path: Path) -> None:
     """
     Adds a file to the context for the AI session.
     """
@@ -128,7 +116,7 @@ def add(file_path: Path):
 
     if relative_path_str not in session_data.context_files:
         session_data.context_files.append(relative_path_str)
-        session_file.write_text(session_data.model_dump_json(indent=2))
+        _ = session_file.write_text(session_data.model_dump_json(indent=2))
         print(f"Added file to context: {relative_path_str}")
     else:
         print(f"File already in context: {relative_path_str}")
@@ -140,9 +128,9 @@ def translate_response_to_diff(
     """
     Parses the LLM's SEARCH/REPLACE response and generates a unified diff.
     """
-    lines = llm_response.strip().splitlines()
+    lines: list[str] = llm_response.strip().splitlines()
 
-    file_path_str = None
+    file_path_str: str | None = None
     if lines and lines[0].startswith("File: "):
         file_path_str = lines[0][len("File: ") :].strip()
         lines = lines[1:]  # consume the file path line
@@ -191,7 +179,7 @@ def translate_response_to_diff(
     # Generate a diff with relative paths for compatibility with 'git apply'
     relative_path = Path(file_path_str)  # The path from the LLM is now relative
 
-    diff = difflib.unified_diff(
+    diff: Iterable[str] = difflib.unified_diff(
         original_content.splitlines(keepends=True),
         new_content.splitlines(keepends=True),
         fromfile=f"a/{relative_path}",
@@ -207,10 +195,12 @@ def prompt(
     system_prompt: str = typer.Option(
         "You are an expert pair programmer.", help="The system prompt to guide the AI."
     ),
-    mode: str = typer.Option(
-        "raw", help="Output mode: 'raw' for plain text, 'diff' for git diff."
+    mode: Mode = typer.Option(
+        Mode.RAW,
+        help="Output mode: 'raw' for plain text, 'diff' for git diff.",
+        case_sensitive=False,
     ),
-):
+) -> None:
     """
     Sends a prompt to the AI with the current context.
     """
@@ -234,7 +224,7 @@ def prompt(
         raise typer.Exit(code=1)
 
     # 2. Prepare System Prompt
-    if mode == "diff":
+    if mode == Mode.DIFF:
         formatting_rule = (
             "\n\n---\n"
             "IMPORTANT: You must format your response as a single, raw SEARCH/REPLACE block. "
@@ -271,7 +261,7 @@ def prompt(
     user_prompt_xml = f"{context_str}<prompt>\n{prompt_text}\n</prompt>"
 
     # 4. Construct Messages
-    messages = []
+    messages: list[dict[str, str]] = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
 
@@ -292,15 +282,12 @@ def prompt(
 
     # 6. Process Output Based on Mode
     processed_content: str
-    if mode == "raw":
+    if mode == Mode.RAW:
         processed_content = llm_response_content
-    elif mode == "diff":
+    elif mode == Mode.DIFF:
         processed_content = translate_response_to_diff(
             original_file_contents, llm_response_content
         )
-    else:
-        print(f"Error: Invalid mode '{mode}'. Use 'raw' or 'diff'.", file=sys.stderr)
-        raise typer.Exit(code=1)
 
     # 7. Update State
     # Save the raw user prompt, not the full XML, to keep history clean.
@@ -319,7 +306,13 @@ def prompt(
     session_file.write_text(session_data.model_dump_json(indent=2))
 
     # 8. Print Final Output
-    print(processed_content)
+    # If outputting in raw mode to an interactive terminal, format as markdown.
+    if mode == Mode.RAW and sys.stdout.isatty():
+        console = Console()
+        console.print(Markdown(processed_content))
+    else:
+        # Otherwise, print raw content (for piping or diff mode).
+        print(processed_content)
 
 
 if __name__ == "__main__":
