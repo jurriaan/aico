@@ -15,3 +15,10 @@ def find_session_file() -> Path | None:
         if current_dir.parent == current_dir:  # Reached the filesystem root
             return None
         current_dir = current_dir.parent
+
+
+def format_tokens(tokens: int) -> str:
+    """Formats token counts for display, using 'k' for thousands."""
+    if tokens >= 1000:
+        return f"{tokens / 1000:.1f}k"
+    return str(tokens)
