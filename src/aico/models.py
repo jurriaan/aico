@@ -1,0 +1,21 @@
+from typing import Literal
+
+from pydantic import BaseModel
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+    mode: str
+
+
+class LastResponse(BaseModel):
+    raw_content: str
+    mode_used: str
+    processed_content: str
+
+
+class SessionData(BaseModel):
+    context_files: list[str] = []
+    chat_history: list[ChatMessage] = []
+    last_response: LastResponse | None = None

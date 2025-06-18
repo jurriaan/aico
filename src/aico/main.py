@@ -1,10 +1,12 @@
-import json
 import sys
 from pathlib import Path
 import difflib
 
 import litellm
 import typer
+from pydantic import ValidationError
+
+from aico.models import ChatMessage, LastResponse, SessionData
 
 app = typer.Typer()
 
@@ -38,15 +40,17 @@ def init():
             file=sys.stderr,
         )
         raise typer.Exit(code=1)
-    
+
     session_file = Path.cwd() / SESSION_FILE_NAME
     if session_file.exists():
-         print(f"Error: Session file '{session_file}' already exists in this directory.", file=sys.stderr)
-         raise typer.Exit(code=1)
+        print(
+            f"Error: Session file '{session_file}' already exists in this directory.",
+            file=sys.stderr,
+        )
+        raise typer.Exit(code=1)
 
-    initial_data = {"context_files": [], "chat_history": [], "last_response": None}
-    with session_file.open("w") as f:
-        json.dump(initial_data, f, indent=2)
+    new_session = SessionData()
+    session_file.write_text(new_session.model_dump_json(indent=2))
 
     print(f"Initialized session file: {session_file}")
 
@@ -65,15 +69,19 @@ def last():
         )
         raise typer.Exit(code=1)
 
-    with session_file.open("r") as f:
-        session_data = json.load(f)
+    try:
+        session_data = SessionData.model_validate_json(session_file.read_text())
+    except ValidationError:
+        print(
+            "Error: Session file is corrupt or has an invalid format.", file=sys.stderr
+        )
+        raise typer.Exit(code=1)
 
-    last_response = session_data.get("last_response")
-    if not last_response or "processed_content" not in last_response:
+    if not session_data.last_response:
         print("Error: No last response found in session.", file=sys.stderr)
         raise typer.Exit(code=1)
 
-    print(last_response["processed_content"])
+    print(session_data.last_response.processed_content)
 
 
 @app.command()
@@ -89,13 +97,13 @@ def add(file_path: Path):
             file=sys.stderr,
         )
         raise typer.Exit(code=1)
-    
+
     session_root = session_file.parent
 
     if not file_path.is_file():
         print(f"Error: File not found: {file_path}", file=sys.stderr)
         raise typer.Exit(code=1)
-    
+
     abs_file_path = file_path.resolve()
 
     try:
@@ -107,16 +115,20 @@ def add(file_path: Path):
             file=sys.stderr,
         )
         raise typer.Exit(code=1)
-    
+
     relative_path_str = str(relative_path)
 
-    with session_file.open("r") as f:
-        session_data = json.load(f)
+    try:
+        session_data = SessionData.model_validate_json(session_file.read_text())
+    except ValidationError:
+        print(
+            "Error: Session file is corrupt or has an invalid format.", file=sys.stderr
+        )
+        raise typer.Exit(code=1)
 
-    if relative_path_str not in session_data["context_files"]:
-        session_data["context_files"].append(relative_path_str)
-        with session_file.open("w") as f:
-            json.dump(session_data, f, indent=2)
+    if relative_path_str not in session_data.context_files:
+        session_data.context_files.append(relative_path_str)
+        session_file.write_text(session_data.model_dump_json(indent=2))
         print(f"Added file to context: {relative_path_str}")
     else:
         print(f"File already in context: {relative_path_str}")
@@ -177,7 +189,7 @@ def translate_response_to_diff(
     new_content = original_content.replace(search_block, replace_block, 1)
 
     # Generate a diff with relative paths for compatibility with 'git apply'
-    relative_path = Path(file_path_str) # The path from the LLM is now relative
+    relative_path = Path(file_path_str)  # The path from the LLM is now relative
 
     diff = difflib.unified_diff(
         original_content.splitlines(keepends=True),
@@ -213,8 +225,13 @@ def prompt(
         raise typer.Exit(code=1)
 
     session_root = session_file.parent
-    with session_file.open("r") as f:
-        session_data = json.load(f)
+    try:
+        session_data = SessionData.model_validate_json(session_file.read_text())
+    except ValidationError:
+        print(
+            "Error: Session file is corrupt or has an invalid format.", file=sys.stderr
+        )
+        raise typer.Exit(code=1)
 
     # 2. Prepare System Prompt
     if mode == "diff":
@@ -235,7 +252,7 @@ def prompt(
     # 3. Construct User Prompt
     context_str = "<context>\n"
     original_file_contents = {}
-    for relative_path_str in session_data["context_files"]:
+    for relative_path_str in session_data.context_files:
         try:
             # Reconstruct absolute path to read the file
             abs_path = session_root / relative_path_str
@@ -258,7 +275,7 @@ def prompt(
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
 
-    messages.extend(session_data["chat_history"])
+    messages.extend([msg.model_dump() for msg in session_data.chat_history])
     messages.append({"role": "user", "content": user_prompt_xml})
 
     # 5. Call LLM
@@ -287,18 +304,19 @@ def prompt(
 
     # 7. Update State
     # Save the raw user prompt, not the full XML, to keep history clean.
-    session_data["chat_history"].append({"role": "user", "content": prompt_text, "mode": mode})
-    session_data["chat_history"].append(
-        {"role": "assistant", "content": llm_response_content, "mode": mode}
+    session_data.chat_history.append(
+        ChatMessage(role="user", content=prompt_text, mode=mode)
     )
-    session_data["last_response"] = {
-        "raw_content": llm_response_content,
-        "mode_used": mode,
-        "processed_content": processed_content,
-    }
+    session_data.chat_history.append(
+        ChatMessage(role="assistant", content=llm_response_content, mode=mode)
+    )
+    session_data.last_response = LastResponse(
+        raw_content=llm_response_content,
+        mode_used=mode,
+        processed_content=processed_content,
+    )
 
-    with session_file.open("w") as f:
-        json.dump(session_data, f, indent=2)
+    session_file.write_text(session_data.model_dump_json(indent=2))
 
     # 8. Print Final Output
     print(processed_content)
