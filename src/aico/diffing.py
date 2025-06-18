@@ -1,4 +1,5 @@
 import difflib
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -18,16 +19,42 @@ def _parse_single_block(block_text: str) -> DiffBlock:
         raise ValueError("Cannot parse an empty block.")
 
     lines = block_text.strip().splitlines()
-    file_path = lines[0].strip()
+    file_path_line = lines[0].strip()
+    if not file_path_line.startswith("File: "):
+        raise ValueError(f"Block does not start with 'File: ' prefix: {file_path_line}")
+    file_path = file_path_line.replace("File: ", "", 1).strip()
     body_lines = lines[1:]
 
     try:
-        search_start_index = body_lines.index("<<<<<<< SEARCH")
-        divider_index = body_lines.index("=======")
-        replace_end_index = body_lines.index(">>>>>>> REPLACE")
+        search_start_index = -1
+        divider_index = -1
+        replace_end_index = -1
+
+        # Find the first SEARCH marker, tolerant of whitespace
+        for i, line in enumerate(body_lines):
+            if line.strip() == "<<<<<<< SEARCH":
+                search_start_index = i
+                break
+
+        # Find the last REPLACE marker, tolerant of whitespace
+        for i in range(len(body_lines) - 1, -1, -1):
+            if body_lines[i].strip() == ">>>>>>> REPLACE":
+                replace_end_index = i
+                break
+
+        # If both markers were found, find the divider *between* them
+        if search_start_index != -1 and replace_end_index != -1:
+            for i in range(search_start_index + 1, replace_end_index):
+                if body_lines[i].strip() == "=======":
+                    divider_index = i
+                    break
+
+        if -1 in (search_start_index, divider_index, replace_end_index):
+            raise ValueError("A required SEARCH/REPLACE marker was not found.")
+
     except ValueError as e:
         raise ValueError(
-            "Could not parse SEARCH/REPLACE markers. The block might be malformed."
+            f"Could not parse SEARCH/REPLACE markers. The block might be malformed. Reason: {e}"
         ) from e
 
     search_block = "\n".join(body_lines[search_start_index + 1 : divider_index])
@@ -108,7 +135,9 @@ def generate_diff_from_response(
     single unified diff.
     """
     final_diff_parts = []
-    response_blocks = llm_response.strip().split("File: ")
+    # Use regex to split only on "File: " at the beginning of a line.
+    # The lookahead `(?=...)` keeps the delimiter.
+    response_blocks = re.split(r"^(?=File: )", llm_response.strip(), flags=re.MULTILINE)
 
     if not response_blocks or not any(b.strip() for b in response_blocks):
         return "Error: LLM response did not contain any valid 'File:' blocks."
