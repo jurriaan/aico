@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from rich.console import Console
 from rich.markdown import Markdown
 
+from aico.diffing import generate_diff_from_response
 from aico.models import ChatMessage, LastResponse, Mode, SessionData
 from aico.utils import SESSION_FILE_NAME, find_session_file
 
@@ -122,74 +123,6 @@ def add(file_path: Path) -> None:
         print(f"File already in context: {relative_path_str}")
 
 
-def translate_response_to_diff(
-    original_file_contents: dict[str, str], llm_response: str
-) -> str:
-    """
-    Parses the LLM's SEARCH/REPLACE response, which may contain multiple
-    file blocks, and generates a unified diff.
-    """
-    final_diff_parts = []
-    response_blocks = llm_response.strip().split("File: ")
-
-    for block in response_blocks:
-        if not block.strip():
-            continue
-
-        lines: list[str] = block.strip().splitlines()
-        file_path_str = lines[0].strip()
-        body_lines = lines[1:]
-
-        try:
-            search_start_index = body_lines.index("<<<<<<< SEARCH")
-            divider_index = body_lines.index("=======")
-            replace_end_index = body_lines.index(">>>>>>> REPLACE")
-        except ValueError:
-            return (
-                "Error: Could not parse LLM response block. SEARCH/REPLACE markers not found."
-                f"\n--- Block ---\n{block}\n---"
-            )
-
-        search_block = "\n".join(body_lines[search_start_index + 1 : divider_index])
-        replace_block = "\n".join(body_lines[divider_index + 1 : replace_end_index])
-
-        if not search_block.strip():  # This signifies a new file
-            original_content = ""
-            new_content = replace_block
-        else:  # This is a modification of an existing file
-            if file_path_str not in original_file_contents:
-                return f"Error: LLM specified a file not in context: {file_path_str}"
-            original_content = original_file_contents[file_path_str]
-
-            if search_block not in original_content:
-                search_diff = "".join(
-                    difflib.unified_diff(
-                        search_block.splitlines(keepends=True),
-                        original_content.splitlines(keepends=True),
-                        fromfile="llm_search_block",
-                        tofile="original_file_content",
-                    )
-                )
-                return (
-                    "Error: The SEARCH block was not found in the original file.\n"
-                    f"--- Diff of SEARCH block vs Original File ---\n{search_diff}"
-                )
-            new_content = original_content.replace(search_block, replace_block, 1)
-
-        diff: Iterable[str] = difflib.unified_diff(
-            original_content.splitlines(keepends=True),
-            new_content.splitlines(keepends=True),
-            fromfile=f"a/{file_path_str}",
-            tofile=f"b/{file_path_str}",
-        )
-        final_diff_parts.append("".join(diff))
-
-    if not final_diff_parts:
-        return "Error: No valid SEARCH/REPLACE blocks found in the response."
-
-    return "".join(final_diff_parts)
-
-
 @app.command()
 def prompt(
     prompt_text: str,
@@ -229,8 +162,9 @@ def prompt(
         formatting_rule = (
             "\n\n---\n"
             "IMPORTANT: To edit files, you must respond with one or more raw SEARCH/REPLACE blocks. "
-            "Do not add any other text, commentary, or markdown. "
-            "To create a new file, use an empty SEARCH block.\n\n"
+            "Do not add any other text, commentary, or markdown.\n"
+            "- To create a new file, use an empty SEARCH block.\n"
+            "- To delete a file, provide a SEARCH block with the entire file content and an empty REPLACE block.\n\n"
             "EXAMPLE of a multi-file change:\n"
             "File: path/to/existing/file.py\n"
             "<<<<<<< SEARCH\n"
@@ -293,7 +227,7 @@ def prompt(
     if mode == Mode.RAW:
         processed_content = llm_response_content
     elif mode == Mode.DIFF:
-        processed_content = translate_response_to_diff(
+        processed_content = generate_diff_from_response(
             original_file_contents, llm_response_content
         )
 
