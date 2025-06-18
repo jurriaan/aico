@@ -126,67 +126,68 @@ def translate_response_to_diff(
     original_file_contents: dict[str, str], llm_response: str
 ) -> str:
     """
-    Parses the LLM's SEARCH/REPLACE response and generates a unified diff.
+    Parses the LLM's SEARCH/REPLACE response, which may contain multiple
+    file blocks, and generates a unified diff.
     """
-    lines: list[str] = llm_response.strip().splitlines()
+    final_diff_parts = []
+    response_blocks = llm_response.strip().split("File: ")
 
-    file_path_str: str | None = None
-    if lines and lines[0].startswith("File: "):
-        file_path_str = lines[0][len("File: ") :].strip()
-        lines = lines[1:]  # consume the file path line
-    else:
-        return "Error: Could not parse LLM response. 'File: ' marker not found."
+    for block in response_blocks:
+        if not block.strip():
+            continue
 
-    try:
-        search_start_index = lines.index("<<<<<<< SEARCH")
-        divider_index = lines.index("=======")
-        replace_end_index = lines.index(">>>>>>> REPLACE")
-    except ValueError:
-        return (
-            "Error: Could not parse LLM response. SEARCH/REPLACE markers not found."
-            f"\n--- Response ---\n{llm_response}\n---"
-        )
+        lines: list[str] = block.strip().splitlines()
+        file_path_str = lines[0].strip()
+        body_lines = lines[1:]
 
-    search_block = "\n".join(lines[search_start_index + 1 : divider_index])
-    replace_block = "\n".join(lines[divider_index + 1 : replace_end_index])
-
-    if file_path_str not in original_file_contents:
-        return (
-            f"Error: LLM specified a file not in the context: {file_path_str}\n"
-            f"Available files: {list(original_file_contents.keys())}"
-        )
-
-    original_content = original_file_contents[file_path_str]
-
-    if search_block not in original_content:
-        # To help debug, show a diff between what the LLM wanted to find and the file.
-        search_diff = "".join(
-            difflib.unified_diff(
-                search_block.splitlines(keepends=True),
-                original_content.splitlines(keepends=True),
-                fromfile="llm_search_block",
-                tofile="original_file_content",
+        try:
+            search_start_index = body_lines.index("<<<<<<< SEARCH")
+            divider_index = body_lines.index("=======")
+            replace_end_index = body_lines.index(">>>>>>> REPLACE")
+        except ValueError:
+            return (
+                "Error: Could not parse LLM response block. SEARCH/REPLACE markers not found."
+                f"\n--- Block ---\n{block}\n---"
             )
+
+        search_block = "\n".join(body_lines[search_start_index + 1 : divider_index])
+        replace_block = "\n".join(body_lines[divider_index + 1 : replace_end_index])
+
+        if not search_block.strip():  # This signifies a new file
+            original_content = ""
+            new_content = replace_block
+        else:  # This is a modification of an existing file
+            if file_path_str not in original_file_contents:
+                return f"Error: LLM specified a file not in context: {file_path_str}"
+            original_content = original_file_contents[file_path_str]
+
+            if search_block not in original_content:
+                search_diff = "".join(
+                    difflib.unified_diff(
+                        search_block.splitlines(keepends=True),
+                        original_content.splitlines(keepends=True),
+                        fromfile="llm_search_block",
+                        tofile="original_file_content",
+                    )
+                )
+                return (
+                    "Error: The SEARCH block was not found in the original file.\n"
+                    f"--- Diff of SEARCH block vs Original File ---\n{search_diff}"
+                )
+            new_content = original_content.replace(search_block, replace_block, 1)
+
+        diff: Iterable[str] = difflib.unified_diff(
+            original_content.splitlines(keepends=True),
+            new_content.splitlines(keepends=True),
+            fromfile=f"a/{file_path_str}",
+            tofile=f"b/{file_path_str}",
         )
-        return (
-            "Error: The SEARCH block from the LLM response was not found in the original file.\n"
-            f"--- Diff of SEARCH block vs Original File ---\n{search_diff}"
-        )
+        final_diff_parts.append("".join(diff))
 
-    # Perform a single replacement
-    new_content = original_content.replace(search_block, replace_block, 1)
+    if not final_diff_parts:
+        return "Error: No valid SEARCH/REPLACE blocks found in the response."
 
-    # Generate a diff with relative paths for compatibility with 'git apply'
-    relative_path = Path(file_path_str)  # The path from the LLM is now relative
-
-    diff: Iterable[str] = difflib.unified_diff(
-        original_content.splitlines(keepends=True),
-        new_content.splitlines(keepends=True),
-        fromfile=f"a/{relative_path}",
-        tofile=f"b/{relative_path}",
-    )
-
-    return "".join(diff)
+    return "".join(final_diff_parts)
 
 
 @app.command()
@@ -227,14 +228,21 @@ def prompt(
     if mode == Mode.DIFF:
         formatting_rule = (
             "\n\n---\n"
-            "IMPORTANT: You must format your response as a single, raw SEARCH/REPLACE block. "
-            "Do not add any other text, commentary, or markdown code fences. "
-            "The required format is:\n"
-            "File: path/to/the/file.ext\n"
+            "IMPORTANT: To edit files, you must respond with one or more raw SEARCH/REPLACE blocks. "
+            "Do not add any other text, commentary, or markdown. "
+            "To create a new file, use an empty SEARCH block.\n\n"
+            "EXAMPLE of a multi-file change:\n"
+            "File: path/to/existing/file.py\n"
             "<<<<<<< SEARCH\n"
-            "The exact lines of code to be replaced.\n"
+            "    # code to be changed\n"
             "=======\n"
-            "The new lines of code to be inserted.\n"
+            "    # the new code\n"
+            ">>>>>>> REPLACE\n"
+            "File: path/to/new/file.py\n"
+            "<<<<<<< SEARCH\n"
+            "=======\n"
+            "def new_function():\n"
+            "    pass\n"
             ">>>>>>> REPLACE"
         )
         system_prompt += formatting_rule
