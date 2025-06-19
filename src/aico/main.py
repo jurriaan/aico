@@ -2,11 +2,8 @@ import sys
 import warnings
 from pathlib import Path
 
-import litellm
 import typer
 from pydantic import ValidationError
-from rich.console import Console
-from rich.markdown import Markdown
 
 from aico.diffing import generate_diff_from_response
 from aico.models import ChatMessage, LastResponse, Mode, SessionData, TokenUsage
@@ -22,7 +19,7 @@ def init(
         "--model",
         "-m",
         help="The model to use for the session.",
-    )
+    ),
 ) -> None:
     """
     Initializes a new AI session in the current directory.
@@ -223,17 +220,17 @@ def prompt(
     messages.append({"role": "user", "content": user_prompt_xml})
 
     # 5. Call LLM
+    import litellm
+
     try:
         # Suppress Pydantic warnings that can occur internally within litellm.
         with warnings.catch_warnings():
-            # litellm can sometimes raise UserWarning for Pydantic serialization.
-            # We can safely ignore these here.
             warnings.filterwarnings("ignore", category=UserWarning)
             response = litellm.completion(
                 model=session_data.model,
                 messages=messages,
             )
-        llm_response_content = response.choices[0].message.content or ""
+            llm_response_content = response.choices[0].message.content or ""
     except Exception as e:
         print(f"Error calling LLM API: {e}", file=sys.stderr)
         raise typer.Exit(code=1)
@@ -314,6 +311,9 @@ def prompt(
     # 8. Print Final Output
     # If outputting in raw mode to an interactive terminal, format as markdown.
     if mode == Mode.RAW and sys.stdout.isatty():
+        from rich.console import Console
+        from rich.markdown import Markdown
+
         console = Console()
         console.print(Markdown(processed_content))
     else:
