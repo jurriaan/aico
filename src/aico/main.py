@@ -16,7 +16,14 @@ app = typer.Typer()
 
 
 @app.command()
-def init() -> None:
+def init(
+    model: str = typer.Option(
+        "openrouter/google/gemini-2.5-pro",
+        "--model",
+        "-m",
+        help="The model to use for the session.",
+    )
+) -> None:
     """
     Initializes a new AI session in the current directory.
     """
@@ -37,7 +44,7 @@ def init() -> None:
         )
         raise typer.Exit(code=1)
 
-    new_session = SessionData()
+    new_session = SessionData(model=model)
     session_file.write_text(new_session.model_dump_json(indent=2))
 
     print(f"Initialized session file: {session_file}")
@@ -217,14 +224,13 @@ def prompt(
 
     # 5. Call LLM
     try:
-        # Using a general-purpose, fast model.
         # Suppress Pydantic warnings that can occur internally within litellm.
         with warnings.catch_warnings():
             # litellm can sometimes raise UserWarning for Pydantic serialization.
             # We can safely ignore these here.
             warnings.filterwarnings("ignore", category=UserWarning)
             response = litellm.completion(
-                model="openrouter/google/gemini-2.5-pro",
+                model=session_data.model,
                 messages=messages,
             )
         llm_response_content = response.choices[0].message.content or ""
