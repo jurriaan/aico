@@ -185,17 +185,58 @@ def _create_file_not_found_error_diff(llm_path: str) -> str:
     )
 
 
-def _create_patch_failed_error_diff(file_path: str, search_block: str) -> str:
-    error_message_lines = (
+def _create_patch_failed_error_diff(
+    file_path: str, search_block: str, original_content: str
+) -> str:
+    error_message_lines: list[str] = [
+        f"Error: The SEARCH block from the AI could not be found in '{file_path}'.\n",
+        "This can happen if the file has changed, or if the AI made a mistake.\n",
+    ]
+
+    # Find best match for context to show the user
+    original_lines = original_content.splitlines()
+    search_lines = search_block.splitlines()
+
+    if search_lines:
+        matcher = difflib.SequenceMatcher(
+            None, original_lines, search_lines, autojunk=False
+        )
+        match = matcher.find_longest_match(
+            0, len(original_lines), 0, len(search_lines)
+        )
+
+        # Only show context if a reasonable portion of the search block was matched.
+        is_significant_match = (
+            match.size > 0 and (match.size / len(search_lines)) > 0.5
+        )
+        if is_significant_match:
+            error_message_lines.extend(
+                [
+                    f"\nThe AI may have been targeting the code found near line {match.a + 1}:\n",
+                    "--- CONTEXT FROM ORIGINAL FILE ---\n",
+                ]
+            )
+
+            context_radius = 2
+            start = max(0, match.a - context_radius)
+            end = min(len(original_lines), match.a + match.size + context_radius)
+
+            for i, line in enumerate(original_lines[start:end], start=start):
+                prefix = "  "
+                if match.a <= i < match.a + match.size:
+                    prefix = "> "
+                error_message_lines.append(f"{i + 1:4d}{prefix}{line}\n")
+            error_message_lines.append("--- END CONTEXT ---\n")
+
+    error_message_lines.extend(
         [
-            f"Error: The SEARCH block from the AI could not be found in '{file_path}'.\n",
-            "This can happen if the file has changed, or if the AI made a mistake.\n\n",
-            "The AI provided the following SEARCH block:\n",
+            "\nThe AI provided the following SEARCH block:\n",
             "--- SEARCH BLOCK ---\n",
         ]
-        + search_block.splitlines(keepends=True)
+        + [line + "\n" for line in search_block.splitlines()]
         + ["--- END SEARCH BLOCK ---\n"]
     )
+
     return "".join(
         difflib.unified_diff(
             [],
@@ -248,7 +289,9 @@ def _generate_diff_for_single_block(
     )
 
     if new_content_full is None:
-        return _create_patch_failed_error_diff(file_path, search_content)
+        return _create_patch_failed_error_diff(
+            file_path, search_content, original_content
+        )
 
     if new_content_full == "AMBIGUOUS_PATCH":
         return _create_ambiguous_patch_error_diff(file_path)
