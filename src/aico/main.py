@@ -134,6 +134,62 @@ def add(file_paths: list[Path]) -> None:
             print(f"File already in context: {relative_path_str}")
 
     if files_were_added:
+        session_data.context_files.sort()
+        session_file.write_text(session_data.model_dump_json(indent=2))
+
+    if errors_found:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def drop(file_paths: list[Path]) -> None:
+    """
+    Drops one or more files from the context for the AI session.
+    """
+    session_file = find_session_file()
+    if not session_file:
+        print(
+            f"Error: No session file '{SESSION_FILE_NAME}' found. "
+            "Please run 'aico init' first.",
+            file=sys.stderr,
+        )
+        raise typer.Exit(code=1)
+
+    session_root = session_file.parent
+
+    try:
+        session_data = SessionData.model_validate_json(session_file.read_text())
+    except ValidationError:
+        print(
+            "Error: Session file is corrupt or has an invalid format.", file=sys.stderr
+        )
+        raise typer.Exit(code=1)
+
+    files_were_dropped = False
+    errors_found = False
+
+    new_context_files = session_data.context_files[:]
+
+    for file_path in file_paths:
+        abs_file_path = file_path.resolve()
+
+        try:
+            relative_path_str = str(abs_file_path.relative_to(session_root))
+        except ValueError:
+            print(f"Error: File not in context: {file_path}", file=sys.stderr)
+            errors_found = True
+            continue
+
+        if relative_path_str in new_context_files:
+            new_context_files.remove(relative_path_str)
+            files_were_dropped = True
+            print(f"Dropped file from context: {relative_path_str}")
+        else:
+            print(f"Error: File not in context: {file_path}", file=sys.stderr)
+            errors_found = True
+
+    if files_were_dropped:
+        session_data.context_files = sorted(new_context_files)
         session_file.write_text(session_data.model_dump_json(indent=2))
 
     if errors_found:

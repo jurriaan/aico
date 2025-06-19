@@ -375,3 +375,95 @@ def test_add_multiple_files_with_one_non_existent_partially_fails(
         session_file = Path(td) / SESSION_FILE_NAME
         session_data = json.loads(session_file.read_text())
         assert session_data["context_files"] == ["file1.py"]
+
+
+def test_drop_single_file_successfully(tmp_path: Path) -> None:
+    # GIVEN a session with two files in context
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+        (Path(td) / "file1.py").touch()
+        (Path(td) / "file2.py").touch()
+        runner.invoke(app, ["add", "file1.py", "file2.py"])
+
+        # WHEN `aico drop` is run on one file
+        result = runner.invoke(app, ["drop", "file1.py"])
+
+        # THEN the command succeeds and reports the removal
+        assert result.exit_code == 0
+        assert "Dropped file from context: file1.py" in result.stdout
+
+        # AND the session file is updated to contain only the other file
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = json.loads(session_file.read_text())
+        assert sorted(session_data["context_files"]) == ["file2.py"]
+
+
+def test_drop_multiple_files_successfully(tmp_path: Path) -> None:
+    # GIVEN a session with three files in context
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+        (Path(td) / "file1.py").touch()
+        (Path(td) / "file2.py").touch()
+        (Path(td) / "file3.py").touch()
+        runner.invoke(app, ["add", "file1.py", "file2.py", "file3.py"])
+
+        # WHEN `aico drop` is run on two files
+        result = runner.invoke(app, ["drop", "file1.py", "file3.py"])
+
+        # THEN the command succeeds and reports both removals
+        assert result.exit_code == 0
+        assert "Dropped file from context: file1.py" in result.stdout
+        assert "Dropped file from context: file3.py" in result.stdout
+
+        # AND the session file is updated correctly
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = json.loads(session_file.read_text())
+        assert sorted(session_data["context_files"]) == ["file2.py"]
+
+
+def test_drop_file_not_in_context_fails(tmp_path: Path) -> None:
+    # GIVEN a session with one file in context
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+        (Path(td) / "file1.py").touch()
+        runner.invoke(app, ["add", "file1.py"])
+
+        # WHEN `aico drop` is run on a file not in the context
+        result = runner.invoke(app, ["drop", "not_in_context.py"])
+
+        # THEN the command fails with a non-zero exit code
+        assert result.exit_code == 1
+
+        # AND an error is printed to stderr
+        assert "Error: File not in context: not_in_context.py" in result.stderr
+
+        # AND the session file remains unchanged
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = json.loads(session_file.read_text())
+        assert session_data["context_files"] == ["file1.py"]
+
+
+def test_drop_multiple_with_one_not_in_context_partially_fails(tmp_path: Path) -> None:
+    # GIVEN a session with two files in context
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+        (Path(td) / "file1.py").touch()
+        (Path(td) / "file2.py").touch()
+        runner.invoke(app, ["add", "file1.py", "file2.py"])
+
+        # WHEN `aico drop` is run with one valid and one invalid file
+        result = runner.invoke(app, ["drop", "file1.py", "not_in_context.py"])
+
+        # THEN the command fails with a non-zero exit code
+        assert result.exit_code == 1
+
+        # AND it reports the successful removal
+        assert "Dropped file from context: file1.py" in result.stdout
+
+        # AND it reports the error for the other file
+        assert "Error: File not in context: not_in_context.py" in result.stderr
+
+        # AND the session file is updated to remove the valid file
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = json.loads(session_file.read_text())
+        assert sorted(session_data["context_files"]) == ["file2.py"]
