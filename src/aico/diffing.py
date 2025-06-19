@@ -14,22 +14,21 @@ def _try_exact_string_patch(
     if not replace_block and search_block == original_content:
         return ""
 
-    if search_block not in original_content:
+    count = original_content.count(search_block)
+    if count != 1:
+        # Block not found (count=0) or is ambiguous (count>1).
+        # Fall back to the flexible patcher for more detailed analysis.
         return None
 
-    # Use replace with a count of 1 to avoid unintended multiple replacements
+    # Use replace with a count of 1. At this point, we know there's exactly one occurrence.
     return original_content.replace(search_block, replace_block, 1)
 
 
-def _get_consistent_indentation(lines: list[str]) -> str | None:
-    indentation_set = {
-        line[: len(line) - len(line.lstrip())] for line in lines if line.strip()
-    }
-
-    if len(indentation_set) > 1:
-        return None
-
-    return indentation_set.pop() if indentation_set else ""
+def _get_consistent_indentation(lines: list[str]) -> str:
+    for line in lines:
+        if line.strip():
+            return line[: len(line) - len(line.lstrip())]
+    return ""
 
 
 def _try_whitespace_flexible_patch(
@@ -42,19 +41,21 @@ def _try_whitespace_flexible_patch(
     if not search_lines:
         return None
 
-    stripped_search_lines = [line.lstrip() for line in search_lines]
+    # Strip both leading and trailing whitespace for comparison to handle
+    # potential missing newlines from the LLM/parser.
+    stripped_search_lines = [line.strip() for line in search_lines]
 
     matching_block_start_indices = []
     for i in range(len(original_lines) - len(search_lines) + 1):
         original_lines_chunk = original_lines[i : i + len(search_lines)]
-        stripped_original_lines_chunk = [
-            line.lstrip() for line in original_lines_chunk
-        ]
+        stripped_original_lines_chunk = [line.strip() for line in original_lines_chunk]
 
         if stripped_original_lines_chunk == stripped_search_lines:
             matching_block_start_indices.append(i)
 
-    if len(matching_block_start_indices) != 1:
+    if len(matching_block_start_indices) > 1:
+        return "AMBIGUOUS_PATCH"
+    if not matching_block_start_indices:
         return None
 
     match_start_index = matching_block_start_indices[0]
@@ -62,13 +63,23 @@ def _try_whitespace_flexible_patch(
         match_start_index : match_start_index + len(search_lines)
     ]
 
-    base_indentation = _get_consistent_indentation(matched_original_lines_chunk)
-    if base_indentation is None:
-        return None
+    original_anchor_indent = _get_consistent_indentation(matched_original_lines_chunk)
+    replace_min_indent = _get_consistent_indentation(replace_lines)
 
-    indented_replace_lines = [
-        base_indentation + line if line.strip() else line for line in replace_lines
-    ]
+    indented_replace_lines = []
+    for line in replace_lines:
+        if not line.strip():
+            indented_replace_lines.append(line)
+            continue
+
+        # Strip the replace block's own base indentation.
+        relative_line = line
+        if line.startswith(replace_min_indent):
+            relative_line = line[len(replace_min_indent) :]
+
+        # Apply the original anchor indentation.
+        new_line = original_anchor_indent + relative_line
+        indented_replace_lines.append(new_line)
 
     new_content_lines = (
         original_lines[:match_start_index]
@@ -83,18 +94,16 @@ def _create_patched_content(
     original_content: str, search_block: str, replace_block: str
 ) -> str | None:
     # Stage 1: Exact match
-    patched_content = _try_exact_string_patch(
-        original_content, search_block, replace_block
-    )
-    if patched_content is not None:
-        return patched_content
+    exact_patch = _try_exact_string_patch(original_content, search_block, replace_block)
+    if exact_patch is not None:
+        return exact_patch
 
     # Stage 2: Whitespace-insensitive match
-    patched_content = _try_whitespace_flexible_patch(
+    flexible_patch = _try_whitespace_flexible_patch(
         original_content, search_block, replace_block
     )
-    if patched_content is not None:
-        return patched_content
+    if flexible_patch is not None:
+        return flexible_patch
 
     return None
 
@@ -108,12 +117,18 @@ def _find_best_matching_filename(
 
     # 2. Basename Match
     llm_basename = Path(llm_path).name
-    for path in available_paths:
-        if Path(path).name == llm_basename:
-            return path
+    basename_matches = [
+        path for path in available_paths if Path(path).name == llm_basename
+    ]
+    if len(basename_matches) == 1:
+        return basename_matches[0]
+    if len(basename_matches) > 1:
+        return "AMBIGUOUS_FILE"
 
     # 3. Fuzzy match
-    close_matches = difflib.get_close_matches(llm_path, available_paths, n=1, cutoff=0.8)
+    close_matches = difflib.get_close_matches(
+        llm_path, available_paths, n=1, cutoff=0.8
+    )
     if close_matches:
         return close_matches[0]
 
@@ -127,8 +142,10 @@ def _parse_llm_edit_block(block_text: str) -> dict[str, str] | None:
 
     llm_file_path = header_match.group(1).strip()
 
+    # Anchor the regex to the end of the string (`$`) to prevent a
+    # delimiter in the content from being treated as the end of the block.
     search_replace_match = re.search(
-        r"<<<<<<< SEARCH\n(.*?)\n?=======\n(.*?)\n>>>>>>> REPLACE",
+        r"<<<<<<< SEARCH\n(.*?)\n?=======\n(.*?)\n?>>>>>>> REPLACE$",
         block_text,
         re.DOTALL,
     )
@@ -136,8 +153,8 @@ def _parse_llm_edit_block(block_text: str) -> dict[str, str] | None:
     if not search_replace_match:
         return None
 
-    search_content = search_replace_match.group(1).rstrip("\n")
-    replace_content = search_replace_match.group(2).rstrip("\n")
+    search_content = search_replace_match.group(1)
+    replace_content = search_replace_match.group(2)
 
     return {
         "llm_file_path": llm_file_path,
@@ -156,6 +173,15 @@ def _generate_diff_for_single_block(
     file_path = _find_best_matching_filename(
         llm_file_path, list(original_file_contents.keys())
     )
+
+    if file_path == "AMBIGUOUS_FILE":
+        return (
+            f"--- a/{llm_file_path} (ambiguous match)\n"
+            f"+++ b/{llm_file_path} (ambiguous match)\n"
+            f"@@ -1 +2 @@\n"
+            f"-Error: The file path '{llm_file_path}' is ambiguous and matches multiple files in the context.\n"
+            f"+Please provide a more specific path and try again."
+        )
 
     if file_path:
         original_content = original_file_contents[file_path]
@@ -188,6 +214,19 @@ def _generate_diff_for_single_block(
             + search_content.splitlines(keepends=True)
             + ["--- END SEARCH BLOCK ---\n"]
         )
+        return "".join(
+            difflib.unified_diff(
+                [],
+                error_message_lines,
+                fromfile=f"a/{file_path}",
+                tofile=f"b/{file_path} (patch failed)",
+            )
+        )
+    elif new_content_full == "AMBIGUOUS_PATCH":
+        error_message_lines = [
+            f"Error: The SEARCH block is ambiguous and was found multiple times in the file '{file_path}'.\n",
+            "Please provide a more specific SEARCH block that uniquely identifies the target code.",
+        ]
         return "".join(
             difflib.unified_diff(
                 [],
