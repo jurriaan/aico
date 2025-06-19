@@ -297,3 +297,81 @@ def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
         assert (
             session_data["last_response"]["processed_content"] == result.stdout.strip()
         )
+
+
+def test_add_multiple_files_successfully(tmp_path: Path) -> None:
+    # GIVEN an initialized session and two files to add
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+
+        file1 = Path(td) / "file1.py"
+        file1.write_text("content1")
+        file2 = Path(td) / "file2.py"
+        file2.write_text("content2")
+
+        # WHEN `aico add` is run with multiple files
+        result = runner.invoke(app, ["add", "file1.py", "file2.py"])
+
+        # THEN the command succeeds and reports both additions
+        assert result.exit_code == 0
+        assert "Added file to context: file1.py" in result.stdout
+        assert "Added file to context: file2.py" in result.stdout
+
+        # AND the session file is updated with both relative paths
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = json.loads(session_file.read_text())
+        assert sorted(session_data["context_files"]) == ["file1.py", "file2.py"]
+
+
+def test_add_multiple_files_with_one_already_in_context(tmp_path: Path) -> None:
+    # GIVEN a session with one file already in context
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+
+        file1 = Path(td) / "file1.py"
+        file1.write_text("content1")
+        file2 = Path(td) / "file2.py"
+        file2.write_text("content2")
+        runner.invoke(app, ["add", "file1.py"])  # Pre-add file1
+
+        # WHEN `aico add` is run with both the existing and a new file
+        result = runner.invoke(app, ["add", "file1.py", "file2.py"])
+
+        # THEN the command succeeds and reports the correct status for each
+        assert result.exit_code == 0
+        assert "File already in context: file1.py" in result.stdout
+        assert "Added file to context: file2.py" in result.stdout
+
+        # AND the session file contains both files without duplicates
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = json.loads(session_file.read_text())
+        assert sorted(session_data["context_files"]) == ["file1.py", "file2.py"]
+
+
+def test_add_multiple_files_with_one_non_existent_partially_fails(
+    tmp_path: Path,
+) -> None:
+    # GIVEN an initialized session and one valid and one non-existent file
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+
+        file1 = Path(td) / "file1.py"
+        file1.write_text("content1")
+        non_existent_file = "non_existent.py"
+
+        # WHEN `aico add` is run with both files
+        result = runner.invoke(app, ["add", "file1.py", non_existent_file])
+
+        # THEN the command exits with a non-zero status code
+        assert result.exit_code == 1
+
+        # AND it reports the success for the valid file
+        assert "Added file to context: file1.py" in result.stdout
+
+        # AND it reports an error for the non-existent file
+        assert f"Error: File not found: {non_existent_file}" in result.stderr
+
+        # AND the session file is updated with only the valid file
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = json.loads(session_file.read_text())
+        assert session_data["context_files"] == ["file1.py"]

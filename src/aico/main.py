@@ -79,9 +79,9 @@ def last() -> None:
 
 
 @app.command()
-def add(file_path: Path) -> None:
+def add(file_paths: list[Path]) -> None:
     """
-    Adds a file to the context for the AI session.
+    Adds one or more files to the context for the AI session.
     """
     session_file = find_session_file()
     if not session_file:
@@ -94,24 +94,6 @@ def add(file_path: Path) -> None:
 
     session_root = session_file.parent
 
-    if not file_path.is_file():
-        print(f"Error: File not found: {file_path}", file=sys.stderr)
-        raise typer.Exit(code=1)
-
-    abs_file_path = file_path.resolve()
-
-    try:
-        relative_path = abs_file_path.relative_to(session_root)
-    except ValueError:
-        print(
-            f"Error: File '{file_path}' is outside the session root '{session_root}'. "
-            "Files must be within the same directory tree as the session file.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
-
-    relative_path_str = str(relative_path)
-
     try:
         session_data = SessionData.model_validate_json(session_file.read_text())
     except ValidationError:
@@ -120,12 +102,42 @@ def add(file_path: Path) -> None:
         )
         raise typer.Exit(code=1)
 
-    if relative_path_str not in session_data.context_files:
-        session_data.context_files.append(relative_path_str)
-        _ = session_file.write_text(session_data.model_dump_json(indent=2))
-        print(f"Added file to context: {relative_path_str}")
-    else:
-        print(f"File already in context: {relative_path_str}")
+    files_were_added = False
+    errors_found = False
+
+    for file_path in file_paths:
+        if not file_path.is_file():
+            print(f"Error: File not found: {file_path}", file=sys.stderr)
+            errors_found = True
+            continue
+
+        abs_file_path = file_path.resolve()
+
+        try:
+            relative_path = abs_file_path.relative_to(session_root)
+        except ValueError:
+            print(
+                f"Error: File '{abs_file_path}' is outside the session root '{session_root}'. "
+                "Files must be within the same directory tree as the session file.",
+                file=sys.stderr,
+            )
+            errors_found = True
+            continue
+
+        relative_path_str = str(relative_path)
+
+        if relative_path_str not in session_data.context_files:
+            session_data.context_files.append(relative_path_str)
+            files_were_added = True
+            print(f"Added file to context: {relative_path_str}")
+        else:
+            print(f"File already in context: {relative_path_str}")
+
+    if files_were_added:
+        session_file.write_text(session_data.model_dump_json(indent=2))
+
+    if errors_found:
+        raise typer.Exit(code=1)
 
 
 @app.command()
