@@ -6,10 +6,12 @@ import typer
 from pydantic import ValidationError
 
 from aico.diffing import generate_diff_from_response
+from aico.history import history_app
 from aico.models import ChatMessage, LastResponse, Mode, SessionData, TokenUsage
 from aico.utils import SESSION_FILE_NAME, find_session_file, format_tokens
 
 app = typer.Typer()
+app.add_typer(history_app, name="history")
 
 
 @app.command()
@@ -211,11 +213,9 @@ def prompt(
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
 
+    active_history = session_data.chat_history[session_data.history_start_index :]
     messages.extend(
-        [
-            {"role": msg.role, "content": msg.content}
-            for msg in session_data.chat_history
-        ]
+        [{"role": msg.role, "content": msg.content} for msg in active_history]
     )
     messages.append({"role": "user", "content": user_prompt_xml})
 

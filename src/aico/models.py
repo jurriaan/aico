@@ -33,6 +33,7 @@ class LastResponse(BaseModel):
 
 class SessionData(BaseModel):
     model: str
+    history_start_index: int = 0
     context_files: list[str] = []
     chat_history: list[ChatMessage] = []
     last_response: LastResponse | None = None
