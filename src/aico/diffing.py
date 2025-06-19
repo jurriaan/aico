@@ -165,79 +165,95 @@ def _parse_llm_edit_block(block_text: str) -> AIPatch | None:
     )
 
 
+def _create_ambiguous_file_error_diff(llm_path: str) -> str:
+    return (
+        f"--- a/{llm_path} (ambiguous match)\n"
+        f"+++ b/{llm_path} (ambiguous match)\n"
+        f"@@ -1 +2 @@\n"
+        f"-Error: The file path '{llm_path}' is ambiguous and matches multiple files in the context.\n"
+        f"+Please provide a more specific path and try again."
+    )
+
+
+def _create_file_not_found_error_diff(llm_path: str) -> str:
+    return (
+        f"--- a/{llm_path} (not found)\n"
+        f"+++ b/{llm_path} (not found)\n"
+        f"@@ -1 +2 @@\n"
+        f"-Error: The file path '{llm_path}' from the AI does not match any file in the context.\n"
+        f"+Skipping this block."
+    )
+
+
+def _create_patch_failed_error_diff(file_path: str, search_block: str) -> str:
+    error_message_lines = (
+        [
+            f"Error: The SEARCH block from the AI could not be found in '{file_path}'.\n",
+            "This can happen if the file has changed, or if the AI made a mistake.\n\n",
+            "The AI provided the following SEARCH block:\n",
+            "--- SEARCH BLOCK ---\n",
+        ]
+        + search_block.splitlines(keepends=True)
+        + ["--- END SEARCH BLOCK ---\n"]
+    )
+    return "".join(
+        difflib.unified_diff(
+            [],
+            error_message_lines,
+            fromfile=f"a/{file_path}",
+            tofile=f"b/{file_path} (patch failed)",
+        )
+    )
+
+
+def _create_ambiguous_patch_error_diff(file_path: str) -> str:
+    error_message_lines = [
+        f"Error: The SEARCH block is ambiguous and was found multiple times in the file '{file_path}'.\n",
+        "Please provide a more specific SEARCH block that uniquely identifies the target code.",
+    ]
+    return "".join(
+        difflib.unified_diff(
+            [],
+            error_message_lines,
+            fromfile=f"a/{file_path}",
+            tofile=f"b/{file_path} (patch failed)",
+        )
+    )
+
+
 def _generate_diff_for_single_block(
     parsed_block: AIPatch, original_file_contents: dict[str, str]
 ) -> str:
-    llm_file_path = parsed_block.llm_file_path
     search_content = parsed_block.search_content
-    replace_content = parsed_block.replace_content
 
     file_path = _find_best_matching_filename(
-        llm_file_path, list(original_file_contents.keys())
+        parsed_block.llm_file_path, list(original_file_contents.keys())
     )
 
     if file_path == "AMBIGUOUS_FILE":
-        return (
-            f"--- a/{llm_file_path} (ambiguous match)\n"
-            f"+++ b/{llm_file_path} (ambiguous match)\n"
-            f"@@ -1 +2 @@\n"
-            f"-Error: The file path '{llm_file_path}' is ambiguous and matches multiple files in the context.\n"
-            f"+Please provide a more specific path and try again."
-        )
+        return _create_ambiguous_file_error_diff(parsed_block.llm_file_path)
 
     if file_path:
         original_content = original_file_contents[file_path]
     elif search_content == "":
-        # This is a new file creation
-        file_path = llm_file_path
+        # This is a valid new file creation
+        file_path = parsed_block.llm_file_path
         original_content = ""
     else:
         # The file was not found, and it's not a new file instruction.
-        return (
-            f"--- a/{llm_file_path} (not found)\n"
-            f"+++ b/{llm_file_path} (not found)\n"
-            f"@@ -1 +2 @@\n"
-            f"-Error: The file path '{llm_file_path}' from the AI does not match any file in the context.\n"
-            f"+Skipping this block."
-        )
+        return _create_file_not_found_error_diff(parsed_block.llm_file_path)
 
     new_content_full = _create_patched_content(
-        original_content, search_content, replace_content
+        original_content, parsed_block.search_content, parsed_block.replace_content
     )
 
     if new_content_full is None:
-        error_message_lines = (
-            [
-                f"Error: The SEARCH block from the AI could not be found in '{file_path}'.\n",
-                "This can happen if the file has changed, or if the AI made a mistake.\n\n",
-                "The AI provided the following SEARCH block:\n",
-                "--- SEARCH BLOCK ---\n",
-            ]
-            + search_content.splitlines(keepends=True)
-            + ["--- END SEARCH BLOCK ---\n"]
-        )
-        return "".join(
-            difflib.unified_diff(
-                [],
-                error_message_lines,
-                fromfile=f"a/{file_path}",
-                tofile=f"b/{file_path} (patch failed)",
-            )
-        )
-    elif new_content_full == "AMBIGUOUS_PATCH":
-        error_message_lines = [
-            f"Error: The SEARCH block is ambiguous and was found multiple times in the file '{file_path}'.\n",
-            "Please provide a more specific SEARCH block that uniquely identifies the target code.",
-        ]
-        return "".join(
-            difflib.unified_diff(
-                [],
-                error_message_lines,
-                fromfile=f"a/{file_path}",
-                tofile=f"b/{file_path} (patch failed)",
-            )
-        )
+        return _create_patch_failed_error_diff(file_path, search_content)
 
+    if new_content_full == "AMBIGUOUS_PATCH":
+        return _create_ambiguous_patch_error_diff(file_path)
+
+    # Happy path: successful patch
     from_file = f"a/{file_path}"
     to_file = f"b/{file_path}"
     original_content_lines = original_content.splitlines(keepends=True)
