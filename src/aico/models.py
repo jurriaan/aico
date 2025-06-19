@@ -37,3 +37,9 @@ class SessionData(BaseModel):
     context_files: list[str] = []
     chat_history: list[ChatMessage] = []
     last_response: LastResponse | None = None
+
+
+class AIPatch(BaseModel):
+    llm_file_path: str
+    search_content: str
+    replace_content: str

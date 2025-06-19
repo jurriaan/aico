@@ -2,6 +2,8 @@ import difflib
 import re
 from pathlib import Path
 
+from aico.models import AIPatch
+
 
 def _try_exact_string_patch(
     original_content: str, search_block: str, replace_block: str
@@ -135,7 +137,7 @@ def _find_best_matching_filename(
     return None
 
 
-def _parse_llm_edit_block(block_text: str) -> dict[str, str] | None:
+def _parse_llm_edit_block(block_text: str) -> AIPatch | None:
     header_match = re.match(r"File: (.*?)\n", block_text)
     if not header_match:
         return None
@@ -156,19 +158,19 @@ def _parse_llm_edit_block(block_text: str) -> dict[str, str] | None:
     search_content = search_replace_match.group(1)
     replace_content = search_replace_match.group(2)
 
-    return {
-        "llm_file_path": llm_file_path,
-        "search_content": search_content,
-        "replace_content": replace_content,
-    }
+    return AIPatch(
+        llm_file_path=llm_file_path,
+        search_content=search_content,
+        replace_content=replace_content,
+    )
 
 
 def _generate_diff_for_single_block(
-    parsed_block: dict[str, str], original_file_contents: dict[str, str]
+    parsed_block: AIPatch, original_file_contents: dict[str, str]
 ) -> str:
-    llm_file_path = parsed_block["llm_file_path"]
-    search_content = parsed_block["search_content"]
-    replace_content = parsed_block["replace_content"]
+    llm_file_path = parsed_block.llm_file_path
+    search_content = parsed_block.search_content
+    replace_content = parsed_block.replace_content
 
     file_path = _find_best_matching_filename(
         llm_file_path, list(original_file_contents.keys())
