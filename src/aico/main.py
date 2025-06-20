@@ -1,6 +1,7 @@
 import sys
 import warnings
 from pathlib import Path
+from typing import Annotated
 
 import typer
 from pydantic import ValidationError
@@ -18,6 +19,7 @@ app.add_typer(history_app, name="history")
 
 
 # Workaround for `no_args_is_help` not working, keep this until #1240 in typer is fixed
+# CANNOT BE REMOVED!
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context):
     if ctx.invoked_subcommand is None:
@@ -27,12 +29,15 @@ def main(ctx: typer.Context):
 
 @app.command()
 def init(
-    model: str = typer.Option(
-        "openrouter/google/gemini-2.5-pro",
-        "--model",
-        "-m",
-        help="The model to use for the session.",
-    ),
+    model: Annotated[
+        str,
+        typer.Option(
+            ...,
+            "--model",
+            "-m",
+            help="The model to use for the session.",
+        ),
+    ] = "openrouter/google/gemini-2.5-pro",
 ) -> None:
     """
     Initializes a new AI session in the current directory.
@@ -40,8 +45,7 @@ def init(
     existing_session_file = find_session_file()
     if existing_session_file:
         print(
-            f"Error: An existing session was found at '{existing_session_file}'. "
-            f"Please run commands from that directory or its subdirectories.",
+            f"Error: An existing session was found at '{existing_session_file}'. Please run commands from that directory or its subdirectories.",
             file=sys.stderr,
         )
         raise typer.Exit(code=1)
@@ -55,7 +59,7 @@ def init(
         raise typer.Exit(code=1)
 
     new_session = SessionData(model=model)
-    session_file.write_text(new_session.model_dump_json(indent=2))
+    _ = session_file.write_text(new_session.model_dump_json(indent=2))
 
     print(f"Initialized session file: {session_file}")
 
@@ -68,8 +72,7 @@ def last() -> None:
     session_file = find_session_file()
     if not session_file:
         print(
-            f"Error: No session file '{SESSION_FILE_NAME}' found. "
-            "Please run 'aico init' first.",
+            f"Error: No session file '{SESSION_FILE_NAME}' found. Please run 'aico init' first.",
             file=sys.stderr,
         )
         raise typer.Exit(code=1)
@@ -123,8 +126,7 @@ def add(file_paths: list[Path]) -> None:
     session_file = find_session_file()
     if not session_file:
         print(
-            f"Error: No session file '{SESSION_FILE_NAME}' found. "
-            "Please run 'aico init' first.",
+            f"Error: No session file '{SESSION_FILE_NAME}' found. Please run 'aico init' first.",
             file=sys.stderr,
         )
         raise typer.Exit(code=1)
@@ -154,8 +156,7 @@ def add(file_paths: list[Path]) -> None:
             relative_path = abs_file_path.relative_to(session_root)
         except ValueError:
             print(
-                f"Error: File '{abs_file_path}' is outside the session root '{session_root}'. "
-                "Files must be within the same directory tree as the session file.",
+                f"Error: File '{abs_file_path}' is outside the session root '{session_root}'. Files must be within the same directory tree as the session file.",
                 file=sys.stderr,
             )
             errors_found = True
@@ -172,7 +173,7 @@ def add(file_paths: list[Path]) -> None:
 
     if files_were_added:
         session_data.context_files.sort()
-        session_file.write_text(session_data.model_dump_json(indent=2))
+        _ = session_file.write_text(session_data.model_dump_json(indent=2))
 
     if errors_found:
         raise typer.Exit(code=1)
@@ -186,8 +187,7 @@ def drop(file_paths: list[Path]) -> None:
     session_file = find_session_file()
     if not session_file:
         print(
-            f"Error: No session file '{SESSION_FILE_NAME}' found. "
-            "Please run 'aico init' first.",
+            f"Error: No session file '{SESSION_FILE_NAME}' found. Please run 'aico init' first.",
             file=sys.stderr,
         )
         raise typer.Exit(code=1)
@@ -227,7 +227,7 @@ def drop(file_paths: list[Path]) -> None:
 
     if files_were_dropped:
         session_data.context_files = sorted(new_context_files)
-        session_file.write_text(session_data.model_dump_json(indent=2))
+        _ = session_file.write_text(session_data.model_dump_json(indent=2))
 
     if errors_found:
         raise typer.Exit(code=1)
@@ -236,14 +236,16 @@ def drop(file_paths: list[Path]) -> None:
 @app.command()
 def prompt(
     prompt_text: str,
-    system_prompt: str = typer.Option(
-        "You are an expert pair programmer.", help="The system prompt to guide the AI."
-    ),
-    mode: Mode = typer.Option(
-        Mode.RAW,
-        help="Output mode: 'raw' for plain text, 'diff' for git diff.",
-        case_sensitive=False,
-    ),
+    system_prompt: Annotated[
+        str, typer.Option(help="The system prompt to guide the AI.")
+    ] = "You are an expert pair programmer.",
+    mode: Annotated[
+        Mode,
+        typer.Option(
+            help="Output mode: 'raw' for plain text, 'diff' for git diff.",
+            case_sensitive=False,
+        ),
+    ] = Mode.RAW,
 ) -> None:
     """
     Sends a prompt to the AI with the current context.
@@ -252,8 +254,7 @@ def prompt(
     session_file = find_session_file()
     if not session_file:
         print(
-            f"Error: No session file '{SESSION_FILE_NAME}' found. "
-            "Please run 'aico init' first.",
+            f"Error: No session file '{SESSION_FILE_NAME}' found. Please run 'aico init' first.",
             file=sys.stderr,
         )
         raise typer.Exit(code=1)
@@ -335,7 +336,7 @@ def prompt(
                 model=session_data.model,
                 messages=messages,
             )
-            llm_response_content = response.choices[0].message.content or ""
+            llm_response_content: str = response.choices[0].message.content or ""
     except Exception as e:
         print(f"Error calling LLM API: {e}", file=sys.stderr)
         raise typer.Exit(code=1)
@@ -349,31 +350,20 @@ def prompt(
             completion_tokens=response.usage.completion_tokens,
             total_tokens=response.usage.total_tokens,
         )
-        try:
-            # litellm can return a float or None
-            cost = litellm.completion_cost(completion_response=response)
-            if cost is not None:
-                message_cost = float(cost)
-        except Exception:
-            # litellm can fail on cost calculation for some models.
-            pass  # message_cost remains None
+        # litellm can return a float or None
+        message_cost = litellm.completion_cost(completion_response=response) or 0.0
 
         prompt_tokens_str = format_tokens(token_usage.prompt_tokens)
         completion_tokens_str = format_tokens(token_usage.completion_tokens)
 
         cost_str: str
-        if message_cost is not None:
-            history_cost = sum(
-                msg.cost
-                for msg in session_data.chat_history
-                if msg.role == "assistant" and msg.cost is not None
-            )
-            session_cost = history_cost + message_cost
-            cost_str = (
-                f"Cost: ${message_cost:.2f} message, ${session_cost:.2f} session."
-            )
-        else:
-            cost_str = "Cost: Not available"
+        history_cost = sum(
+            msg.cost
+            for msg in session_data.chat_history
+            if msg.role == "assistant" and msg.cost is not None
+        )
+        session_cost = history_cost + message_cost
+        cost_str = f"Cost: ${message_cost:.2f} message, ${session_cost:.2f} session."
 
         print(
             f"Tokens: {prompt_tokens_str} sent, {completion_tokens_str} received. {cost_str}",
