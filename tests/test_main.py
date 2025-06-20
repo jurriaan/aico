@@ -4,7 +4,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from aico.main import app
+from aico.main import app, complete_files_in_context
 from aico.utils import SESSION_FILE_NAME
 
 runner = CliRunner()
@@ -500,6 +500,38 @@ def test_drop_multiple_with_one_not_in_context_partially_fails(tmp_path: Path) -
         session_file = Path(td) / SESSION_FILE_NAME
         session_data = json.loads(session_file.read_text())
         assert sorted(session_data["context_files"]) == ["file2.py"]
+
+
+def test_drop_autocompletion(tmp_path: Path) -> None:
+    # GIVEN a session with several files in context
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        # AND a session file is initialized with context files
+        runner.invoke(app, ["init"])
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = json.loads(session_file.read_text())
+        session_data["context_files"] = [
+            "src/main.py",
+            "src/utils.py",
+            "docs/README.md",
+        ]
+        session_file.write_text(json.dumps(session_data))
+
+        # WHEN the completion function is called with various partial inputs
+        # THEN it returns the correct list of matching files
+        assert sorted(complete_files_in_context("src/")) == [
+            "src/main.py",
+            "src/utils.py",
+        ]
+        assert complete_files_in_context("docs/") == ["docs/README.md"]
+        assert complete_files_in_context("src/main") == ["src/main.py"]
+        assert complete_files_in_context("invalid") == []
+
+    # GIVEN a directory with no session file
+    with runner.isolated_filesystem():
+        # WHEN the completion function is called
+        completions = complete_files_in_context("any")
+        # THEN it returns an empty list without erroring
+        assert completions == []
 
 
 def test_no_command_shows_help() -> None:

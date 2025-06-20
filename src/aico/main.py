@@ -1,5 +1,6 @@
 import sys
 import warnings
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -179,8 +180,26 @@ def add(file_paths: list[Path]) -> None:
         raise typer.Exit(code=1)
 
 
+def complete_files_in_context(incomplete: str) -> list[str]:
+    session_file = find_session_file()
+    if not session_file:
+        return []
+
+    try:
+        session_data = SessionData.model_validate_json(session_file.read_text())
+        completions = [f for f in session_data.context_files if f.startswith(incomplete)]
+        return completions
+    except (ValidationError, json.JSONDecodeError):
+        return []
+
+
 @app.command()
-def drop(file_paths: list[Path]) -> None:
+def drop(
+    file_paths: Annotated[
+        list[Path],
+        typer.Argument(autocompletion=complete_files_in_context),
+    ]
+) -> None:
     """
     Drops one or more files from the context for the AI session.
     """
