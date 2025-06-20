@@ -159,11 +159,15 @@ def test_last_prints_last_response_raw_mode(tmp_path: Path) -> None:
         # This represents the new, cleaner model where derived content is null for RAW mode.
         session_data = {
             "model": "test-model",
+            "history_start_index": 0,
+            "context_files": [],
+            "chat_history": [],
             "last_response": {
                 "raw_content": "This is the raw content.",
                 "mode_used": "raw",
-                "unified_diff": None,
-                "display_content": None,
+                "model": "test-model",
+                "timestamp": "2024-01-01T00:00:00Z",
+                "duration_ms": 123,
             },
         }
         session_file.write_text(json.dumps(session_data))
@@ -182,11 +186,17 @@ def test_last_prints_last_response_diff_mode_pipeable(tmp_path: Path) -> None:
         session_file = Path(td) / SESSION_FILE_NAME
         session_data = {
             "model": "test-model",
+            "history_start_index": 0,
+            "context_files": [],
+            "chat_history": [],
             "last_response": {
                 "raw_content": "File: ...",
                 "mode_used": "diff",
                 "unified_diff": "--- a/file.py\n+++ b/file.py\n-old\n+new",
                 "display_content": "Hello! ```diff...```",
+                "model": "test-model",
+                "timestamp": "2024-01-01T00:00:00Z",
+                "duration_ms": 456,
             },
         }
         session_file.write_text(json.dumps(session_data))
