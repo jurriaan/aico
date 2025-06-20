@@ -17,7 +17,7 @@ app = typer.Typer()
 app.add_typer(history_app, name="history")
 
 
-# Workaround for `no_args_is_help` not working
+# Workaround for `no_args_is_help` not working, keep this until #1240 in typer is fixed
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context):
     if ctx.invoked_subcommand is None:
@@ -387,6 +387,7 @@ def prompt(
         unified_diff = generate_unified_diff(
             original_file_contents, llm_response_content
         )
+        print(unified_diff, file=sys.stderr)
         display_content = generate_display_content(
             original_file_contents, llm_response_content
         )

@@ -1,8 +1,16 @@
 import difflib
-import re
 from pathlib import Path
 
+import regex as re
+
 from aico.models import AIPatch
+
+# This single regex is the core of the parser. It finds a complete `File:` block
+# that contains a valid SEARCH/REPLACE block.
+_FILE_BLOCK_REGEX = re.compile(
+    r"^File: (.*?)\n(^ *<<<<<<< SEARCH\n(.*?)\s*=======\n\s*(.*?)\s*>>>>>>> REPLACE\s*$)",
+    re.MULTILINE | re.DOTALL | re.UNICODE,
+)
 
 
 def _try_exact_string_patch(
@@ -137,31 +145,12 @@ def _find_best_matching_filename(
     return None
 
 
-def _parse_llm_edit_block(block_text: str) -> AIPatch | None:
-    header_match = re.match(r"File: (.*?)\n", block_text)
-    if not header_match:
-        return None
-
-    llm_file_path = header_match.group(1).strip()
-
-    # Do not anchor the regex to the end of the string (`$`) to allow for
-    # conversational text to appear after the final REPLACE block.
-    search_replace_match = re.search(
-        r"<<<<<<< SEARCH\n(.*?)\n?=======\n(.*?)\n?>>>>>>> REPLACE",
-        block_text,
-        re.DOTALL,
-    )
-
-    if not search_replace_match:
-        return None
-
-    search_content = search_replace_match.group(1)
-    replace_content = search_replace_match.group(2)
-
+def _create_aipatch_from_match(match: re.Match) -> AIPatch:
+    """Helper to create an AIPatch from a regex match object."""
     return AIPatch(
-        llm_file_path=llm_file_path,
-        search_content=search_content,
-        replace_content=replace_content,
+        llm_file_path=match.group(1).strip(),
+        search_content=match.group(3),
+        replace_content=match.group(4),
     )
 
 
@@ -318,40 +307,17 @@ def generate_unified_diff(
     original_file_contents: dict[str, str], llm_response: str
 ) -> str:
     unified_diff_parts = []
-    file_block_start_pattern = re.compile(r"^File: ", re.MULTILINE)
+    matches = _FILE_BLOCK_REGEX.finditer(llm_response)
 
-    matches = list(file_block_start_pattern.finditer(llm_response))
-
-    if not matches:
-        # If there's only conversational text, there is no pipeable diff.
-        return ""
-
-    for i, match in enumerate(matches):
-        start_pos = match.start()
-        end_pos = matches[i + 1].start() if i + 1 < len(matches) else len(llm_response)
-        block = llm_response[start_pos:end_pos].strip()
-
-        if not block:
-            continue
-
-        parsed_block = _parse_llm_edit_block(block)
-
-        if not parsed_block:
-            diff = (
-                f"--- a/MALFORMED_BLOCK\n"
-                f"+++ b/MALFORMED_BLOCK\n"
-                f"@@ -1 +2 @@\n"
-                f"-Error: Could not parse malformed edit block.\n"
-                f"+{block}\n"
-            )
-            unified_diff_parts.append(diff)
-            continue
-
+    for match in matches:
+        parsed_block = _create_aipatch_from_match(match)
         diff_for_block = _generate_diff_for_single_block(
             parsed_block, original_file_contents
         )
         unified_diff_parts.append(diff_for_block)
 
+    # Malformed blocks or conversational text are ignored, so if no matches are found,
+    # an empty string is returned, which is the correct behavior.
     return "".join(unified_diff_parts)
 
 
@@ -359,54 +325,30 @@ def generate_display_content(
     original_file_contents: dict[str, str], llm_response: str
 ) -> str:
     processed_parts = []
-    file_block_start_pattern = re.compile(r"^File: ", re.MULTILINE)
-    matches = list(file_block_start_pattern.finditer(llm_response))
     last_end = 0
+    matches = list(_FILE_BLOCK_REGEX.finditer(llm_response))
 
     if not matches:
         return llm_response
 
-    search_replace_regex = re.compile(
-        r"<<<<<<< SEARCH\n.*?\n?=======\n.*?\n?>>>>>>> REPLACE", re.DOTALL
-    )
+    for match in matches:
+        # Append the conversational text before this `File:` block
+        processed_parts.append(llm_response[last_end : match.start()])
 
-    for i, match in enumerate(matches):
-        start_pos = match.start()
-        end_pos = matches[i + 1].start() if i + 1 < len(matches) else len(llm_response)
+        # Process the found `File:` block
+        parsed_block = _create_aipatch_from_match(match)
+        diff_string = _generate_diff_for_single_block(
+            parsed_block, original_file_contents
+        )
+        # Create the markdown block, keeping the File: header from the original text
+        markdown_diff = (
+            f"File: {parsed_block.llm_file_path}\n```diff\n{diff_string.strip()}\n```\n"
+        )
+        processed_parts.append(markdown_diff)
 
-        # Append conversational text that appeared before this block
-        processed_parts.append(llm_response[last_end:start_pos])
+        last_end = match.end()
 
-        block_text = llm_response[start_pos:end_pos]
-
-        # Use the stripped block for parsing, but perform replacement on the original block
-        parsed_block = _parse_llm_edit_block(block_text.strip())
-
-        if parsed_block:
-            diff_string = _generate_diff_for_single_block(
-                parsed_block, original_file_contents
-            )
-            markdown_diff = f"```diff\n{diff_string.strip()}\n```"
-
-            # Replace only the SEARCH/REPLACE part within the original (unstripped) block
-            # This preserves any conversational text inside the same "File:" block.
-            reconstructed_block = search_replace_regex.sub(
-                markdown_diff, block_text, count=1
-            )
-            processed_parts.append(reconstructed_block)
-        else:
-            # The block was malformed or didn't contain a SEARCH/REPLACE.
-            # Create an error diff and embed it.
-            error_diff = (
-                f"--- a/MALFORMED_BLOCK\n"
-                f"+++ b/MALFORMED_BLOCK\n"
-                f"@@ -1 +2 @@\n"
-                f"-Error: Could not parse the following code block from the AI.\n"
-                f"+{block_text.strip()}\n"
-            )
-            markdown_block = f"```diff\n{error_diff.strip()}\n```\n"
-            processed_parts.append(markdown_block)
-
-        last_end = end_pos
+    # Append any remaining conversational text after the last `File:` block
+    processed_parts.append(llm_response[last_end:])
 
     return "".join(processed_parts)

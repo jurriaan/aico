@@ -1,3 +1,5 @@
+from typing import Callable
+
 import pytest
 
 from aico.diffing import (
@@ -53,11 +55,7 @@ def test_generate_diff_for_file_deletion() -> None:
     file_content = "line 1\nline 2"
     original_contents = {"file.py": file_content}
     llm_response = (
-        "File: file.py\n"
-        f"<<<<<<< SEARCH\n"
-        f"{file_content}\n"
-        f"=======\n"
-        f">>>>>>> REPLACE"
+        f"File: file.py\n<<<<<<< SEARCH\n{file_content}\n=======\n>>>>>>> REPLACE"
     )
 
     # WHEN the diff is generated
@@ -152,12 +150,7 @@ def test_error_when_file_not_found_in_context() -> None:
     # GIVEN an LLM response for a file not in the context
     original_contents = {"real_file.py": "content"}
     llm_response = (
-        "File: unknown_file.py\n"
-        "<<<<<<< SEARCH\n"
-        "a\n"
-        "=======\n"
-        "b\n"
-        ">>>>>>> REPLACE"
+        "File: unknown_file.py\n<<<<<<< SEARCH\na\n=======\nb\n>>>>>>> REPLACE"
     )
 
     # WHEN the diff is generated
@@ -178,9 +171,8 @@ def test_handling_of_malformed_llm_responses() -> None:
     # WHEN the diff is generated
     diff = generate_unified_diff({}, malformed_response)
 
-    # THEN a diff is produced indicating the parsing error
-    assert "--- a/MALFORMED_BLOCK" in diff
-    assert "Error: Could not parse malformed edit block" in diff
+    # THEN an empty diff is produced, as there are no valid blocks to parse
+    assert diff == ""
 
 
 def test_multi_block_llm_response() -> None:
@@ -244,9 +236,7 @@ def test_ambiguous_filepath_fails() -> None:
 
 def test_ambiguous_patch_fails() -> None:
     # GIVEN a file where the target code block appears twice
-    original_contents = {
-        "file.py": "repeatable_line = 1\n\nrepeatable_line = 1\n"
-    }
+    original_contents = {"file.py": "repeatable_line = 1\n\nrepeatable_line = 1\n"}
     llm_response = (
         "File: file.py\n"
         "<<<<<<< SEARCH\n"
@@ -392,11 +382,7 @@ def test_empty_search_on_existing_file_fails() -> None:
     # GIVEN an existing, non-empty file and an invalid AI patch with an empty search block
     original_contents = {"file.py": "some_content = True"}
     llm_response = (
-        "File: file.py\n"
-        "<<<<<<< SEARCH\n"
-        "=======\n"
-        "new_content = False\n"
-        ">>>>>>> REPLACE"
+        "File: file.py\n<<<<<<< SEARCH\n=======\nnew_content = False\n>>>>>>> REPLACE"
     )
 
     # WHEN the diff is generated
@@ -565,9 +551,7 @@ def test_generate_embedded_markdown_diff_with_conversation() -> None:
     )
 
     # WHEN the embedded markdown diff is generated
-    markdown_output = generate_display_content(
-        original_contents, llm_response
-    )
+    markdown_output = generate_display_content(original_contents, llm_response)
 
     # THEN the conversational text is preserved
     assert "Hello! I've made the change you requested." in markdown_output
@@ -582,17 +566,13 @@ def test_generate_embedded_markdown_diff_with_conversation() -> None:
     assert "```" in markdown_output
 
 
-def test_generate_embedded_markdown_diff_from_conversation_only_is_unchanged() -> (
-    None
-):
+def test_generate_embedded_markdown_diff_from_conversation_only_is_unchanged() -> None:
     # GIVEN an LLM response with only conversational text
     original_contents = {"file.py": "old_line"}
     llm_response = "I'm not sure how to make that change. Could you clarify?"
 
     # WHEN the embedded markdown diff is generated
-    markdown_output = generate_display_content(
-        original_contents, llm_response
-    )
+    markdown_output = generate_display_content(original_contents, llm_response)
 
     # THEN the output is the original response, unchanged
     assert markdown_output == llm_response
@@ -604,17 +584,65 @@ def test_generate_embedded_markdown_diff_malformed_block() -> None:
     llm_response = (
         "I tried to make a change, but I might have messed up the format.\n\n"
         "File: file.py\n"
-        "This is not a valid diff block.\n"
+        "This is not a valid diff block because it's missing the delimiters.\n"
     )
 
-    # WHEN the embedded markdown diff is generated
-    markdown_output = generate_display_content(
-        original_contents, llm_response
-    )
+    # WHEN the embedded markdown diff is generated using the new robust parser
+    markdown_output = generate_display_content(original_contents, llm_response)
 
-    # THEN it embeds an error diff inside a markdown block
-    assert "I tried to make a change" in markdown_output
-    assert "```diff" in markdown_output
-    assert "MALFORMED_BLOCK" in markdown_output
-    assert "Error: Could not parse the following code block" in markdown_output
-    assert "```" in markdown_output
+    # THEN the malformed block is treated as conversational text and is preserved as-is.
+    # The entire original response should be returned untouched.
+    assert markdown_output == llm_response
+
+
+@pytest.mark.parametrize(
+    "llm_response_template",
+    [
+        (
+            "File: file.py\n"
+            "   <<<<<<< SEARCH\n"  # Indented
+            "{search}\n"
+            "   =======\n"
+            "{replace}\n"
+            "   >>>>>>> REPLACE   "  # Trailing whitespace
+        ),
+        (
+            "File: file.py\n"
+            "<<<<<<< SEARCH\n"
+            "{search}\n"
+            "\n \n"  # Extra whitespace and newlines
+            "=======\n"
+            "\n"
+            "{replace}\n"
+            ">>>>>>> REPLACE"
+        ),
+        (
+            "File: file.py\n"
+            "<<<<<<< SEARCH\n{search}\n=======\n{replace}\n>>>>>>> REPLACE"  # No trailing newli
+        ),
+    ],
+    ids=["indented", "extra_whitespace", "no_trailing_newline"],
+)
+@pytest.mark.parametrize(
+    "func_to_test",
+    [generate_unified_diff, generate_display_content],
+    ids=["unified_diff", "display_content"],
+)
+def test_parser_is_robust_to_formatting(
+    llm_response_template: str, func_to_test: Callable[[dict[str, str], str], str]
+) -> None:
+    # GIVEN an LLM response with quirky but valid formatting
+    search_block = "old_line"
+    replace_block = "new_line"
+    llm_response = llm_response_template.format(
+        search=search_block, replace=replace_block
+    )
+    original_contents = {"file.py": "old_line"}
+
+    # WHEN the diff/content is generated
+    result = func_to_test(original_contents, llm_response)
+
+    # THEN the content is generated successfully without a malformed block error
+    assert "MALFORMED_BLOCK" not in result
+    assert "+new_line" in result
+    assert "-old_line" in result
