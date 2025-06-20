@@ -1,47 +1,21 @@
-import sys
-from pathlib import Path
-
 import litellm
 import typer
-from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
-from aico.models import SessionData
-from aico.utils import SESSION_FILE_NAME, find_session_file
+from aico.utils import load_session
 
 tokens_app = typer.Typer(
     help="Commands for inspecting prompt token usage and costs.",
 )
 
 
-def _load_session() -> tuple[Path, SessionData]:
-    session_file = find_session_file()
-    if not session_file:
-        print(
-            f"Error: No session file '{SESSION_FILE_NAME}' found. "
-            "Please run 'aico init' first.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
-
-    try:
-        session_data = SessionData.model_validate_json(session_file.read_text())
-    except ValidationError:
-        print(
-            "Error: Session file is corrupt or has an invalid format.", file=sys.stderr
-        )
-        raise typer.Exit(code=1)
-
-    return session_file, session_data
-
-
 @tokens_app.callback(invoke_without_command=True)
 def tokens() -> None:
     """
-    Calculates and displays the token usage for the current session context.
+    Calculates and displays the token usage and cost for the current session context.
     """
-    session_file, session_data = _load_session()
+    session_file, session_data = load_session()
     session_root = session_file.parent
 
     console = Console()
@@ -118,31 +92,78 @@ def tokens() -> None:
             )
             total_tokens += file_tokens
         except FileNotFoundError:
-            # If a file in context is not found, we just ignore it for token counting.
+            # If a file in context is not found, we ignore it for token counting.
             # The main `prompt` command would show a warning.
             pass
+
+    # After collecting all components, calculate costs
+    total_cost = 0.0
+    has_cost_info = False
+
+    # Check for cost info *once* using a dummy call with the correct format,
+    # mimicking the structure used in main.py.
+    dummy_response = {
+        "usage": {"prompt_tokens": 1, "completion_tokens": 0},
+        "model": session_data.model,
+    }
+    if litellm.completion_cost(completion_response=dummy_response) is not None:
+        has_cost_info = True
+
+    if has_cost_info:
+        for item in components:
+            # We only have prompt tokens, so completion_tokens is 0.
+            mock_response = {
+                "usage": {
+                    "prompt_tokens": item["tokens"],
+                    "completion_tokens": 0,
+                    "total_tokens": item["tokens"],
+                },
+                "model": session_data.model,
+            }
+            cost = litellm.completion_cost(completion_response=mock_response)
+            item["cost"] = cost if cost is not None else 0.0
+            total_cost += item["cost"]
+
 
     # Display results
     console.print(
         f"Approximate context window usage for {session_data.model}, in tokens:\n"
     )
     table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column(justify="right")
-    table.add_column()
-    table.add_column(style="dim")
+    table.add_column(justify="right")  # Tokens
+    if has_cost_info:
+        table.add_column(justify="right")  # Cost
+    table.add_column()  # Description
+    table.add_column(style="dim")  # Note
 
     for item in components:
-        table.add_row(
-            f"{item['tokens']:,}",
-            item["description"],
-            item.get("note", ""),
-        )
+        row_items = [f"{item['tokens']:,}"]
+        if has_cost_info:
+            cost = item.get("cost", 0.0)
+            # Use 5 decimal places for precision on small costs
+            row_items.append(f"${cost:.5f}")
+        row_items.append(item["description"])
+        row_items.append(item.get("note", ""))
+        table.add_row(*row_items)
 
-    # Use a rule for the separator, similar to the reference output
     console.print(table)
-    console.print("=" * 22)
+
+    # Use a rule for the separator
+    separator_len = 22
+    if has_cost_info:
+        separator_len += 12  # Account for cost column + padding
+    console.print("=" * separator_len)
+
     total_table = Table(show_header=False, box=None, padding=(0, 2))
-    total_table.add_column(justify="right")
-    total_table.add_column()
-    total_table.add_row(f"{total_tokens:,}", "tokens total")
+    total_table.add_column(justify="right")  # Tokens
+    if has_cost_info:
+        total_table.add_column(justify="right")  # Cost
+    total_table.add_column()  # "total" label
+
+    total_row = [f"{total_tokens:,}"]
+    if has_cost_info:
+        total_row.append(f"${total_cost:.5f}")
+    total_row.append("total")
+
+    total_table.add_row(*total_row)
     console.print(total_table)
