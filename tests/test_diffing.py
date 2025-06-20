@@ -646,3 +646,38 @@ def test_parser_is_robust_to_formatting(
     assert "MALFORMED_BLOCK" not in result
     assert "+new_line" in result
     assert "-old_line" in result
+
+
+@pytest.mark.parametrize(
+    "whitespace_search_block",
+    ["\n", "  \n  ", "\t", " \n \t \n "],
+    ids=["newline", "spaces_and_newline", "tab", "mixed_whitespace"],
+)
+def test_whitespace_only_search_block_fails_cleanly(
+    whitespace_search_block: str,
+) -> None:
+    """
+    Tests that a SEARCH block containing only whitespace doesn't cause an
+    AMBIGUOUS_PATCH error on a file with multiple blank lines. It should
+    instead fail as a standard non-match.
+    """
+    # GIVEN a file with multiple blank lines
+    original_contents = {"file.py": "line_one\n\n\nline_two"}
+    # AND an LLM response where the SEARCH block is only whitespace
+    llm_response = (
+        "File: file.py\n"
+        "<<<<<<< SEARCH\n"
+        f"{whitespace_search_block}\n"
+        "=======\n"
+        "some_content\n"
+        ">>>>>>> REPLACE"
+    )
+
+    # WHEN the diff is generated
+    diff = generate_unified_diff(original_contents, llm_response)
+
+    # THEN the diff should report a standard "patch failed" error, not an "ambiguous" one
+    # Note: The flexible patcher will fail, and so will the exact patcher, leading to this error.
+    assert "ambiguous" not in diff.lower()
+    assert "patch failed" in diff
+    assert "could not be found" in diff

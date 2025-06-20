@@ -54,6 +54,10 @@ def _try_whitespace_flexible_patch(
     # Strip both leading and trailing whitespace for comparison to handle
     # potential missing newlines from the LLM/parser.
     stripped_search_lines = [line.strip() for line in search_lines]
+    if not any(stripped_search_lines):
+        # A search block containing only whitespace is ambiguous and not supported
+        # for flexible patching. The exact patcher should handle it if it's an exact match.
+        return None
 
     matching_block_start_indices = []
     for i in range(len(original_lines) - len(search_lines) + 1):
