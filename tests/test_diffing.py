@@ -175,40 +175,54 @@ def test_handling_of_malformed_llm_responses() -> None:
     assert diff == ""
 
 
-def test_multi_block_llm_response() -> None:
-    # GIVEN original contents for two files and a multi-block response
+def test_multi_block_llm_response_with_conversation() -> None:
+    # GIVEN original contents for two files and a multi-block response with conversation
     original_contents = {
         "file_one.py": "one",
         "file_two.py": "two",
     }
     llm_response = (
+        "Here is the first change:\n"
         "File: file_one.py\n"
         "<<<<<<< SEARCH\n"
         "one\n"
         "=======\n"
         "1\n"
         ">>>>>>> REPLACE\n"
+        "\nAnd here is the second change for the other file:\n"
         "File: file_two.py\n"
         "<<<<<<< SEARCH\n"
         "two\n"
         "=======\n"
         "2\n"
-        ">>>>>>> REPLACE"
+        ">>>>>>> REPLACE\n"
+        "All done!"
     )
 
-    # WHEN the diff is generated
+    # WHEN the unified diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
 
-    # THEN the output contains two complete, valid diffs
+    # THEN the output contains two complete, valid diffs and no conversation
+    assert "Here is the first change" not in diff
+    assert "All done!" not in diff
     assert "--- a/file_one.py" in diff
     assert "+++ b/file_one.py" in diff
     assert "-one" in diff
     assert "+1" in diff
-
     assert "--- a/file_two.py" in diff
     assert "+++ b/file_two.py" in diff
     assert "-two" in diff
     assert "+2" in diff
+
+    # WHEN the display content is generated
+    display_content = generate_display_content(original_contents, llm_response)
+
+    # THEN the output contains the conversation and markdown diffs
+    assert "Here is the first change" in display_content
+    assert "And here is the second change" in display_content
+    assert "All done!" in display_content
+    assert "```diff\n--- a/file_one.py" in display_content
+    assert "```diff\n--- a/file_two.py" in display_content
 
 
 def test_ambiguous_filepath_fails() -> None:

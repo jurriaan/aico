@@ -1,5 +1,6 @@
 import difflib
 from pathlib import Path
+from typing import Iterator, Literal, TypedDict
 
 import regex as re
 
@@ -251,114 +252,168 @@ def _create_ambiguous_patch_error_diff(file_path: str) -> str:
     )
 
 
-def _generate_diff_for_single_block(
-    parsed_block: AIPatch, original_file_contents: dict[str, str]
-) -> str:
-    search_content = parsed_block.search_content
+class ProcessedDiffBlock(TypedDict):
+    llm_file_path: str
+    unified_diff: str
 
-    file_path = _find_best_matching_filename(
-        parsed_block.llm_file_path, list(original_file_contents.keys())
-    )
 
-    if file_path == "AMBIGUOUS_FILE":
-        return _create_ambiguous_file_error_diff(parsed_block.llm_file_path)
+def _process_llm_response_stream(
+    original_file_contents: dict[str, str], llm_response: str
+) -> Iterator[tuple[Literal["conversation", "diff"], str | ProcessedDiffBlock]]:
+    """
+    Parses an LLM response, processes diff blocks sequentially, and yields results.
 
-    if file_path:
-        original_content = original_file_contents[file_path]
-    elif search_content == "":
-        # This is a valid new file creation
-        file_path = parsed_block.llm_file_path
-        original_content = ""
-    else:
-        # The file was not found, and it's not a new file instruction.
-        return _create_file_not_found_error_diff(parsed_block.llm_file_path)
+    This generator is the core stateful engine. It maintains the "current" state
+    of file contents as it iterates through diff blocks, ensuring that each
+    patch is applied against the result of the previous one for the same file.
 
-    new_content_full = _create_patched_content(
-        original_content, parsed_block.search_content, parsed_block.replace_content
-    )
+    Yields:
+        Tuples of ('conversation', text) or ('diff', ProcessedDiffBlock).
+    """
+    current_file_contents = original_file_contents.copy()
+    last_end = 0
+    matches = list(_FILE_BLOCK_REGEX.finditer(llm_response))
 
-    if new_content_full is None:
-        return _create_patch_failed_error_diff(
-            file_path, search_content, original_content
+    if not matches:
+        if llm_response:
+            yield ("conversation", llm_response)
+        return
+
+    for match in matches:
+        # 1. Yield any conversational text that appeared before this block
+        if match.start() > last_end:
+            yield ("conversation", llm_response[last_end : match.start()])
+        last_end = match.end()
+
+        # 2. Process the found `File:` block
+        parsed_block = _create_aipatch_from_match(match)
+        search_content = parsed_block.search_content
+        diff_string: str
+
+        # Find file path first. Handle file path errors immediately.
+        actual_file_path = _find_best_matching_filename(
+            parsed_block.llm_file_path, list(current_file_contents.keys())
         )
 
-    if new_content_full == "AMBIGUOUS_PATCH":
-        return _create_ambiguous_patch_error_diff(file_path)
+        if actual_file_path == "AMBIGUOUS_FILE":
+            diff_string = _create_ambiguous_file_error_diff(parsed_block.llm_file_path)
+            yield (
+                "diff",
+                ProcessedDiffBlock(
+                    llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string
+                ),
+            )
+            continue
 
-    # Happy path: successful patch
-    from_file = f"a/{file_path}"
-    to_file = f"b/{file_path}"
-    original_content_lines = original_content.splitlines(keepends=True)
-    new_content_lines = new_content_full.splitlines(keepends=True)
+        # Determine if this is a new file vs. existing file vs. file not found.
+        content_before_patch: str
+        is_new_file = False
+        if actual_file_path:
+            content_before_patch = current_file_contents[actual_file_path]
+        elif search_content == "":
+            actual_file_path = parsed_block.llm_file_path
+            content_before_patch = ""
+            is_new_file = True
+        else:
+            diff_string = _create_file_not_found_error_diff(
+                parsed_block.llm_file_path
+            )
+            yield (
+                "diff",
+                ProcessedDiffBlock(
+                    llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string
+                ),
+            )
+            continue
 
-    if not original_content and not search_content:
-        from_file = "/dev/null"
-    elif not new_content_full and original_content:
-        to_file = "/dev/null"
-
-    diff_lines = list(
-        difflib.unified_diff(
-            original_content_lines,
-            new_content_lines,
-            fromfile=from_file,
-            tofile=to_file,
+        # Now we have a valid file path and content. Apply the patch.
+        new_content_full = _create_patched_content(
+            content_before_patch,
+            search_content,
+            parsed_block.replace_content,
         )
-    )
-    return "".join(diff_lines)
 
+        if new_content_full is None:
+            diff_string = _create_patch_failed_error_diff(
+                actual_file_path, search_content, content_before_patch
+            )
+        elif new_content_full == "AMBIGUOUS_PATCH":
+            diff_string = _create_ambiguous_patch_error_diff(actual_file_path)
+        else:
+            # --- Success Path ---
+            from_file = f"a/{actual_file_path}"
+            to_file = f"b/{actual_file_path}"
+            if is_new_file:
+                from_file = "/dev/null"
+            elif not new_content_full:  # File deletion
+                to_file = "/dev/null"
 
-def _create_markdown_diff_for_block(
-    match: re.Match[str], original_file_contents: dict[str, str]
-) -> str:
-    """Creates a markdown-formatted diff string from a single regex match of a file block."""
-    parsed_block = _create_aipatch_from_match(match)
-    diff_string = _generate_diff_for_single_block(parsed_block, original_file_contents)
-    # Create the markdown block, keeping the File: header from the original text
-    markdown_diff = (
-        f"File: {parsed_block.llm_file_path}\n```diff\n{diff_string.strip()}\n```\n"
-    )
-    return markdown_diff
+            diff_lines = list(
+                difflib.unified_diff(
+                    content_before_patch.splitlines(keepends=True),
+                    new_content_full.splitlines(keepends=True),
+                    fromfile=from_file,
+                    tofile=to_file,
+                )
+            )
+            diff_string = "".join(diff_lines)
+
+            # Update state for the next iteration
+            if not new_content_full and actual_file_path in current_file_contents:
+                del current_file_contents[actual_file_path]
+            else:
+                current_file_contents[actual_file_path] = new_content_full
+
+        # 3. Yield the processed block result
+        yield (
+            "diff",
+            ProcessedDiffBlock(
+                llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string
+            ),
+        )
+
+    # 4. Yield any remaining conversational text after the last block
+    if last_end < len(llm_response):
+        yield ("conversation", llm_response[last_end:])
 
 
 def generate_unified_diff(
     original_file_contents: dict[str, str], llm_response: str
 ) -> str:
-    unified_diff_parts = []
-    matches = _FILE_BLOCK_REGEX.finditer(llm_response)
+    """
+    Generates a unified diff string by processing all `File:` blocks sequentially.
+    Conversational text is ignored.
+    """
+    diff_parts: list[str] = []
+    stream = _process_llm_response_stream(original_file_contents, llm_response)
 
-    for match in matches:
-        parsed_block = _create_aipatch_from_match(match)
-        diff_for_block = _generate_diff_for_single_block(
-            parsed_block, original_file_contents
-        )
-        unified_diff_parts.append(diff_for_block)
+    for block_type, data in stream:
+        if block_type == "diff":
+            # data is a ProcessedDiffBlock
+            diff_parts.append(data["unified_diff"])
 
-    # Malformed blocks or conversational text are ignored, so if no matches are found,
-    # an empty string is returned, which is the correct behavior.
-    return "".join(unified_diff_parts)
+    return "".join(diff_parts)
 
 
 def generate_display_content(
     original_file_contents: dict[str, str], llm_response: str
 ) -> str:
+    """
+    Generates a markdown-formatted string with diffs embedded in conversational text.
+    Processes all `File:` blocks sequentially.
+    """
     processed_parts: list[str] = []
-    last_end = 0
-    matches = list(_FILE_BLOCK_REGEX.finditer(llm_response))
+    stream = _process_llm_response_stream(original_file_contents, llm_response)
 
-    if not matches:
-        return llm_response
-
-    for match in matches:
-        # Append the conversational text before this `File:` block
-        processed_parts.append(llm_response[last_end : match.start()])
-
-        # Process the found `File:` block by calling the helper
-        markdown_diff = _create_markdown_diff_for_block(match, original_file_contents)
-        processed_parts.append(markdown_diff)
-
-        last_end = match.end()
-
-    # Append any remaining conversational text after the last `File:` block
-    processed_parts.append(llm_response[last_end:])
+    for block_type, data in stream:
+        if block_type == "conversation":
+            processed_parts.append(str(data))
+        elif block_type == "diff":
+            # data is a ProcessedDiffBlock
+            diff_string = data["unified_diff"]
+            markdown_diff = (
+                f"File: {data['llm_file_path']}\n```diff\n{diff_string.strip()}\n```\n"
+            )
+            processed_parts.append(markdown_diff)
 
     return "".join(processed_parts)
