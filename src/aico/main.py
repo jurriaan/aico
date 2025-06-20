@@ -13,8 +13,16 @@ from aico.history import history_app
 from aico.models import ChatMessage, LastResponse, Mode, SessionData, TokenUsage
 from aico.utils import SESSION_FILE_NAME, find_session_file, format_tokens
 
-app = typer.Typer(no_args_is_help=True)
+app = typer.Typer()
 app.add_typer(history_app, name="history")
+
+
+# Workaround for `no_args_is_help` not working
+@app.callback(invoke_without_command=True)
+def main(ctx: typer.Context):
+    if ctx.invoked_subcommand is None:
+        print(ctx.get_help())
+        raise typer.Exit()
 
 
 @app.command()
