@@ -25,10 +25,12 @@ from aico.models import (
     TokenUsage,
     UserChatMessage,
 )
+from aico.tokens import tokens_app
 from aico.utils import SESSION_FILE_NAME, find_session_file, format_tokens
 
 app = typer.Typer()
 app.add_typer(history_app, name="history")
+app.add_typer(tokens_app, name="tokens")
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
