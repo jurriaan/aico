@@ -314,7 +314,7 @@ def _generate_diff_for_single_block(
     return "".join(diff_lines)
 
 
-def generate_pipeable_unified_diff(
+def generate_unified_diff(
     original_file_contents: dict[str, str], llm_response: str
 ) -> str:
     unified_diff_parts = []
@@ -355,7 +355,7 @@ def generate_pipeable_unified_diff(
     return "".join(unified_diff_parts)
 
 
-def generate_and_embed_diffs_in_markdown(
+def generate_display_content(
     original_file_contents: dict[str, str], llm_response: str
 ) -> str:
     processed_parts = []

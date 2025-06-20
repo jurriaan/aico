@@ -152,16 +152,18 @@ def test_add_file_outside_session_root_fails(tmp_path: Path) -> None:
         )
 
 
-def test_last_prints_last_response(tmp_path: Path) -> None:
-    # GIVEN a session file with a last_response object
+def test_last_prints_last_response_raw_mode(tmp_path: Path) -> None:
+    # GIVEN a session file with a last_response object from a RAW mode command
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_file = Path(td) / SESSION_FILE_NAME
+        # This represents the new, cleaner model where derived content is null for RAW mode.
         session_data = {
             "model": "test-model",
             "last_response": {
-                "raw_content": "raw",
+                "raw_content": "This is the raw content.",
                 "mode_used": "raw",
-                "processed_content": "This is the processed content.",
+                "unified_diff": None,
+                "display_content": None,
             },
         }
         session_file.write_text(json.dumps(session_data))
@@ -169,9 +171,33 @@ def test_last_prints_last_response(tmp_path: Path) -> None:
         # WHEN `aico last` is run
         result = runner.invoke(app, ["last"])
 
-        # THEN the processed content is printed to stdout
+        # THEN the raw content is printed to stdout
         assert result.exit_code == 0
-        assert "This is the processed content." in result.stdout
+        assert "This is the raw content." in result.stdout
+
+
+def test_last_prints_last_response_diff_mode_pipeable(tmp_path: Path) -> None:
+    # GIVEN a session file with a last_response from a DIFF mode command
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = {
+            "model": "test-model",
+            "last_response": {
+                "raw_content": "File: ...",
+                "mode_used": "diff",
+                "unified_diff": "--- a/file.py\n+++ b/file.py\n-old\n+new",
+                "display_content": "Hello! ```diff...```",
+            },
+        }
+        session_file.write_text(json.dumps(session_data))
+
+        # WHEN `aico last` is run (not in a TTY)
+        result = runner.invoke(app, ["last"])
+
+        # THEN the unified_diff is printed for machine consumption
+        assert result.exit_code == 0
+        assert "--- a/file.py\n+++ b/file.py\n-old\n+new" in result.stdout
+        assert "Hello!" not in result.stdout
 
 
 def test_last_fails_when_no_last_response_exists(tmp_path: Path) -> None:
@@ -243,7 +269,12 @@ def test_prompt_raw_mode(tmp_path: Path, mocker) -> None:
         assert session_data["chat_history"][0]["content"] == prompt_text
         assert session_data["chat_history"][1]["role"] == "assistant"
         assert session_data["chat_history"][1]["content"] == "This is a raw response."
-        assert session_data["last_response"]["raw_content"] == "This is a raw response."
+
+        last_response = session_data["last_response"]
+        assert last_response["raw_content"] == "This is a raw response."
+        # For raw mode, derived fields should be null
+        assert last_response["unified_diff"] is None
+        assert last_response["display_content"] is None
 
 
 def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
@@ -293,10 +324,12 @@ def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
         session_file = Path(td) / SESSION_FILE_NAME
         session_data = json.loads(session_file.read_text())
         assert len(session_data["chat_history"]) == 2
-        assert session_data["last_response"]["raw_content"] == llm_diff_response
-        assert (
-            session_data["last_response"]["processed_content"] == result.stdout.strip()
-        )
+        last_response = session_data["last_response"]
+        assert last_response["raw_content"] == llm_diff_response
+        assert last_response["unified_diff"] == result.stdout.strip()
+        # Also check that display_content was generated and stored
+        assert last_response["display_content"] is not None
+        assert "```diff" in last_response["display_content"]
 
 
 def test_add_multiple_files_successfully(tmp_path: Path) -> None:

@@ -24,10 +24,16 @@ class ChatMessage(BaseModel):
 
 
 class LastResponse(BaseModel):
+    # The verbatim, original response from the LLM. This is the source of truth.
     raw_content: str
     mode_used: Mode
-    processed_content: str
-    markdown_content: str | None = None
+
+    # Derived content, populated only when mode_used is DIFF.
+    # A clean, standard unified diff for tools, redirection, or scripting.
+    unified_diff: str | None = None
+    # The full conversational response, with diffs embedded, for rich terminal display.
+    display_content: str | None = None
+
     token_usage: TokenUsage | None = None
     cost: float | None = None
 

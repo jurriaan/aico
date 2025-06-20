@@ -6,8 +6,8 @@ import typer
 from pydantic import ValidationError
 
 from aico.diffing import (
-    generate_and_embed_diffs_in_markdown,
-    generate_pipeable_unified_diff,
+    generate_display_content,
+    generate_unified_diff,
 )
 from aico.history import history_app
 from aico.models import ChatMessage, LastResponse, Mode, SessionData, TokenUsage
@@ -82,26 +82,37 @@ def last() -> None:
         )
         raise typer.Exit(code=1)
 
-    if not session_data.last_response:
+    last_resp = session_data.last_response
+    if not last_resp:
         print("Error: No last response found in session.", file=sys.stderr)
         raise typer.Exit(code=1)
 
-    if sys.stdout.isatty():
-        from rich.console import Console
-        from rich.markdown import Markdown
+    if last_resp.mode_used == Mode.RAW:
+        # In RAW mode, raw_content is the single source of truth.
+        content = last_resp.raw_content
+        if sys.stdout.isatty():
+            from rich.console import Console
+            from rich.markdown import Markdown
 
-        # Use the pre-rendered markdown content if available, otherwise use the processed content.
-        # This handles both DIFF mode with its special markdown, and RAW mode.
-        content_to_render = (
-            session_data.last_response.markdown_content
-            or session_data.last_response.processed_content
-        )
-        if content_to_render:
             console = Console()
-            console.print(Markdown(content_to_render))
-    else:
-        # For non-TTY, always print the raw/pipeable content.
-        print(session_data.last_response.processed_content)
+            console.print(Markdown(content))
+        else:
+            print(content)
+
+    elif last_resp.mode_used == Mode.DIFF:
+        # In DIFF mode, we choose between two different derived representations.
+        if sys.stdout.isatty():
+            # For interactive terminals, show the rich display content.
+            if last_resp.display_content:
+                from rich.console import Console
+                from rich.markdown import Markdown
+
+                console = Console()
+                console.print(Markdown(last_resp.display_content))
+        else:
+            # For pipes, print the clean, machine-readable diff.
+            if last_resp.unified_diff:
+                print(last_resp.unified_diff)
 
 
 @app.command()
@@ -370,16 +381,13 @@ def prompt(
         )
 
     # 6. Process Output Based on Mode
-    processed_content: str
-    markdown_content: str | None = None
-    if mode == Mode.RAW:
-        processed_content = llm_response_content
-        markdown_content = llm_response_content
-    elif mode == Mode.DIFF:
-        processed_content = generate_pipeable_unified_diff(
+    unified_diff: str | None = None
+    display_content: str | None = None
+    if mode == Mode.DIFF:
+        unified_diff = generate_unified_diff(
             original_file_contents, llm_response_content
         )
-        markdown_content = generate_and_embed_diffs_in_markdown(
+        display_content = generate_display_content(
             original_file_contents, llm_response_content
         )
 
@@ -400,8 +408,8 @@ def prompt(
     session_data.last_response = LastResponse(
         raw_content=llm_response_content,
         mode_used=mode,
-        processed_content=processed_content,
-        markdown_content=markdown_content,
+        unified_diff=unified_diff,
+        display_content=display_content,
         token_usage=token_usage,
         cost=message_cost,
     )
@@ -409,19 +417,29 @@ def prompt(
     session_file.write_text(session_data.model_dump_json(indent=2))
 
     # 8. Print Final Output
-    if sys.stdout.isatty():
-        from rich.console import Console
-        from rich.markdown import Markdown
+    if mode == Mode.RAW:
+        # In RAW mode, the raw response is the only content.
+        if sys.stdout.isatty():
+            from rich.console import Console
+            from rich.markdown import Markdown
 
-        # Use the pre-rendered markdown content if available, otherwise use the processed content.
-        # This handles both DIFF mode with its special markdown, and RAW mode.
-        content_to_render = markdown_content or processed_content
-        if content_to_render:
             console = Console()
-            console.print(Markdown(content_to_render))
-    else:
-        # For non-TTY, always print the raw/pipeable content.
-        print(processed_content)
+            console.print(Markdown(llm_response_content))
+        else:
+            print(llm_response_content)
+
+    elif mode == Mode.DIFF:
+        # In DIFF mode, we choose between the display content or unified diff.
+        if sys.stdout.isatty():
+            if display_content:
+                from rich.console import Console
+                from rich.markdown import Markdown
+
+                console = Console()
+                console.print(Markdown(display_content))
+        else:
+            if unified_diff:
+                print(unified_diff)
 
 
 if __name__ == "__main__":
