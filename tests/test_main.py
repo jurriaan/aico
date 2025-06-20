@@ -290,6 +290,13 @@ def test_prompt_raw_mode(tmp_path: Path, mocker) -> None:
         assert last_response["unified_diff"] is None
         assert last_response["display_content"] is None
 
+        # AND the new metadata is present
+        assert last_response["model"] == "openrouter/google/gemini-2.5-pro"
+        assert last_response["timestamp"] is not None
+        assert last_response["duration_ms"] > -1
+        assert last_response["token_usage"]["prompt_tokens"] == 100
+        assert last_response["cost"] is not None
+
 
 def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
     # GIVEN a session with a context file
@@ -363,6 +370,13 @@ def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
         # Also check that display_content was generated and stored
         assert last_response["display_content"] is not None
         assert "```diff" in last_response["display_content"]
+
+        # AND the new metadata is present
+        assert last_response["model"] == "openrouter/google/gemini-2.5-pro"
+        assert last_response["timestamp"] is not None
+        assert last_response["duration_ms"] > -1
+        assert last_response["token_usage"]["completion_tokens"] == 50
+        assert last_response["cost"] is not None
 
 
 def test_add_multiple_files_successfully(tmp_path: Path) -> None:

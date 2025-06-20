@@ -36,6 +36,9 @@ class LastResponse(BaseModel):
 
     token_usage: TokenUsage | None = None
     cost: float | None = None
+    model: str | None = None
+    timestamp: str | None = None
+    duration_ms: int = -1
 
 
 class SessionData(BaseModel):

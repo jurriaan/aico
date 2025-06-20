@@ -1,6 +1,8 @@
 import json
 import sys
+import time
 import warnings
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
@@ -530,8 +532,10 @@ def prompt(
     display_content: str | None = None
     token_usage: TokenUsage | None = None
     message_cost: float | None = None
+    duration_ms: int = -1
 
     try:
+        start_time = time.monotonic()
         if mode == Mode.RAW:
             llm_response_content, token_usage, message_cost = _handle_raw_streaming(
                 session_data, messages
@@ -540,6 +544,7 @@ def prompt(
             llm_response_content, display_content, token_usage, message_cost = (
                 _handle_diff_streaming(session_data, original_file_contents, messages)
             )
+        duration_ms = int((time.monotonic() - start_time) * 1000)
     except Exception as e:
         # Specific error handling can be improved in handlers if needed
         print(f"Error calling LLM API: {e}", file=sys.stderr)
@@ -574,6 +579,9 @@ def prompt(
         display_content=display_content,
         token_usage=token_usage,
         cost=message_cost,
+        model=session_data.model,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        duration_ms=duration_ms,
     )
 
     _ = session_file.write_text(session_data.model_dump_json(indent=2))
