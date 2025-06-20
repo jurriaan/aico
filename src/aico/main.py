@@ -2,6 +2,7 @@ import json
 import sys
 import warnings
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Annotated
 
 import typer
@@ -16,10 +17,12 @@ from aico.diffing import (
 )
 from aico.history import history_app
 from aico.models import ChatMessage, LastResponse, Mode, SessionData, TokenUsage
-from aico.utils import SESSION_FILE_NAME, find_session_file
+from aico.utils import SESSION_FILE_NAME, find_session_file, format_tokens
 
 app = typer.Typer()
 app.add_typer(history_app, name="history")
+
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 # Workaround for `no_args_is_help` not working, keep this until #1240 in typer is fixed
@@ -257,70 +260,165 @@ def drop(
         raise typer.Exit(code=1)
 
 
-def _handle_raw_streaming(model: str, messages: list[dict[str, str]]) -> str:
+def _handle_raw_streaming(
+    session_data: SessionData, messages: list[dict[str, str]]
+) -> tuple[str, TokenUsage | None, float | None]:
     """Handles the streaming logic for raw mode with live markdown rendering."""
     import litellm
 
     llm_response_buffer: str = ""
-    with Live(console=Console(), auto_refresh=False) as live:
-        # Suppress Pydantic warnings that can occur internally within litellm.
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning)
-            stream = litellm.completion(
-                model=model,
-                messages=messages,
-                stream=True,
-            )
+    token_usage: TokenUsage | None = None
+
+    stream = litellm.completion(
+        model=session_data.model,
+        messages=messages,
+        stream=True,
+    )
+
+    if sys.stdout.isatty():
+        with Live(console=Console(), auto_refresh=False) as live:
             for chunk in stream:
+                if hasattr(chunk, "usage") and chunk.usage:
+                    usage = chunk.usage
+                    token_usage = TokenUsage(
+                        prompt_tokens=usage.prompt_tokens,
+                        completion_tokens=usage.completion_tokens,
+                        total_tokens=usage.total_tokens,
+                    )
                 delta = chunk.choices[0].delta.content or ""
                 llm_response_buffer += delta
                 live.update(Markdown(llm_response_buffer), refresh=True)
+    else:
+        for chunk in stream:
+            if hasattr(chunk, "usage") and chunk.usage:
+                usage = chunk.usage
+                token_usage = TokenUsage(
+                    prompt_tokens=usage.prompt_tokens,
+                    completion_tokens=usage.completion_tokens,
+                    total_tokens=usage.total_tokens,
+                )
+            delta = chunk.choices[0].delta.content or ""
+            llm_response_buffer += delta
 
-    return llm_response_buffer
+    message_cost: float | None = None
+    if token_usage:
+        mock_response = SimpleNamespace(usage=token_usage)
+        cost = litellm.completion_cost(
+            completion_response=mock_response, model=session_data.model
+        )
+        if cost is not None:
+            message_cost = cost
+
+        prompt_tokens_str = format_tokens(token_usage.prompt_tokens)
+        completion_tokens_str = format_tokens(token_usage.completion_tokens)
+
+        cost_str: str = ""
+        if message_cost is not None:
+            history_cost = sum(
+                msg.cost
+                for msg in session_data.chat_history
+                if msg.role == "assistant" and msg.cost is not None
+            )
+            session_cost = history_cost + message_cost
+            cost_str = (
+                f"Cost: ${message_cost:.2f} message, ${session_cost:.2f} session."
+            )
+
+        info_str = f"Tokens: {prompt_tokens_str} sent, {completion_tokens_str} received. {cost_str}"
+
+        if sys.stdout.isatty():
+            console = Console()
+            console.print(f"\n[dim]---[/dim]\n[dim]{info_str}[/dim]")
+        else:
+            print(info_str, file=sys.stderr)
+
+    return llm_response_buffer, token_usage, message_cost
 
 
 def _handle_diff_streaming(
-    original_file_contents: dict[str, str], model: str, messages: list[dict[str, str]]
-) -> tuple[str, str]:
+    session_data: SessionData,
+    original_file_contents: dict[str, str],
+    messages: list[dict[str, str]],
+) -> tuple[str, str | None, TokenUsage | None, float | None]:
     """Handles the streaming logic for diff mode with live updates."""
     import litellm
 
-    full_llm_response_buffer = ""
+    full_llm_response_buffer: str = ""
+    token_usage: TokenUsage | None = None
 
-    # We pass a new Console() to Live to ensure it has the right context for rendering.
-    with Live(console=Console(), auto_refresh=False) as live:
-        # Suppress Pydantic warnings that can occur internally within litellm.
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning)
-            stream = litellm.completion(
-                model=model,
-                messages=messages,
-                stream=True,
-            )
+    stream = litellm.completion(
+        model=session_data.model,
+        messages=messages,
+        stream=True,
+    )
+
+    if sys.stdout.isatty():
+        with Live(console=Console(), auto_refresh=False) as live:
             for chunk in stream:
+                if hasattr(chunk, "usage") and chunk.usage:
+                    usage = chunk.usage
+                    token_usage = TokenUsage(
+                        prompt_tokens=usage.prompt_tokens,
+                        completion_tokens=usage.completion_tokens,
+                        total_tokens=usage.total_tokens,
+                    )
                 delta = chunk.choices[0].delta.content or ""
                 if not delta:
                     continue
-
                 full_llm_response_buffer += delta
-
-                # Re-render the display content on each chunk.
-                # generate_display_content is robust; it will process completed blocks
-                # and leave partial/conversational text as is.
                 display_content = generate_display_content(
                     original_file_contents, full_llm_response_buffer
                 )
-
                 live.update(Markdown(display_content), refresh=True)
+    else:
+        for chunk in stream:
+            if hasattr(chunk, "usage") and chunk.usage:
+                usage = chunk.usage
+                token_usage = TokenUsage(
+                    prompt_tokens=usage.prompt_tokens,
+                    completion_tokens=usage.completion_tokens,
+                    total_tokens=usage.total_tokens,
+                )
+            delta = chunk.choices[0].delta.content or ""
+            full_llm_response_buffer += delta
 
-    # After the loop, do one final generation of the display content. This is a bit
-    # redundant but ensures the final returned value is perfectly in sync with the
-    # complete response buffer.
     final_display_content = generate_display_content(
         original_file_contents, full_llm_response_buffer
     )
 
-    return full_llm_response_buffer, final_display_content
+    message_cost: float | None = None
+    if token_usage:
+        mock_response = SimpleNamespace(usage=token_usage)
+        cost = litellm.completion_cost(
+            completion_response=mock_response, model=session_data.model
+        )
+        if cost is not None:
+            message_cost = cost
+
+        prompt_tokens_str = format_tokens(token_usage.prompt_tokens)
+        completion_tokens_str = format_tokens(token_usage.completion_tokens)
+
+        cost_str: str = ""
+        if message_cost is not None:
+            history_cost = sum(
+                msg.cost
+                for msg in session_data.chat_history
+                if msg.role == "assistant" and msg.cost is not None
+            )
+            session_cost = history_cost + message_cost
+            cost_str = (
+                f"Cost: ${message_cost:.2f} message, ${session_cost:.2f} session."
+            )
+
+        info_str = f"Tokens: {prompt_tokens_str} sent, {completion_tokens_str} received. {cost_str}"
+
+        if sys.stdout.isatty():
+            console = Console()
+            console.print(f"\n[dim]---[/dim]\n[dim]{info_str}[/dim]")
+        else:
+            print(info_str, file=sys.stderr)
+
+    return full_llm_response_buffer, final_display_content, token_usage, message_cost
 
 
 @app.command()
@@ -423,21 +521,17 @@ def prompt(
 
     try:
         if mode == Mode.RAW:
-            llm_response_content = _handle_raw_streaming(session_data.model, messages)
+            llm_response_content, token_usage, message_cost = _handle_raw_streaming(
+                session_data, messages
+            )
         elif mode == Mode.DIFF:
-            (
-                llm_response_content,
-                display_content,
-            ) = _handle_diff_streaming(
-                original_file_contents, session_data.model, messages
+            llm_response_content, display_content, token_usage, message_cost = (
+                _handle_diff_streaming(session_data, original_file_contents, messages)
             )
     except Exception as e:
         # Specific error handling can be improved in handlers if needed
         print(f"Error calling LLM API: {e}", file=sys.stderr)
         raise typer.Exit(code=1)
-
-    # TODO: Add token and cost calculation back for streaming mode.
-    # Currently omitted for simplicity during the streaming refactor.
 
     # 6. Process Output Based on Mode
     unified_diff: str | None = None
@@ -473,8 +567,15 @@ def prompt(
     _ = session_file.write_text(session_data.model_dump_json(indent=2))
 
     # 8. Print Final Output
-    # This phase is now complete, as all printing is handled inside the streaming
-    # handlers for a better user experience. Nothing more to do here.
+    # This phase handles non-interactive output. All interactive output is handled
+    # by the streaming functions.
+    if not sys.stdout.isatty():
+        if mode == Mode.DIFF:
+            if unified_diff:
+                print(unified_diff)
+        elif mode == Mode.RAW:
+            # For raw mode, the handler is silent in non-TTY, so we print the final result.
+            print(llm_response_content)
 
 
 if __name__ == "__main__":

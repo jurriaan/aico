@@ -222,24 +222,31 @@ def test_prompt_raw_mode(tmp_path: Path, mocker) -> None:
         code_file.write_text("def hello():\n    pass")
         runner.invoke(app, ["add", "code.py"])
 
-        # AND the LLM API is mocked
+        # AND the LLM API is mocked to return a stream of chunks
         mock_completion = mocker.patch("litellm.completion")
-        mock_response = mocker.MagicMock()
-        mock_response.choices[0].message.content = "This is a raw response."
-        mock_response.usage.prompt_tokens = 100
-        mock_response.usage.completion_tokens = 20
-        mock_response.usage.total_tokens = 120
-        mock_completion.return_value = mock_response
 
+        mock_chunk_1 = mocker.MagicMock()
+        mock_chunk_1.choices[0].delta.content = "This is a "
+        mock_chunk_2 = mocker.MagicMock()
+        mock_chunk_2.choices[0].delta.content = "raw response."
+        mock_chunks = [mock_chunk_1, mock_chunk_2]
+
+        mock_stream = mocker.MagicMock()
+        mock_stream.__iter__.return_value = iter(mock_chunks)
+        mock_stream.usage.prompt_tokens = 100
+        mock_stream.usage.completion_tokens = 20
+        mock_stream.usage.total_tokens = 120
+
+        mock_completion.return_value = mock_stream
         mocker.patch("litellm.completion_cost", return_value=0.001)
 
         # WHEN `aico prompt --mode raw` is run
         prompt_text = "Explain this code"
         result = runner.invoke(app, ["prompt", "--mode", "raw", prompt_text])
 
-        # THEN the command succeeds and prints the raw response
-        # Note: We don't need to mock rich, as CliRunner's stdout is not a TTY,
-        # so the raw content is printed directly.
+        # THEN the command succeeds and prints the raw response. This works because
+        # the test runner's stdout is not a TTY, so our handler silently
+        # accumulates the result, which is then printed by the main prompt command.
         assert result.exit_code == 0
         assert "This is a raw response." in result.stdout
 
@@ -287,7 +294,7 @@ def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
         code_file.write_text(original_content)
         runner.invoke(app, ["add", "code.py"])
 
-        # AND the LLM API is mocked to return a valid diff response
+        # AND the LLM API is mocked to return a stream of chunks for a diff
         llm_diff_response = (
             "File: code.py\n"
             "<<<<<<< SEARCH\n"
@@ -299,12 +306,21 @@ def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
             ">>>>>>> REPLACE"
         )
         mock_completion = mocker.patch("litellm.completion")
-        mock_response = mocker.MagicMock()
-        mock_response.choices[0].message.content = llm_diff_response
-        mock_response.usage.prompt_tokens = 150
-        mock_response.usage.completion_tokens = 50
-        mock_response.usage.total_tokens = 200
-        mock_completion.return_value = mock_response
+
+        # Simulate the response being streamed in two parts
+        mock_chunk_1 = mocker.MagicMock()
+        mock_chunk_1.choices[0].delta.content = llm_diff_response[:60]
+        mock_chunk_2 = mocker.MagicMock()
+        mock_chunk_2.choices[0].delta.content = llm_diff_response[60:]
+        mock_chunks = [mock_chunk_1, mock_chunk_2]
+
+        mock_stream = mocker.MagicMock()
+        mock_stream.__iter__.return_value = iter(mock_chunks)
+        mock_stream.usage.prompt_tokens = 150
+        mock_stream.usage.completion_tokens = 50
+        mock_stream.usage.total_tokens = 200
+
+        mock_completion.return_value = mock_stream
         mocker.patch("litellm.completion_cost", return_value=0.002)
 
         # WHEN `aico prompt --mode diff` is run
