@@ -26,7 +26,7 @@ from aico.models import (
     UserChatMessage,
 )
 from aico.tokens import tokens_app
-from aico.utils import SESSION_FILE_NAME, find_session_file, format_tokens
+from aico.utils import SESSION_FILE_NAME, find_session_file, format_tokens, load_session
 
 app = typer.Typer()
 app.add_typer(history_app, name="history")
@@ -86,22 +86,7 @@ def last() -> None:
     """
     Prints the last processed response from the AI to standard output.
     """
-    session_file = find_session_file()
-    if not session_file:
-        print(
-            f"Error: No session file '{SESSION_FILE_NAME}' found. Please run 'aico init' first.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
-
-    try:
-        session_data = SessionData.model_validate_json(session_file.read_text())
-    except ValidationError:
-        print(
-            "Error: Session file is corrupt or has an invalid format.", file=sys.stderr
-        )
-        raise typer.Exit(code=1)
-
+    _, session_data = load_session()
     last_resp = session_data.last_response
     if not last_resp:
         print("Error: No last response found in session.", file=sys.stderr)
@@ -140,23 +125,8 @@ def add(file_paths: list[Path]) -> None:
     """
     Adds one or more files to the context for the AI session.
     """
-    session_file = find_session_file()
-    if not session_file:
-        print(
-            f"Error: No session file '{SESSION_FILE_NAME}' found. Please run 'aico init' first.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
-
+    session_file, session_data = load_session()
     session_root = session_file.parent
-
-    try:
-        session_data = SessionData.model_validate_json(session_file.read_text())
-    except ValidationError:
-        print(
-            "Error: Session file is corrupt or has an invalid format.", file=sys.stderr
-        )
-        raise typer.Exit(code=1)
 
     files_were_added = False
     errors_found = False
@@ -221,23 +191,8 @@ def drop(
     """
     Drops one or more files from the context for the AI session.
     """
-    session_file = find_session_file()
-    if not session_file:
-        print(
-            f"Error: No session file '{SESSION_FILE_NAME}' found. Please run 'aico init' first.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
-
+    session_file, session_data = load_session()
     session_root = session_file.parent
-
-    try:
-        session_data = SessionData.model_validate_json(session_file.read_text())
-    except ValidationError:
-        print(
-            "Error: Session file is corrupt or has an invalid format.", file=sys.stderr
-        )
-        raise typer.Exit(code=1)
 
     files_were_dropped = False
     errors_found = False
@@ -462,22 +417,8 @@ def prompt(
     Sends a prompt to the AI with the current context.
     """
     # 1. Load State
-    session_file = find_session_file()
-    if not session_file:
-        print(
-            f"Error: No session file '{SESSION_FILE_NAME}' found. Please run 'aico init' first.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
-
+    session_file, session_data = load_session()
     session_root = session_file.parent
-    try:
-        session_data = SessionData.model_validate_json(session_file.read_text())
-    except ValidationError:
-        print(
-            "Error: Session file is corrupt or has an invalid format.", file=sys.stderr
-        )
-        raise typer.Exit(code=1)
 
     # 2. Prepare System Prompt
     if mode == Mode.DIFF:
