@@ -145,7 +145,7 @@ def _find_best_matching_filename(
     return None
 
 
-def _create_aipatch_from_match(match: re.Match) -> AIPatch:
+def _create_aipatch_from_match(match: re.Match[str]) -> AIPatch:
     """Helper to create an AIPatch from a regex match object."""
     return AIPatch(
         llm_file_path=match.group(1).strip(),
@@ -303,6 +303,19 @@ def _generate_diff_for_single_block(
     return "".join(diff_lines)
 
 
+def _create_markdown_diff_for_block(
+    match: re.Match[str], original_file_contents: dict[str, str]
+) -> str:
+    """Creates a markdown-formatted diff string from a single regex match of a file block."""
+    parsed_block = _create_aipatch_from_match(match)
+    diff_string = _generate_diff_for_single_block(parsed_block, original_file_contents)
+    # Create the markdown block, keeping the File: header from the original text
+    markdown_diff = (
+        f"File: {parsed_block.llm_file_path}\n```diff\n{diff_string.strip()}\n```\n"
+    )
+    return markdown_diff
+
+
 def generate_unified_diff(
     original_file_contents: dict[str, str], llm_response: str
 ) -> str:
@@ -324,7 +337,7 @@ def generate_unified_diff(
 def generate_display_content(
     original_file_contents: dict[str, str], llm_response: str
 ) -> str:
-    processed_parts = []
+    processed_parts: list[str] = []
     last_end = 0
     matches = list(_FILE_BLOCK_REGEX.finditer(llm_response))
 
@@ -335,15 +348,8 @@ def generate_display_content(
         # Append the conversational text before this `File:` block
         processed_parts.append(llm_response[last_end : match.start()])
 
-        # Process the found `File:` block
-        parsed_block = _create_aipatch_from_match(match)
-        diff_string = _generate_diff_for_single_block(
-            parsed_block, original_file_contents
-        )
-        # Create the markdown block, keeping the File: header from the original text
-        markdown_diff = (
-            f"File: {parsed_block.llm_file_path}\n```diff\n{diff_string.strip()}\n```\n"
-        )
+        # Process the found `File:` block by calling the helper
+        markdown_diff = _create_markdown_diff_for_block(match, original_file_contents)
         processed_parts.append(markdown_diff)
 
         last_end = match.end()
