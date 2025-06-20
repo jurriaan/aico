@@ -225,17 +225,24 @@ def test_prompt_raw_mode(tmp_path: Path, mocker) -> None:
         # AND the LLM API is mocked to return a stream of chunks
         mock_completion = mocker.patch("litellm.completion")
 
+        # Create a mock for the usage data, expected on a stream chunk
+        mock_usage_obj = mocker.MagicMock()
+        mock_usage_obj.prompt_tokens = 100
+        mock_usage_obj.completion_tokens = 20
+        mock_usage_obj.total_tokens = 120
+
         mock_chunk_1 = mocker.MagicMock()
         mock_chunk_1.choices[0].delta.content = "This is a "
+        mock_chunk_1.usage = None  # Ensure intermediate chunks have no usage data
+
         mock_chunk_2 = mocker.MagicMock()
         mock_chunk_2.choices[0].delta.content = "raw response."
+        mock_chunk_2.usage = mock_usage_obj  # Attach usage data to the final chunk
+
         mock_chunks = [mock_chunk_1, mock_chunk_2]
 
         mock_stream = mocker.MagicMock()
         mock_stream.__iter__.return_value = iter(mock_chunks)
-        mock_stream.usage.prompt_tokens = 100
-        mock_stream.usage.completion_tokens = 20
-        mock_stream.usage.total_tokens = 120
 
         mock_completion.return_value = mock_stream
         mocker.patch("litellm.completion_cost", return_value=0.001)
@@ -308,17 +315,23 @@ def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
         mock_completion = mocker.patch("litellm.completion")
 
         # Simulate the response being streamed in two parts
+        mock_usage_obj = mocker.MagicMock()
+        mock_usage_obj.prompt_tokens = 150
+        mock_usage_obj.completion_tokens = 50
+        mock_usage_obj.total_tokens = 200
+
         mock_chunk_1 = mocker.MagicMock()
         mock_chunk_1.choices[0].delta.content = llm_diff_response[:60]
+        mock_chunk_1.usage = None
+
         mock_chunk_2 = mocker.MagicMock()
         mock_chunk_2.choices[0].delta.content = llm_diff_response[60:]
+        mock_chunk_2.usage = mock_usage_obj
+
         mock_chunks = [mock_chunk_1, mock_chunk_2]
 
         mock_stream = mocker.MagicMock()
         mock_stream.__iter__.return_value = iter(mock_chunks)
-        mock_stream.usage.prompt_tokens = 150
-        mock_stream.usage.completion_tokens = 50
-        mock_stream.usage.total_tokens = 200
 
         mock_completion.return_value = mock_stream
         mocker.patch("litellm.completion_cost", return_value=0.002)
@@ -335,6 +348,10 @@ def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
         assert "-    pass" in result.stdout
         assert "+def hello(name: str):" in result.stdout
         assert "+    print(f'Hello, {name}!')" in result.stdout
+
+        # AND it prints token and cost info to stderr
+        assert "Tokens: 150 sent, 50 received." in result.stderr
+        assert "Cost: $0.00 message" in result.stderr
 
         # AND the session history is updated
         session_file = Path(td) / SESSION_FILE_NAME

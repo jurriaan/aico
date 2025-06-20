@@ -2,7 +2,6 @@ import json
 import sys
 import warnings
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Annotated
 
 import typer
@@ -260,6 +259,52 @@ def drop(
         raise typer.Exit(code=1)
 
 
+def _calculate_and_display_cost(
+    token_usage: TokenUsage, session_data: SessionData
+) -> float | None:
+    """Calculates the message cost and displays token/cost information."""
+    import litellm
+
+    message_cost: float | None = None
+    # Create a mock response object as a dictionary.
+    # This provides litellm.completion_cost with the usage data AND the model name
+    # in a format it expects for calculating costs robustly.
+    mock_response = {
+        "usage": {
+            "prompt_tokens": token_usage.prompt_tokens,
+            "completion_tokens": token_usage.completion_tokens,
+            "total_tokens": token_usage.total_tokens,
+        },
+        "model": session_data.model,
+    }
+    cost = litellm.completion_cost(completion_response=mock_response)
+    if cost is not None:
+        message_cost = cost
+
+    prompt_tokens_str = format_tokens(token_usage.prompt_tokens)
+    completion_tokens_str = format_tokens(token_usage.completion_tokens)
+
+    cost_str: str = ""
+    if message_cost is not None:
+        history_cost = sum(
+            msg.cost
+            for msg in session_data.chat_history
+            if msg.role == "assistant" and msg.cost is not None
+        )
+        session_cost = history_cost + message_cost
+        cost_str = f"Cost: ${message_cost:.2f} message, ${session_cost:.2f} session."
+
+    info_str = f"Tokens: {prompt_tokens_str} sent, {completion_tokens_str} received. {cost_str}"
+
+    if sys.stdout.isatty():
+        console = Console()
+        console.print(f"\n[dim]---[/dim]\n[dim]{info_str}[/dim]")
+    else:
+        print(info_str, file=sys.stderr)
+
+    return message_cost
+
+
 def _handle_raw_streaming(
     session_data: SessionData, messages: list[dict[str, str]]
 ) -> tuple[str, TokenUsage | None, float | None]:
@@ -273,6 +318,7 @@ def _handle_raw_streaming(
         model=session_data.model,
         messages=messages,
         stream=True,
+        stream_options={"include_usage": True},
     )
 
     if sys.stdout.isatty():
@@ -285,9 +331,11 @@ def _handle_raw_streaming(
                         completion_tokens=usage.completion_tokens,
                         total_tokens=usage.total_tokens,
                     )
-                delta = chunk.choices[0].delta.content or ""
-                llm_response_buffer += delta
-                live.update(Markdown(llm_response_buffer), refresh=True)
+
+                if hasattr(chunk, "choices") and chunk.choices:
+                    delta = chunk.choices[0].delta.content or ""
+                    llm_response_buffer += delta
+                    live.update(Markdown(llm_response_buffer), refresh=True)
     else:
         for chunk in stream:
             if hasattr(chunk, "usage") and chunk.usage:
@@ -297,40 +345,21 @@ def _handle_raw_streaming(
                     completion_tokens=usage.completion_tokens,
                     total_tokens=usage.total_tokens,
                 )
-            delta = chunk.choices[0].delta.content or ""
-            llm_response_buffer += delta
+            if hasattr(chunk, "choices") and chunk.choices:
+                delta = chunk.choices[0].delta.content or ""
+                llm_response_buffer += delta
+
+    if not token_usage and hasattr(stream, "usage") and stream.usage:
+        usage = stream.usage
+        token_usage = TokenUsage(
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
+        )
 
     message_cost: float | None = None
     if token_usage:
-        mock_response = SimpleNamespace(usage=token_usage)
-        cost = litellm.completion_cost(
-            completion_response=mock_response, model=session_data.model
-        )
-        if cost is not None:
-            message_cost = cost
-
-        prompt_tokens_str = format_tokens(token_usage.prompt_tokens)
-        completion_tokens_str = format_tokens(token_usage.completion_tokens)
-
-        cost_str: str = ""
-        if message_cost is not None:
-            history_cost = sum(
-                msg.cost
-                for msg in session_data.chat_history
-                if msg.role == "assistant" and msg.cost is not None
-            )
-            session_cost = history_cost + message_cost
-            cost_str = (
-                f"Cost: ${message_cost:.2f} message, ${session_cost:.2f} session."
-            )
-
-        info_str = f"Tokens: {prompt_tokens_str} sent, {completion_tokens_str} received. {cost_str}"
-
-        if sys.stdout.isatty():
-            console = Console()
-            console.print(f"\n[dim]---[/dim]\n[dim]{info_str}[/dim]")
-        else:
-            print(info_str, file=sys.stderr)
+        message_cost = _calculate_and_display_cost(token_usage, session_data)
 
     return llm_response_buffer, token_usage, message_cost
 
@@ -350,6 +379,7 @@ def _handle_diff_streaming(
         model=session_data.model,
         messages=messages,
         stream=True,
+        stream_options={"include_usage": True},
     )
 
     if sys.stdout.isatty():
@@ -362,14 +392,15 @@ def _handle_diff_streaming(
                         completion_tokens=usage.completion_tokens,
                         total_tokens=usage.total_tokens,
                     )
-                delta = chunk.choices[0].delta.content or ""
-                if not delta:
-                    continue
-                full_llm_response_buffer += delta
-                display_content = generate_display_content(
-                    original_file_contents, full_llm_response_buffer
-                )
-                live.update(Markdown(display_content), refresh=True)
+                if hasattr(chunk, "choices") and chunk.choices:
+                    delta = chunk.choices[0].delta.content or ""
+                    if not delta:
+                        continue
+                    full_llm_response_buffer += delta
+                    display_content = generate_display_content(
+                        original_file_contents, full_llm_response_buffer
+                    )
+                    live.update(Markdown(display_content), refresh=True)
     else:
         for chunk in stream:
             if hasattr(chunk, "usage") and chunk.usage:
@@ -379,8 +410,17 @@ def _handle_diff_streaming(
                     completion_tokens=usage.completion_tokens,
                     total_tokens=usage.total_tokens,
                 )
-            delta = chunk.choices[0].delta.content or ""
-            full_llm_response_buffer += delta
+            if hasattr(chunk, "choices") and chunk.choices:
+                delta = chunk.choices[0].delta.content or ""
+                full_llm_response_buffer += delta
+
+    if not token_usage and hasattr(stream, "usage") and stream.usage:
+        usage = stream.usage
+        token_usage = TokenUsage(
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
+        )
 
     final_display_content = generate_display_content(
         original_file_contents, full_llm_response_buffer
@@ -388,35 +428,7 @@ def _handle_diff_streaming(
 
     message_cost: float | None = None
     if token_usage:
-        mock_response = SimpleNamespace(usage=token_usage)
-        cost = litellm.completion_cost(
-            completion_response=mock_response, model=session_data.model
-        )
-        if cost is not None:
-            message_cost = cost
-
-        prompt_tokens_str = format_tokens(token_usage.prompt_tokens)
-        completion_tokens_str = format_tokens(token_usage.completion_tokens)
-
-        cost_str: str = ""
-        if message_cost is not None:
-            history_cost = sum(
-                msg.cost
-                for msg in session_data.chat_history
-                if msg.role == "assistant" and msg.cost is not None
-            )
-            session_cost = history_cost + message_cost
-            cost_str = (
-                f"Cost: ${message_cost:.2f} message, ${session_cost:.2f} session."
-            )
-
-        info_str = f"Tokens: {prompt_tokens_str} sent, {completion_tokens_str} received. {cost_str}"
-
-        if sys.stdout.isatty():
-            console = Console()
-            console.print(f"\n[dim]---[/dim]\n[dim]{info_str}[/dim]")
-        else:
-            print(info_str, file=sys.stderr)
+        message_cost = _calculate_and_display_cost(token_usage, session_data)
 
     return full_llm_response_buffer, final_display_content, token_usage, message_cost
 

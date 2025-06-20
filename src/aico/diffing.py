@@ -8,7 +8,7 @@ from aico.models import AIPatch
 # This single regex is the core of the parser. It finds a complete `File:` block
 # that contains a valid SEARCH/REPLACE block.
 _FILE_BLOCK_REGEX = re.compile(
-    r"^File: (.*?)\n(^ *<<<<<<< SEARCH\n(.*?)\s*=======\n\s*(.*?)\s*>>>>>>> REPLACE\s*$)",
+    r"^File: (.*?)\n(^ *<<<<<<< SEARCH\n(.*?)\s*=======\n(.*?)\s*>>>>>>> REPLACE\s*$)",
     re.MULTILINE | re.DOTALL | re.UNICODE,
 )
 
