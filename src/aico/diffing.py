@@ -259,7 +259,9 @@ class ProcessedDiffBlock(TypedDict):
 
 def _process_llm_response_stream(
     original_file_contents: dict[str, str], llm_response: str
-) -> Iterator[tuple[Literal["conversation", "diff"], str | ProcessedDiffBlock]]:
+) -> Iterator[
+    tuple[Literal["conversation"], str] | tuple[Literal["diff"], ProcessedDiffBlock]
+]:
     """
     Parses an LLM response, processes diff blocks sequentially, and yields results.
 
@@ -315,9 +317,7 @@ def _process_llm_response_stream(
             content_before_patch = ""
             is_new_file = True
         else:
-            diff_string = _create_file_not_found_error_diff(
-                parsed_block.llm_file_path
-            )
+            diff_string = _create_file_not_found_error_diff(parsed_block.llm_file_path)
             yield (
                 "diff",
                 ProcessedDiffBlock(
@@ -387,10 +387,14 @@ def generate_unified_diff(
     diff_parts: list[str] = []
     stream = _process_llm_response_stream(original_file_contents, llm_response)
 
-    for block_type, data in stream:
-        if block_type == "diff":
-            # data is a ProcessedDiffBlock
-            diff_parts.append(data["unified_diff"])
+    for item in stream:
+        match item:
+            case ("diff", diff_block):
+                # diff_block is now correctly typed as ProcessedDiffBlock
+                diff_parts.append(diff_block["unified_diff"])
+            case ("conversation", _):
+                # Ignore conversational text for the unified diff
+                pass
 
     return "".join(diff_parts)
 
@@ -405,15 +409,17 @@ def generate_display_content(
     processed_parts: list[str] = []
     stream = _process_llm_response_stream(original_file_contents, llm_response)
 
-    for block_type, data in stream:
-        if block_type == "conversation":
-            processed_parts.append(str(data))
-        elif block_type == "diff":
-            # data is a ProcessedDiffBlock
-            diff_string = data["unified_diff"]
-            markdown_diff = (
-                f"File: {data['llm_file_path']}\n```diff\n{diff_string.strip()}\n```\n"
-            )
-            processed_parts.append(markdown_diff)
+    for item in stream:
+        match item:
+            case ("conversation", text):
+                processed_parts.append(text)
+            case ("diff", diff_block):
+                # diff_block is ProcessedDiffBlock, its values are destructured
+                diff_string = diff_block["unified_diff"]
+                llm_file_path = diff_block["llm_file_path"]
+                markdown_diff = (
+                    f"File: {llm_file_path}\n```diff\n{diff_string.strip()}\n```\n"
+                )
+                processed_parts.append(markdown_diff)
 
     return "".join(processed_parts)

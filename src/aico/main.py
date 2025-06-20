@@ -99,32 +99,33 @@ def last() -> None:
         print("Error: No last response found in session.", file=sys.stderr)
         raise typer.Exit(code=1)
 
-    if last_resp.mode_used == Mode.RAW:
-        # In RAW mode, raw_content is the single source of truth.
-        content = last_resp.raw_content
-        if sys.stdout.isatty():
-            from rich.console import Console
-            from rich.markdown import Markdown
-
-            console = Console()
-            console.print(Markdown(content))
-        else:
-            print(content)
-
-    elif last_resp.mode_used == Mode.DIFF:
-        # In DIFF mode, we choose between two different derived representations.
-        if sys.stdout.isatty():
-            # For interactive terminals, show the rich display content.
-            if last_resp.display_content:
+    match last_resp.mode_used:
+        case Mode.RAW:
+            # In RAW mode, raw_content is the single source of truth.
+            content = last_resp.raw_content
+            if sys.stdout.isatty():
                 from rich.console import Console
                 from rich.markdown import Markdown
 
                 console = Console()
-                console.print(Markdown(last_resp.display_content))
-        else:
-            # For pipes, print the clean, machine-readable diff.
-            if last_resp.unified_diff:
-                print(last_resp.unified_diff)
+                console.print(Markdown(content))
+            else:
+                print(content)
+
+        case Mode.DIFF:
+            # In DIFF mode, we choose between two different derived representations.
+            if sys.stdout.isatty():
+                # For interactive terminals, show the rich display content.
+                if last_resp.display_content:
+                    from rich.console import Console
+                    from rich.markdown import Markdown
+
+                    console = Console()
+                    console.print(Markdown(last_resp.display_content))
+            else:
+                # For pipes, print the clean, machine-readable diff.
+                if last_resp.unified_diff:
+                    print(last_resp.unified_diff)
 
 
 @app.command()
@@ -461,14 +462,20 @@ def prompt(
 
     try:
         start_time = time.monotonic()
-        if mode == Mode.RAW:
-            llm_response_content, token_usage, message_cost = _handle_raw_streaming(
-                session_data, messages
-            )
-        elif mode == Mode.DIFF:
-            llm_response_content, display_content, token_usage, message_cost = (
-                _handle_diff_streaming(session_data, original_file_contents, messages)
-            )
+        match mode:
+            case Mode.RAW:
+                llm_response_content, token_usage, message_cost = _handle_raw_streaming(
+                    session_data, messages
+                )
+            case Mode.DIFF:
+                (
+                    llm_response_content,
+                    display_content,
+                    token_usage,
+                    message_cost,
+                ) = _handle_diff_streaming(
+                    session_data, original_file_contents, messages
+                )
         duration_ms = int((time.monotonic() - start_time) * 1000)
     except Exception as e:
         # Specific error handling can be improved in handlers if needed
@@ -526,12 +533,13 @@ def prompt(
     # This phase handles non-interactive output. All interactive output is handled
     # by the streaming functions.
     if not sys.stdout.isatty():
-        if mode == Mode.DIFF:
-            if unified_diff:
-                print(unified_diff)
-        elif mode == Mode.RAW:
-            # For raw mode, the handler is silent in non-TTY, so we print the final result.
-            print(llm_response_content)
+        match mode:
+            case Mode.DIFF:
+                if unified_diff:
+                    print(unified_diff)
+            case Mode.RAW:
+                # For raw mode, the handler is silent in non-TTY, so we print the final result.
+                print(llm_response_content)
 
 
 if __name__ == "__main__":
