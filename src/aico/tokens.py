@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.table import Table
 
 from aico.models import TokenInfo, TokenReport
-from aico.utils import load_session
+from aico.utils import DIFF_MODE_INSTRUCTIONS, load_session
 
 tokens_app = typer.Typer(
     help="Commands for inspecting prompt token usage and costs.",
@@ -28,28 +28,7 @@ def tokens(
     console = Console()
 
     # Base system prompt + diff mode instructions (worst-case scenario for tokens)
-    system_prompt = (
-        "You are an expert pair programmer."
-        "\n\n---\n"
-        "IMPORTANT: You are an automated code generation tool. Your response MUST ONLY contain one or more raw SEARCH/REPLACE blocks. "
-        "You MUST NOT add any other text, commentary, or markdown. "
-        "Your entire response must strictly follow the format specified below.\n"
-        "- To create a new file, use an empty SEARCH block.\n"
-        "- To delete a file, provide a SEARCH block with the entire file content and an empty REPLACE block.\n\n"
-        "EXAMPLE of a multi-file change:\n"
-        "File: path/to/existing/file.py\n"
-        "<<<<<<< SEARCH\n"
-        "    # code to be changed\n"
-        "=======\n"
-        "    # the new code\n"
-        ">>>>>>> REPLACE\n"
-        "File: path/to/new/file.py\n"
-        "<<<<<<< SEARCH\n"
-        "=======\n"
-        "def new_function():\n"
-        "    pass\n"
-        ">>>>>>> REPLACE"
-    )
+    system_prompt = "You are an expert pair programmer." + DIFF_MODE_INSTRUCTIONS
 
     components: list[TokenInfo] = []
     total_tokens = 0

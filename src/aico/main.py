@@ -26,7 +26,14 @@ from aico.models import (
     UserChatMessage,
 )
 from aico.tokens import tokens_app
-from aico.utils import SESSION_FILE_NAME, find_session_file, format_tokens, load_session
+from aico.utils import (
+    DIFF_MODE_INSTRUCTIONS,
+    SESSION_FILE_NAME,
+    find_session_file,
+    format_tokens,
+    get_relative_path_or_error,
+    load_session,
+)
 
 app = typer.Typer()
 app.add_typer(history_app, name="history")
@@ -137,19 +144,11 @@ def add(file_paths: list[Path]) -> None:
             errors_found = True
             continue
 
-        abs_file_path = file_path.resolve()
+        relative_path_str = get_relative_path_or_error(file_path, session_root)
 
-        try:
-            relative_path = abs_file_path.relative_to(session_root)
-        except ValueError:
-            print(
-                f"Error: File '{abs_file_path}' is outside the session root '{session_root}'. Files must be within the same directory tree as the session file.",
-                file=sys.stderr,
-            )
+        if not relative_path_str:
             errors_found = True
             continue
-
-        relative_path_str = str(relative_path)
 
         if relative_path_str not in session_data.context_files:
             session_data.context_files.append(relative_path_str)
@@ -200,12 +199,9 @@ def drop(
     new_context_files = session_data.context_files[:]
 
     for file_path in file_paths:
-        abs_file_path = file_path.resolve()
+        relative_path_str = get_relative_path_or_error(file_path, session_root)
 
-        try:
-            relative_path_str = str(abs_file_path.relative_to(session_root))
-        except ValueError:
-            print(f"Error: File not in context: {file_path}", file=sys.stderr)
+        if not relative_path_str:
             errors_found = True
             continue
 
@@ -422,28 +418,7 @@ def prompt(
 
     # 2. Prepare System Prompt
     if mode == Mode.DIFF:
-        formatting_rule = (
-            "\n\n---\n"
-            "IMPORTANT: You are an automated code generation tool. Your response MUST ONLY contain one or more raw SEARCH/REPLACE blocks. "
-            "You MUST NOT add any other text, commentary, or markdown. "
-            "Your entire response must strictly follow the format specified below.\n"
-            "- To create a new file, use an empty SEARCH block.\n"
-            "- To delete a file, provide a SEARCH block with the entire file content and an empty REPLACE block.\n\n"
-            "EXAMPLE of a multi-file change:\n"
-            "File: path/to/existing/file.py\n"
-            "<<<<<<< SEARCH\n"
-            "    # code to be changed\n"
-            "=======\n"
-            "    # the new code\n"
-            ">>>>>>> REPLACE\n"
-            "File: path/to/new/file.py\n"
-            "<<<<<<< SEARCH\n"
-            "=======\n"
-            "def new_function():\n"
-            "    pass\n"
-            ">>>>>>> REPLACE"
-        )
-        system_prompt += formatting_rule
+        system_prompt += DIFF_MODE_INSTRUCTIONS
 
     # 3. Construct User Prompt
     context_str = "<context>\n"
