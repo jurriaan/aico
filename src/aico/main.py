@@ -17,7 +17,14 @@ from aico.diffing import (
     generate_unified_diff,
 )
 from aico.history import history_app
-from aico.models import ChatMessage, LastResponse, Mode, SessionData, TokenUsage
+from aico.models import (
+    AssistantChatMessage,
+    LastResponse,
+    Mode,
+    SessionData,
+    TokenUsage,
+    UserChatMessage,
+)
 from aico.utils import SESSION_FILE_NAME, find_session_file, format_tokens
 
 app = typer.Typer()
@@ -291,7 +298,7 @@ def _calculate_and_display_cost(
         history_cost = sum(
             msg.cost
             for msg in session_data.chat_history
-            if msg.role == "assistant" and msg.cost is not None
+            if isinstance(msg, AssistantChatMessage) and msg.cost is not None
         )
         session_cost = history_cost + message_cost
         cost_str = f"Cost: ${message_cost:.2f} message, ${session_cost:.2f} session."
@@ -559,19 +566,30 @@ def prompt(
             original_file_contents, llm_response_content
         )
 
-    # 7. Update State
+    # 7. Update State & Save
+    assistant_response_timestamp = datetime.now(timezone.utc).isoformat()
+
     session_data.chat_history.append(
-        ChatMessage(role="user", content=prompt_text, mode=mode)
+        UserChatMessage(
+            role="user",
+            content=prompt_text,
+            mode=mode,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
     )
     session_data.chat_history.append(
-        ChatMessage(
+        AssistantChatMessage(
             role="assistant",
             content=llm_response_content,
             mode=mode,
             token_usage=token_usage,
             cost=message_cost,
+            model=session_data.model,
+            timestamp=assistant_response_timestamp,
+            duration_ms=duration_ms,
         )
     )
+
     session_data.last_response = LastResponse(
         raw_content=llm_response_content,
         mode_used=mode,
@@ -580,7 +598,7 @@ def prompt(
         token_usage=token_usage,
         cost=message_cost,
         model=session_data.model,
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=assistant_response_timestamp,
         duration_ms=duration_ms,
     )
 

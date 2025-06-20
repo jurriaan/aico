@@ -274,15 +274,26 @@ def test_prompt_raw_mode(tmp_path: Path, mocker) -> None:
         assert "Tokens: 100 sent, 20 received." in result.stderr
         assert "Cost: $0.00 message" in result.stderr
 
-        # AND the session history is updated
+        # AND the session history is updated with the new rich models
         session_file = Path(td) / SESSION_FILE_NAME
         session_data = json.loads(session_file.read_text())
 
         assert len(session_data["chat_history"]) == 2
-        assert session_data["chat_history"][0]["role"] == "user"
-        assert session_data["chat_history"][0]["content"] == prompt_text
-        assert session_data["chat_history"][1]["role"] == "assistant"
-        assert session_data["chat_history"][1]["content"] == "This is a raw response."
+        user_msg = session_data["chat_history"][0]
+        assert user_msg["role"] == "user"
+        assert user_msg["content"] == prompt_text
+        assert user_msg["mode"] == "raw"
+        assert "timestamp" in user_msg
+
+        assistant_msg = session_data["chat_history"][1]
+        assert assistant_msg["role"] == "assistant"
+        assert assistant_msg["content"] == "This is a raw response."
+        assert assistant_msg["mode"] == "raw"
+        assert "timestamp" in assistant_msg
+        assert assistant_msg["model"] == "openrouter/google/gemini-2.5-pro"
+        assert assistant_msg["duration_ms"] > -1
+        assert assistant_msg["token_usage"]["prompt_tokens"] == 100
+        assert assistant_msg["cost"] is not None
 
         last_response = session_data["last_response"]
         assert last_response["raw_content"] == "This is a raw response."
@@ -360,10 +371,25 @@ def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
         assert "Tokens: 150 sent, 50 received." in result.stderr
         assert "Cost: $0.00 message" in result.stderr
 
-        # AND the session history is updated
+        # AND the session history is updated with the new rich models
         session_file = Path(td) / SESSION_FILE_NAME
         session_data = json.loads(session_file.read_text())
         assert len(session_data["chat_history"]) == 2
+        user_msg = session_data["chat_history"][0]
+        assert user_msg["role"] == "user"
+        assert user_msg["content"] == prompt_text
+        assert user_msg["mode"] == "diff"
+        assert "timestamp" in user_msg
+
+        assistant_msg = session_data["chat_history"][1]
+        assert assistant_msg["role"] == "assistant"
+        assert assistant_msg["content"] == llm_diff_response
+        assert assistant_msg["mode"] == "diff"
+        assert assistant_msg["model"] == "openrouter/google/gemini-2.5-pro"
+        assert assistant_msg["token_usage"]["prompt_tokens"] == 150
+        assert assistant_msg["cost"] is not None
+        assert "timestamp" in assistant_msg
+
         last_response = session_data["last_response"]
         assert last_response["raw_content"] == llm_diff_response
         assert last_response["unified_diff"] == result.stdout.strip()

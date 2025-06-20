@@ -1,11 +1,12 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from aico.main import app
-from aico.models import ChatMessage, Mode, SessionData
+from aico.models import Mode, SessionData, UserChatMessage
 from aico.utils import SESSION_FILE_NAME
 
 runner = CliRunner()
@@ -17,7 +18,12 @@ def test_history_set_with_negative_index_argument(tmp_path: Path) -> None:
         session_data = SessionData(
             model="test-model",
             chat_history=[
-                ChatMessage(role="user", content=f"msg {i}", mode=Mode.RAW)
+                UserChatMessage(
+                    role="user",
+                    content=f"msg {i}",
+                    mode=Mode.RAW,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
                 for i in range(10)
             ],
         )
@@ -43,7 +49,12 @@ def test_history_view_shows_correct_status(tmp_path: Path) -> None:
         session_data = SessionData(
             model="test-model",
             chat_history=[
-                ChatMessage(role="user", content=f"msg {i}", mode=Mode.RAW)
+                UserChatMessage(
+                    role="user",
+                    content=f"msg {i}",
+                    mode=Mode.RAW,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
                 for i in range(10)
             ],
             history_start_index=4,
@@ -67,7 +78,12 @@ def test_history_reset_sets_index_to_zero(tmp_path: Path) -> None:
         session_data = SessionData(
             model="test-model",
             chat_history=[
-                ChatMessage(role="user", content=f"msg {i}", mode=Mode.RAW)
+                UserChatMessage(
+                    role="user",
+                    content=f"msg {i}",
+                    mode=Mode.RAW,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
                 for i in range(10)
             ],
             history_start_index=5,
@@ -93,7 +109,12 @@ def test_history_set_with_positive_index(tmp_path: Path) -> None:
         session_data = SessionData(
             model="test-model",
             chat_history=[
-                ChatMessage(role="user", content=f"msg {i}", mode=Mode.RAW)
+                UserChatMessage(
+                    role="user",
+                    content=f"msg {i}",
+                    mode=Mode.RAW,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
                 for i in range(10)
             ],
         )
@@ -128,7 +149,12 @@ def test_history_set_fails_with_invalid_index(
         session_data = SessionData(
             model="test-model",
             chat_history=[
-                ChatMessage(role="user", content=f"msg {i}", mode=Mode.RAW)
+                UserChatMessage(
+                    role="user",
+                    content=f"msg {i}",
+                    mode=Mode.RAW,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
                 for i in range(10)
             ],
             history_start_index=5,
