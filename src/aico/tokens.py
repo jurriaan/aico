@@ -1,8 +1,11 @@
+from typing import Annotated
+
 import litellm
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from aico.models import TokenInfo, TokenReport
 from aico.utils import load_session
 
 tokens_app = typer.Typer(
@@ -11,7 +14,11 @@ tokens_app = typer.Typer(
 
 
 @tokens_app.callback(invoke_without_command=True)
-def tokens() -> None:
+def tokens(
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Output the report as JSON.")
+    ] = False,
+) -> None:
     """
     Calculates and displays the token usage and cost for the current session context.
     """
@@ -44,14 +51,16 @@ def tokens() -> None:
         ">>>>>>> REPLACE"
     )
 
-    components = []
+    components: list[TokenInfo] = []
     total_tokens = 0
 
     # 1. System Prompt Tokens
     system_prompt_tokens = litellm.token_counter(
         model=session_data.model, text=system_prompt
     )
-    components.append({"description": "system prompt", "tokens": system_prompt_tokens})
+    components.append(
+        TokenInfo(description="system prompt", tokens=system_prompt_tokens)
+    )
     total_tokens += system_prompt_tokens
 
     # 2. Chat History Tokens
@@ -65,11 +74,11 @@ def tokens() -> None:
             model=session_data.model, messages=history_messages
         )
         components.append(
-            {
-                "description": "chat history",
-                "tokens": history_tokens,
-                "note": "(use 'aico history' to manage)",
-            }
+            TokenInfo(
+                description="chat history",
+                tokens=history_tokens,
+                note="(use 'aico history' to manage)",
+            )
         )
         total_tokens += history_tokens
 
@@ -84,11 +93,11 @@ def tokens() -> None:
                 model=session_data.model, text=file_prompt_wrapper
             )
             components.append(
-                {
-                    "description": file_path_str,
-                    "tokens": file_tokens,
-                    "note": "(use 'aico drop' to remove)",
-                }
+                TokenInfo(
+                    description=file_path_str,
+                    tokens=file_tokens,
+                    note="(use 'aico drop' to remove)",
+                )
             )
             total_tokens += file_tokens
         except FileNotFoundError:
@@ -100,8 +109,6 @@ def tokens() -> None:
     total_cost = 0.0
     has_cost_info = False
 
-    # Check for cost info *once* using a dummy call with the correct format,
-    # mimicking the structure used in main.py.
     dummy_response = {
         "usage": {"prompt_tokens": 1, "completion_tokens": 0},
         "model": session_data.model,
@@ -110,24 +117,42 @@ def tokens() -> None:
         has_cost_info = True
 
     if has_cost_info:
-        for item in components:
-            # We only have prompt tokens, so completion_tokens is 0.
+        for component in components:
             mock_response = {
                 "usage": {
-                    "prompt_tokens": item["tokens"],
+                    "prompt_tokens": component.tokens,
                     "completion_tokens": 0,
-                    "total_tokens": item["tokens"],
+                    "total_tokens": component.tokens,
                 },
                 "model": session_data.model,
             }
             cost = litellm.completion_cost(completion_response=mock_response)
-            item["cost"] = cost if cost is not None else 0.0
-            total_cost += item["cost"]
+            component.cost = cost
+            if cost:
+                total_cost += cost
 
+    # Get context window info
+    model_info: litellm.router.ModelInfo = litellm.get_model_info(session_data.model)
+    remaining_tokens: int | None = None
+    if max_input_tokens := model_info["max_input_tokens"]:
+        remaining_tokens = max_input_tokens - total_tokens
+
+    token_report = TokenReport(
+        model=session_data.model,
+        components=components,
+        total_tokens=total_tokens,
+        total_cost=total_cost if has_cost_info else None,
+        max_input_tokens=max_input_tokens,
+        remaining_tokens=remaining_tokens,
+    )
+
+    if json_output:
+        print(token_report.model_dump_json(indent=2))
+        return
 
     # Display results
     console.print(
-        f"Approximate context window usage for {session_data.model}, in tokens:\n"
+        f"Approximate context window usage for {token_report.model}, in tokens:\n"
     )
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column(justify="right")  # Tokens
@@ -136,19 +161,17 @@ def tokens() -> None:
     table.add_column()  # Description
     table.add_column(style="dim")  # Note
 
-    for item in components:
-        row_items = [f"{item['tokens']:,}"]
+    for item in token_report.components:
+        row_items = [f"{item.tokens:,}"]
         if has_cost_info:
-            cost = item.get("cost", 0.0)
-            # Use 5 decimal places for precision on small costs
+            cost = item.cost or 0.0
             row_items.append(f"${cost:.5f}")
-        row_items.append(item["description"])
-        row_items.append(item.get("note", ""))
+        row_items.append(item.description)
+        row_items.append(item.note or "")
         table.add_row(*row_items)
 
     console.print(table)
 
-    # Use a rule for the separator
     separator_len = 22
     if has_cost_info:
         separator_len += 12  # Account for cost column + padding
@@ -160,10 +183,32 @@ def tokens() -> None:
         total_table.add_column(justify="right")  # Cost
     total_table.add_column()  # "total" label
 
-    total_row = [f"{total_tokens:,}"]
+    total_row = [f"{token_report.total_tokens:,}"]
     if has_cost_info:
-        total_row.append(f"${total_cost:.5f}")
+        total_row.append(f"${token_report.total_cost:.5f}")
     total_row.append("total")
 
     total_table.add_row(*total_row)
     console.print(total_table)
+
+    if token_report.max_input_tokens is not None:
+        console.print()
+        context_table = Table(show_header=False, box=None, padding=(0, 2))
+        context_table.add_column(justify="right")
+        context_table.add_column()
+        context_table.add_row(f"{token_report.max_input_tokens:,}", "max tokens")
+
+        if (
+            token_report.remaining_tokens is not None
+            and token_report.remaining_tokens != 0
+        ):
+            remaining_percent = (
+                f"({token_report.remaining_tokens / token_report.max_input_tokens:.0%})"
+                if token_report.max_input_tokens > 0
+                else ""
+            )
+            context_table.add_row(
+                f"{token_report.remaining_tokens:,}",
+                f"remaining tokens {remaining_percent}",
+            )
+        console.print(context_table)

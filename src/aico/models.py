@@ -62,6 +62,22 @@ class SessionData(BaseModel):
     last_response: LastResponse | None = None
 
 
+class TokenInfo(BaseModel):
+    description: str
+    tokens: int
+    note: str | None = None
+    cost: float | None = None
+
+
+class TokenReport(BaseModel):
+    model: str
+    components: list[TokenInfo]
+    total_tokens: int
+    total_cost: float | None = None
+    max_input_tokens: int | None = None
+    remaining_tokens: int | None = None
+
+
 class AIPatch(BaseModel):
     llm_file_path: str
     search_content: str
