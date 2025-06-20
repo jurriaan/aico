@@ -144,10 +144,10 @@ def _parse_llm_edit_block(block_text: str) -> AIPatch | None:
 
     llm_file_path = header_match.group(1).strip()
 
-    # Anchor the regex to the end of the string (`$`) to prevent a
-    # delimiter in the content from being treated as the end of the block.
+    # Do not anchor the regex to the end of the string (`$`) to allow for
+    # conversational text to appear after the final REPLACE block.
     search_replace_match = re.search(
-        r"<<<<<<< SEARCH\n(.*?)\n?=======\n(.*?)\n?>>>>>>> REPLACE$",
+        r"<<<<<<< SEARCH\n(.*?)\n?=======\n(.*?)\n?>>>>>>> REPLACE",
         block_text,
         re.DOTALL,
     )
@@ -201,14 +201,10 @@ def _create_patch_failed_error_diff(
         matcher = difflib.SequenceMatcher(
             None, original_lines, search_lines, autojunk=False
         )
-        match = matcher.find_longest_match(
-            0, len(original_lines), 0, len(search_lines)
-        )
+        match = matcher.find_longest_match(0, len(original_lines), 0, len(search_lines))
 
         # Only show context if a reasonable portion of the search block was matched.
-        is_significant_match = (
-            match.size > 0 and (match.size / len(search_lines)) > 0.5
-        )
+        is_significant_match = match.size > 0 and (match.size / len(search_lines)) > 0.5
         if is_significant_match:
             error_message_lines.extend(
                 [
@@ -318,7 +314,7 @@ def _generate_diff_for_single_block(
     return "".join(diff_lines)
 
 
-def generate_diff_from_response(
+def generate_pipeable_unified_diff(
     original_file_contents: dict[str, str], llm_response: str
 ) -> str:
     unified_diff_parts = []
@@ -327,14 +323,8 @@ def generate_diff_from_response(
     matches = list(file_block_start_pattern.finditer(llm_response))
 
     if not matches:
-        return (
-            "--- a/LLM_RESPONSE_ERROR\n"
-            "+++ b/LLM_RESPONSE_ERROR\n"
-            "@@ -1,2 +1,3 @@\n"
-            "-Could not find any 'File: ...' blocks in the AI's response.\n"
-            "+This may be due to a malformed response or conversational filler.\n"
-            f"+Full Response:\n{llm_response}"
-        )
+        # If there's only conversational text, there is no pipeable diff.
+        return ""
 
     for i, match in enumerate(matches):
         start_pos = match.start()
@@ -347,13 +337,14 @@ def generate_diff_from_response(
         parsed_block = _parse_llm_edit_block(block)
 
         if not parsed_block:
-            unified_diff_parts.append(
+            diff = (
                 f"--- a/MALFORMED_BLOCK\n"
                 f"+++ b/MALFORMED_BLOCK\n"
                 f"@@ -1 +2 @@\n"
                 f"-Error: Could not parse malformed edit block.\n"
                 f"+{block}\n"
             )
+            unified_diff_parts.append(diff)
             continue
 
         diff_for_block = _generate_diff_for_single_block(
@@ -362,3 +353,60 @@ def generate_diff_from_response(
         unified_diff_parts.append(diff_for_block)
 
     return "".join(unified_diff_parts)
+
+
+def generate_and_embed_diffs_in_markdown(
+    original_file_contents: dict[str, str], llm_response: str
+) -> str:
+    processed_parts = []
+    file_block_start_pattern = re.compile(r"^File: ", re.MULTILINE)
+    matches = list(file_block_start_pattern.finditer(llm_response))
+    last_end = 0
+
+    if not matches:
+        return llm_response
+
+    search_replace_regex = re.compile(
+        r"<<<<<<< SEARCH\n.*?\n?=======\n.*?\n?>>>>>>> REPLACE", re.DOTALL
+    )
+
+    for i, match in enumerate(matches):
+        start_pos = match.start()
+        end_pos = matches[i + 1].start() if i + 1 < len(matches) else len(llm_response)
+
+        # Append conversational text that appeared before this block
+        processed_parts.append(llm_response[last_end:start_pos])
+
+        block_text = llm_response[start_pos:end_pos]
+
+        # Use the stripped block for parsing, but perform replacement on the original block
+        parsed_block = _parse_llm_edit_block(block_text.strip())
+
+        if parsed_block:
+            diff_string = _generate_diff_for_single_block(
+                parsed_block, original_file_contents
+            )
+            markdown_diff = f"```diff\n{diff_string.strip()}\n```"
+
+            # Replace only the SEARCH/REPLACE part within the original (unstripped) block
+            # This preserves any conversational text inside the same "File:" block.
+            reconstructed_block = search_replace_regex.sub(
+                markdown_diff, block_text, count=1
+            )
+            processed_parts.append(reconstructed_block)
+        else:
+            # The block was malformed or didn't contain a SEARCH/REPLACE.
+            # Create an error diff and embed it.
+            error_diff = (
+                f"--- a/MALFORMED_BLOCK\n"
+                f"+++ b/MALFORMED_BLOCK\n"
+                f"@@ -1 +2 @@\n"
+                f"-Error: Could not parse the following code block from the AI.\n"
+                f"+{block_text.strip()}\n"
+            )
+            markdown_block = f"```diff\n{error_diff.strip()}\n```\n"
+            processed_parts.append(markdown_block)
+
+        last_end = end_pos
+
+    return "".join(processed_parts)

@@ -27,6 +27,7 @@ class LastResponse(BaseModel):
     raw_content: str
     mode_used: Mode
     processed_content: str
+    markdown_content: str | None = None
     token_usage: TokenUsage | None = None
     cost: float | None = None
 

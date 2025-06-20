@@ -1,6 +1,9 @@
 import pytest
 
-from aico.diffing import generate_diff_from_response
+from aico.diffing import (
+    generate_and_embed_diffs_in_markdown,
+    generate_pipeable_unified_diff,
+)
 
 
 def test_generate_diff_for_standard_change() -> None:
@@ -16,7 +19,7 @@ def test_generate_diff_for_standard_change() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN it is a valid unified diff
     assert "--- a/file.py" in diff
@@ -37,7 +40,7 @@ def test_generate_diff_for_new_file_creation() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN it shows the file being created from /dev/null
     assert "--- /dev/null" in diff
@@ -58,7 +61,7 @@ def test_generate_diff_for_file_deletion() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN it shows the file being deleted to /dev/null
     assert "--- a/file.py" in diff
@@ -83,7 +86,7 @@ def test_whitespace_flexible_patching_succeeds() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN the patch is applied correctly with original indentation
     assert "-    print('hello')" in diff
@@ -112,7 +115,7 @@ def test_filename_matching_logic(llm_filename: str) -> None:
     )
 
     # WHEN the diff is generated with various filename conventions
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN the correct file is identified and patched
     assert "--- a/src/app/main.py" in diff
@@ -134,7 +137,7 @@ def test_patch_failure_when_search_block_not_found() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN a failed patch diff is returned with an error
     assert "a/file.py" in diff
@@ -158,7 +161,7 @@ def test_error_when_file_not_found_in_context() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN a 'not found' diff is generated
     assert "a/unknown_file.py (not found)" in diff
@@ -169,23 +172,15 @@ def test_error_when_file_not_found_in_context() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "malformed_response,expected_error_header",
-    [
-        ("Just some conversational text.", "LLM_RESPONSE_ERROR"),
-        ("File: file.py\nSome malformed content without blocks.", "MALFORMED_BLOCK"),
-    ],
-)
-def test_handling_of_malformed_llm_responses(
-    malformed_response: str, expected_error_header: str
-) -> None:
+def test_handling_of_malformed_llm_responses() -> None:
     # GIVEN a malformed LLM response
+    malformed_response = "File: file.py\nSome malformed content without blocks."
     # WHEN the diff is generated
-    diff = generate_diff_from_response({}, malformed_response)
+    diff = generate_pipeable_unified_diff({}, malformed_response)
 
     # THEN a diff is produced indicating the parsing error
-    assert f"--- a/{expected_error_header}" in diff
-    assert "Could not" in diff  # Check for error message body
+    assert "--- a/MALFORMED_BLOCK" in diff
+    assert "Error: Could not parse malformed edit block" in diff
 
 
 def test_multi_block_llm_response() -> None:
@@ -210,7 +205,7 @@ def test_multi_block_llm_response() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN the output contains two complete, valid diffs
     assert "--- a/file_one.py" in diff
@@ -240,7 +235,7 @@ def test_ambiguous_filepath_fails() -> None:
     )
 
     # WHEN the diff is generated with the ambiguous basename
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN an ambiguity error is reported
     assert "a/utils.py (ambiguous match)" in diff
@@ -262,7 +257,7 @@ def test_ambiguous_patch_fails() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN an ambiguity error is reported
     assert "b/file.py (patch failed)" in diff
@@ -283,7 +278,7 @@ def test_patching_with_blank_lines_in_search_block() -> None:
         ">>>>>>> REPLACE"
     )
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN the patch applies successfully
     assert "patch failed" not in diff
@@ -304,7 +299,7 @@ def test_patch_that_changes_indentation() -> None:
         ">>>>>>> REPLACE"
     )
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN the diff is generated correctly
     assert "patch failed" not in diff
@@ -324,7 +319,7 @@ def test_patch_that_outdents_code() -> None:
         ">>>>>>> REPLACE"
     )
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN the patch applies correctly, with the code now outdented
     assert "patch failed" not in diff
@@ -351,7 +346,7 @@ def test_patch_for_multi_line_indent() -> None:
     )
 
     # WHEN the diff is generated to wrap the block
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN the entire block is correctly indented
     assert "patch failed" not in diff
@@ -382,7 +377,7 @@ def test_partial_deletion_inside_file() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN the diff removes only those lines, leaving the surrounding context
     assert "patch failed" not in diff
@@ -405,7 +400,7 @@ def test_empty_search_on_existing_file_fails() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN it fails with a patch failed error because this is invalid for an existing file
     assert "patch failed" in diff
@@ -427,7 +422,7 @@ def test_patch_robust_to_delimiters_in_content() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN the patch is applied successfully, proving the parser's robustness
     assert "patch failed" not in diff
@@ -450,7 +445,7 @@ def test_patch_with_inconsistent_trailing_newlines() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN the patch applies successfully due to flexible matching
     assert "patch failed" not in diff
@@ -476,7 +471,7 @@ def test_whitespace_only_change() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN the diff correctly shows the addition of one blank line
     assert "patch failed" not in diff
@@ -504,7 +499,7 @@ def test_mismatched_line_endings_patch_succeeds() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_diff_from_response(original_contents, llm_response)
+    diff = generate_pipeable_unified_diff(original_contents, llm_response)
 
     # THEN the patch applies successfully because line endings are normalized for comparison
     assert "patch failed" not in diff
@@ -512,3 +507,114 @@ def test_mismatched_line_endings_patch_succeeds() -> None:
     assert "-line2" in diff
     assert "+new_line1" in diff
     assert "+new_line2" in diff
+
+
+# --- Tests for Dual-Format Diff Presentation ---
+
+
+def test_generate_pipeable_diff_with_conversation() -> None:
+    # GIVEN an LLM response with conversational text and a diff block
+    original_contents = {"file.py": "old_line"}
+    llm_response = (
+        "Hello! I've made the change you requested.\n\n"
+        "File: file.py\n"
+        "<<<<<<< SEARCH\n"
+        "old_line\n"
+        "=======\n"
+        "new_line\n"
+        ">>>>>>> REPLACE\n\n"
+        "Let me know if you need anything else!"
+    )
+
+    # WHEN the pipeable diff is generated
+    pipeable_diff = generate_pipeable_unified_diff(original_contents, llm_response)
+
+    # THEN the output is a clean diff with no conversational text
+    assert "Hello!" not in pipeable_diff
+    assert "Let me know" not in pipeable_diff
+    assert "--- a/file.py" in pipeable_diff
+    assert "+++ b/file.py" in pipeable_diff
+    assert "-old_line" in pipeable_diff
+    assert "+new_line" in pipeable_diff
+
+
+def test_generate_pipeable_diff_from_conversation_only_returns_empty() -> None:
+    # GIVEN an LLM response with only conversational text
+    original_contents = {"file.py": "old_line"}
+    llm_response = "I'm not sure how to make that change. Could you clarify?"
+
+    # WHEN the pipeable diff is generated
+    pipeable_diff = generate_pipeable_unified_diff(original_contents, llm_response)
+
+    # THEN the output is an empty string
+    assert pipeable_diff == ""
+
+
+def test_generate_embedded_markdown_diff_with_conversation() -> None:
+    # GIVEN an LLM response with conversational text and a diff block
+    original_contents = {"file.py": "old_line"}
+    llm_response = (
+        "Hello! I've made the change you requested.\n\n"
+        "File: file.py\n"
+        "<<<<<<< SEARCH\n"
+        "old_line\n"
+        "=======\n"
+        "new_line\n"
+        ">>>>>>> REPLACE\n\n"
+        "Let me know if you need anything else!"
+    )
+
+    # WHEN the embedded markdown diff is generated
+    markdown_output = generate_and_embed_diffs_in_markdown(
+        original_contents, llm_response
+    )
+
+    # THEN the conversational text is preserved
+    assert "Hello! I've made the change you requested." in markdown_output
+    assert "Let me know if you need anything else!" in markdown_output
+
+    # AND the SEARCH/REPLACE block is replaced with a Markdown diff block
+    assert "<<<<<<< SEARCH" not in markdown_output
+    assert "```diff" in markdown_output
+    assert "--- a/file.py" in markdown_output
+    assert "-old_line" in markdown_output
+    assert "+new_line" in markdown_output
+    assert "```" in markdown_output
+
+
+def test_generate_embedded_markdown_diff_from_conversation_only_is_unchanged() -> (
+    None
+):
+    # GIVEN an LLM response with only conversational text
+    original_contents = {"file.py": "old_line"}
+    llm_response = "I'm not sure how to make that change. Could you clarify?"
+
+    # WHEN the embedded markdown diff is generated
+    markdown_output = generate_and_embed_diffs_in_markdown(
+        original_contents, llm_response
+    )
+
+    # THEN the output is the original response, unchanged
+    assert markdown_output == llm_response
+
+
+def test_generate_embedded_markdown_diff_malformed_block() -> None:
+    # GIVEN an LLM response with conversational text and a malformed block
+    original_contents = {}
+    llm_response = (
+        "I tried to make a change, but I might have messed up the format.\n\n"
+        "File: file.py\n"
+        "This is not a valid diff block.\n"
+    )
+
+    # WHEN the embedded markdown diff is generated
+    markdown_output = generate_and_embed_diffs_in_markdown(
+        original_contents, llm_response
+    )
+
+    # THEN it embeds an error diff inside a markdown block
+    assert "I tried to make a change" in markdown_output
+    assert "```diff" in markdown_output
+    assert "MALFORMED_BLOCK" in markdown_output
+    assert "Error: Could not parse the following code block" in markdown_output
+    assert "```" in markdown_output

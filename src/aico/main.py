@@ -5,12 +5,15 @@ from pathlib import Path
 import typer
 from pydantic import ValidationError
 
-from aico.diffing import generate_diff_from_response
+from aico.diffing import (
+    generate_and_embed_diffs_in_markdown,
+    generate_pipeable_unified_diff,
+)
 from aico.history import history_app
 from aico.models import ChatMessage, LastResponse, Mode, SessionData, TokenUsage
 from aico.utils import SESSION_FILE_NAME, find_session_file, format_tokens
 
-app = typer.Typer()
+app = typer.Typer(no_args_is_help=True)
 app.add_typer(history_app, name="history")
 
 
@@ -75,7 +78,22 @@ def last() -> None:
         print("Error: No last response found in session.", file=sys.stderr)
         raise typer.Exit(code=1)
 
-    print(session_data.last_response.processed_content)
+    if sys.stdout.isatty():
+        from rich.console import Console
+        from rich.markdown import Markdown
+
+        # Use the pre-rendered markdown content if available, otherwise use the processed content.
+        # This handles both DIFF mode with its special markdown, and RAW mode.
+        content_to_render = (
+            session_data.last_response.markdown_content
+            or session_data.last_response.processed_content
+        )
+        if content_to_render:
+            console = Console()
+            console.print(Markdown(content_to_render))
+    else:
+        # For non-TTY, always print the raw/pipeable content.
+        print(session_data.last_response.processed_content)
 
 
 @app.command()
@@ -345,10 +363,15 @@ def prompt(
 
     # 6. Process Output Based on Mode
     processed_content: str
+    markdown_content: str | None = None
     if mode == Mode.RAW:
         processed_content = llm_response_content
+        markdown_content = llm_response_content
     elif mode == Mode.DIFF:
-        processed_content = generate_diff_from_response(
+        processed_content = generate_pipeable_unified_diff(
+            original_file_contents, llm_response_content
+        )
+        markdown_content = generate_and_embed_diffs_in_markdown(
             original_file_contents, llm_response_content
         )
 
@@ -370,6 +393,7 @@ def prompt(
         raw_content=llm_response_content,
         mode_used=mode,
         processed_content=processed_content,
+        markdown_content=markdown_content,
         token_usage=token_usage,
         cost=message_cost,
     )
@@ -377,15 +401,18 @@ def prompt(
     session_file.write_text(session_data.model_dump_json(indent=2))
 
     # 8. Print Final Output
-    # If outputting in raw mode to an interactive terminal, format as markdown.
-    if mode == Mode.RAW and sys.stdout.isatty():
+    if sys.stdout.isatty():
         from rich.console import Console
         from rich.markdown import Markdown
 
-        console = Console()
-        console.print(Markdown(processed_content))
+        # Use the pre-rendered markdown content if available, otherwise use the processed content.
+        # This handles both DIFF mode with its special markdown, and RAW mode.
+        content_to_render = markdown_content or processed_content
+        if content_to_render:
+            console = Console()
+            console.print(Markdown(content_to_render))
     else:
-        # Otherwise, print raw content (for piping or diff mode).
+        # For non-TTY, always print the raw/pipeable content.
         print(processed_content)
 
 

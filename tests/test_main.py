@@ -467,3 +467,18 @@ def test_drop_multiple_with_one_not_in_context_partially_fails(tmp_path: Path) -
         session_file = Path(td) / SESSION_FILE_NAME
         session_data = json.loads(session_file.read_text())
         assert sorted(session_data["context_files"]) == ["file2.py"]
+
+
+def test_no_command_shows_help() -> None:
+    # GIVEN the app
+    # WHEN `aico` is run with no command
+    result = runner.invoke(app, [])
+
+    # THEN the command succeeds and shows the help text
+    assert result.exit_code == 0
+    assert "Usage: main [OPTIONS] COMMAND [ARGS]..." in result.stdout
+    assert "Commands:" in result.stdout
+    assert "  init" in result.stdout
+    assert "  add" in result.stdout
+    assert "  drop" in result.stdout
+    assert "  prompt" in result.stdout
