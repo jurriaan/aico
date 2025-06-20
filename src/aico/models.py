@@ -48,11 +48,11 @@ class LastResponse(BaseModel):
     # The full conversational response, with diffs embedded, for rich terminal display.
     display_content: str | None = None
 
+    model: str
+    timestamp: str
+    duration_ms: int
     token_usage: TokenUsage | None = None
     cost: float | None = None
-    model: str | None = None
-    timestamp: str | None = None
-    duration_ms: int = -1
 
 
 class SessionData(BaseModel):
@@ -103,6 +103,16 @@ class SessionData(BaseModel):
 
                 migrated_history.append(migrated_message)
             data["chat_history"] = migrated_history
+
+        # Migrate last_response
+        last_resp = data.get("last_response")
+        if last_resp and "timestamp" not in last_resp:
+            # Old format detected, upgrade it in-place
+            migrated_resp = last_resp.copy()
+            migrated_resp["model"] = data.get("model", "unknown")
+            migrated_resp["timestamp"] = datetime.now(timezone.utc).isoformat()
+            migrated_resp["duration_ms"] = -1  # Sentinel for unknown duration
+            data["last_response"] = migrated_resp
 
         return data
 

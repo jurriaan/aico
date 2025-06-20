@@ -4,7 +4,7 @@ from aico.models import AssistantChatMessage, SessionData, UserChatMessage
 
 
 def test_session_data_migration_from_old_format() -> None:
-    # GIVEN an old-format session data dictionary
+    # GIVEN an old-format session data dictionary with history and a last_response
     old_session_data: dict[str, Any] = {
         "model": "old-model-for-testing",
         "history_start_index": 1,
@@ -29,7 +29,16 @@ def test_session_data_migration_from_old_format() -> None:
                 "cost": 0.0001,
             },
         ],
-        "last_response": None,
+        "last_response": {
+            "raw_content": "This is an old raw content.",
+            "mode_used": "raw",
+            "token_usage": {
+                "prompt_tokens": 1,
+                "completion_tokens": 2,
+                "total_tokens": 3,
+            },
+            "cost": 1e-05,
+        },
     }
 
     # WHEN the data is validated against the SessionData model
@@ -58,7 +67,16 @@ def test_session_data_migration_from_old_format() -> None:
     assert assistant_msg.token_usage.total_tokens == 30
     assert assistant_msg.cost == 0.0001
 
-    # AND new fields were added with sensible defaults
+    # AND new fields were added to the history with sensible defaults
     assert assistant_msg.model == "old-model-for-testing"
     assert "timestamp" in assistant_msg.model_dump()
     assert assistant_msg.duration_ms == -1
+
+    # AND the last_response is also migrated
+    last_resp = session.last_response
+    assert last_resp is not None
+    assert last_resp.raw_content == "This is an old raw content."
+    assert last_resp.model == "old-model-for-testing"
+    assert "timestamp" in last_resp.model_dump()
+    assert last_resp.duration_ms == -1
+    assert last_resp.token_usage.total_tokens == 3
