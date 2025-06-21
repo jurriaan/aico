@@ -1,8 +1,9 @@
-from dataclasses import dataclass
+from collections.abc import Sequence
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Literal, Protocol, TypedDict, runtime_checkable
 
-from pydantic import BaseModel
+from pydantic import Field
+from pydantic.dataclasses import dataclass
 
 
 class Mode(str, Enum):
@@ -11,26 +12,30 @@ class Mode(str, Enum):
     RAW = "raw"
 
 
-class BasicUserChatMessage(BaseModel):
-    role: Literal["user"]
+@dataclass(slots=True, frozen=True)
+class BasicUserChatMessage:
     content: str
+    role: Literal["user"] = "user"
 
 
-class BasicAssistantChatMessage(BaseModel):
-    role: Literal["assistant"]
+@dataclass(slots=True, frozen=True)
+class BasicAssistantChatMessage:
     content: str
+    role: Literal["assistant"] = "assistant"
 
 
-AlignmentMessage = BasicUserChatMessage | BasicAssistantChatMessage
+type AlignmentMessage = BasicUserChatMessage | BasicAssistantChatMessage
 
 
-class TokenUsage(BaseModel):
+@dataclass(slots=True, frozen=True)
+class TokenUsage:
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
 
 
-class UserChatMessage(BaseModel):
+@dataclass(slots=True, frozen=True)
+class UserChatMessage:
     role: Literal["user"]
     content: str
     mode: Mode
@@ -38,7 +43,8 @@ class UserChatMessage(BaseModel):
     piped_content: str | None = None
 
 
-class AssistantChatMessage(BaseModel):
+@dataclass(slots=True, frozen=True)
+class AssistantChatMessage:
     role: Literal["assistant"]
     content: str
     mode: Mode
@@ -49,13 +55,18 @@ class AssistantChatMessage(BaseModel):
     cost: float | None = None
 
 
-ChatMessageHistoryItem = UserChatMessage | AssistantChatMessage
+type ChatMessageHistoryItem = UserChatMessage | AssistantChatMessage
 
 
-class LastResponse(BaseModel):
+@dataclass(slots=True, frozen=True)
+class LastResponse:
+    model: str
+    mode_used: Mode
+    timestamp: str
+    duration_ms: int
+
     # The verbatim, original response from the LLM. This is the source of truth.
     raw_content: str
-    mode_used: Mode
 
     # Derived content, populated whenever diff blocks are found in the raw_content.
     # A clean, standard unified diff for tools, redirection, or scripting.
@@ -63,29 +74,29 @@ class LastResponse(BaseModel):
     # The full conversational response, with diffs embedded, for rich terminal display.
     display_content: str | None = None
 
-    model: str
-    timestamp: str
-    duration_ms: int
     token_usage: TokenUsage | None = None
     cost: float | None = None
 
 
-class SessionData(BaseModel):
+@dataclass(slots=True)
+class SessionData:
     model: str
+    context_files: Annotated[list[str], Field(default_factory=list)]
+    chat_history: Annotated[list[ChatMessageHistoryItem], Field(default_factory=list)]
     history_start_index: int = 0
-    context_files: list[str] = []
-    chat_history: list[ChatMessageHistoryItem] = []
     last_response: LastResponse | None = None
 
 
-class TokenInfo(BaseModel):
+@dataclass(slots=True)
+class TokenInfo:
     description: str
     tokens: int
     note: str | None = None
     cost: float | None = None
 
 
-class TokenReport(BaseModel):
+@dataclass(slots=True, frozen=True)
+class TokenReport:
     model: str
     components: list[TokenInfo]
     total_tokens: int
@@ -94,13 +105,41 @@ class TokenReport(BaseModel):
     remaining_tokens: int | None = None
 
 
-class AIPatch(BaseModel):
+@dataclass(slots=True, frozen=True)
+class AIPatch:
     llm_file_path: str
     search_content: str
     replace_content: str
 
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class ProcessedDiffBlock:
     llm_file_path: str
     unified_diff: str
+
+
+class LLMChatMessage(TypedDict):
+    role: Literal["user", "assistant", "system"]
+    content: str
+
+
+@runtime_checkable
+class LiteLLMUsage(Protocol):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+@runtime_checkable
+class LiteLLMDelta(Protocol):
+    content: str | None
+
+
+@runtime_checkable
+class LiteLLMStreamChoice(Protocol):
+    delta: LiteLLMDelta
+
+
+@runtime_checkable
+class LiteLLMChoiceContainer(Protocol):
+    choices: Sequence[LiteLLMStreamChoice]

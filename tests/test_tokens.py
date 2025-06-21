@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 from aico.main import app
 from aico.models import Mode, SessionData, UserChatMessage
-from aico.utils import SESSION_FILE_NAME
+from aico.utils import SESSION_FILE_NAME, save_session
 
 runner = CliRunner()
 
@@ -22,8 +22,10 @@ def test_tokens_command_no_cost_or_window_info(tmp_path: Path, mocker) -> None:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
         (session_dir / "file1.py").write_text("a" * 10)
-        session_data = SessionData(model="test-model", context_files=["file1.py"])
-        (session_dir / SESSION_FILE_NAME).write_text(session_data.model_dump_json())
+        session_data = SessionData(
+            model="test-model", chat_history=[], context_files=["file1.py"]
+        )
+        save_session(session_dir / SESSION_FILE_NAME, session_data)
 
         # AND the token counter is mocked
         # It will be called for system prompt, 2x alignment prompts, 1x context file.
@@ -72,7 +74,7 @@ def test_tokens_command_shows_full_breakdown(tmp_path: Path, mocker) -> None:
                 )
             ],
         )
-        (session_dir / SESSION_FILE_NAME).write_text(session_data.model_dump_json())
+        save_session(session_dir / SESSION_FILE_NAME, session_data)
 
         # system, align-convo, align-diff, history, file1
         # History is now wrapped in prompt tags, so its token count is slightly higher
@@ -126,7 +128,7 @@ def test_tokens_command_json_output(tmp_path: Path, mocker) -> None:
                 )
             ],
         )
-        (session_dir / SESSION_FILE_NAME).write_text(session_data.model_dump_json())
+        save_session(session_dir / SESSION_FILE_NAME, session_data)
 
         mocker.patch("litellm.token_counter", side_effect=[100, 30, 40, 54, 20])
         mocker.patch(
@@ -170,9 +172,9 @@ def test_tokens_command_hides_zero_remaining_tokens(tmp_path: Path, mocker) -> N
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
         session_data = SessionData(
-            model="test-model",
+            model="test-model", context_files=[], chat_history=[]
         )
-        (session_dir / SESSION_FILE_NAME).write_text(session_data.model_dump_json())
+        save_session(session_dir / SESSION_FILE_NAME, session_data)
 
         # AND litellm is mocked to return a context window size equal to total tokens
         # Calls: system prompt, align-convo, align-diff. All return 100.

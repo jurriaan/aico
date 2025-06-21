@@ -30,22 +30,18 @@ DIFF_MODE_INSTRUCTIONS = (
 ALIGNMENT_PROMPTS: dict[Mode, list[AlignmentMessage]] = {
     Mode.CONVERSATION: [
         BasicUserChatMessage(
-            role="user",
-            content="When I ask you to plan, discuss, or explain, your role is to be a conversational assistant. In this mode, you MUST NOT generate code modification blocks like `SEARCH/REPLACE` or unified diffs.",
+            "When I ask you to plan, discuss, or explain, your role is to be a conversational assistant. In this mode, you MUST NOT generate code modification blocks like `SEARCH/REPLACE` or unified diffs.",
         ),
         BasicAssistantChatMessage(
-            role="assistant",
-            content="Understood. For this turn, my response will be conversational and I will not generate `SEARCH/REPLACE` or diff blocks.",
+            "Understood. For this turn, my response will be conversational and I will not generate `SEARCH/REPLACE` or diff blocks.",
         ),
     ],
     Mode.DIFF: [
         BasicUserChatMessage(
-            role="user",
-            content="When I ask you to implement changes, your role is to be an automated code generation tool. In this mode, your response MUST ONLY contain one or more `SEARCH/REPLACE` blocks.",
+            "When I ask you to implement changes, your role is to be an automated code generation tool. In this mode, your response MUST ONLY contain one or more `SEARCH/REPLACE` blocks.",
         ),
         BasicAssistantChatMessage(
-            role="assistant",
-            content="Acknowledged. For this turn, I will only output valid `SEARCH/REPLACE` blocks and no other commentary.",
+            "Acknowledged. For this turn, I will only output valid `SEARCH/REPLACE` blocks and no other commentary.",
         ),
     ],
 }

@@ -3,7 +3,7 @@ from typing import Annotated
 
 import typer
 
-from aico.utils import load_session
+from aico.utils import load_session, save_session
 
 history_app = typer.Typer(
     name="history",
@@ -34,7 +34,7 @@ def reset() -> None:
     """
     session_file, session_data = load_session()
     session_data.history_start_index = 0
-    _ = session_file.write_text(session_data.model_dump_json(indent=2))
+    save_session(session_file, session_data)
     print("History index reset to 0. Full chat history is now active.")
 
 
@@ -76,5 +76,5 @@ def set_index(
         raise typer.Exit(code=1)
 
     session_data.history_start_index = target_index
-    _ = session_file.write_text(session_data.model_dump_json(indent=2))
+    save_session(session_file, session_data)
     print(f"History start index set to {target_index}.")

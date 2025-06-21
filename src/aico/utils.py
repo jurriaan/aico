@@ -3,12 +3,13 @@ from json import JSONDecodeError
 from pathlib import Path
 
 import typer
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from rich.console import Console
 
 from aico.models import (
     AssistantChatMessage,
     ChatMessageHistoryItem,
+    LLMChatMessage,
     SessionData,
     TokenUsage,
     UserChatMessage,
@@ -38,6 +39,9 @@ def format_tokens(tokens: int) -> str:
     return str(tokens)
 
 
+SessionDataAdapter = TypeAdapter(SessionData)
+
+
 def load_session() -> tuple[Path, SessionData]:
     session_file = find_session_file()
     if not session_file:
@@ -48,7 +52,8 @@ def load_session() -> tuple[Path, SessionData]:
         raise typer.Exit(code=1)
 
     try:
-        session_data = SessionData.model_validate_json(session_file.read_text())
+        session_data = SessionDataAdapter.validate_json(session_file.read_text())
+
     except ValidationError:
         print(
             "Error: Session file is corrupt or has an invalid format.", file=sys.stderr
@@ -79,10 +84,10 @@ def is_terminal() -> bool:
 
 def reconstruct_historical_messages(
     history: list[ChatMessageHistoryItem],
-) -> list[dict[str, str]]:
-    reconstructed: list[dict[str, str]] = []
+) -> list[LLMChatMessage]:
+    reconstructed: list[LLMChatMessage] = []
     for msg in history:
-        reconstructed_msg = None
+        reconstructed_msg: LLMChatMessage
         match msg:
             case UserChatMessage(content=str(prompt), piped_content=str(piped_content)):
                 reconstructed_msg = {
@@ -158,10 +163,19 @@ def complete_files_in_context(incomplete: str) -> list[str]:
         return []
 
     try:
-        session_data = SessionData.model_validate_json(session_file.read_text())
+        session_data = SessionDataAdapter.validate_json(session_file.read_text())
         completions = [
             f for f in session_data.context_files if f.startswith(incomplete)
+        ]
+        completions += [
+            f
+            for f in session_data.context_files
+            if incomplete in f and f not in completions
         ]
         return completions
     except (ValidationError, JSONDecodeError):
         return []
+
+
+def save_session(session_file: Path, session_data: SessionData) -> None:
+    _ = session_file.write_bytes(SessionDataAdapter.dump_json(session_data, indent=2))

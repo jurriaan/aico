@@ -1,7 +1,7 @@
 from typing import Annotated
 
-import litellm
 import typer
+from pydantic import TypeAdapter
 from rich.console import Console
 from rich.table import Table
 
@@ -34,6 +34,8 @@ def tokens(
     components: list[TokenInfo] = []
     total_tokens = 0
 
+    import litellm
+
     # 1. System Prompt Tokens
     system_prompt_tokens = litellm.token_counter(  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]
         model=session_data.model, text=system_prompt
@@ -49,7 +51,9 @@ def tokens(
         # Find the alignment prompts with the max token count
         max_alignment_tokens = 0
         for mode_prompts in ALIGNMENT_PROMPTS.values():
-            messages_as_dicts = [p.model_dump() for p in mode_prompts]
+            messages_as_dicts = [
+                {"role": p.role, "content": p.content} for p in mode_prompts
+            ]
             tokens = litellm.token_counter(  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]
                 model=session_data.model, messages=messages_as_dicts
             )
@@ -153,8 +157,10 @@ def tokens(
         remaining_tokens=remaining_tokens,
     )
 
+    adapter = TypeAdapter(TokenReport)
+
     if json_output:
-        print(token_report.model_dump_json(indent=2))
+        print(adapter.dump_json(token_report, indent=2).decode("utf-8"))
         return
 
     # Display results

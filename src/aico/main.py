@@ -1,10 +1,9 @@
 import sys
 import time
 import warnings
-from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Protocol, cast, runtime_checkable
+from typing import Annotated, cast
 
 import typer
 from rich.console import Console
@@ -19,6 +18,9 @@ from aico.history import history_app
 from aico.models import (
     AssistantChatMessage,
     LastResponse,
+    LiteLLMChoiceContainer,
+    LiteLLMUsage,
+    LLMChatMessage,
     Mode,
     SessionData,
     TokenUsage,
@@ -35,6 +37,7 @@ from aico.utils import (
     is_terminal,
     load_session,
     reconstruct_historical_messages,
+    save_session,
 )
 
 app = typer.Typer()
@@ -84,8 +87,8 @@ def init(
         )
         raise typer.Exit(code=1)
 
-    new_session = SessionData(model=model)
-    _ = session_file.write_text(new_session.model_dump_json(indent=2))
+    new_session = SessionData(model=model, chat_history=[], context_files=[])
+    save_session(session_file, new_session)
 
     print(f"Initialized session file: {session_file}")
 
@@ -174,7 +177,7 @@ def add(file_paths: list[Path]) -> None:
 
     if files_were_added:
         session_data.context_files.sort()
-        _ = session_file.write_text(session_data.model_dump_json(indent=2))
+        save_session(session_file, session_data)
 
     if errors_found:
         raise typer.Exit(code=1)
@@ -215,32 +218,10 @@ def drop(
 
     if files_were_dropped:
         session_data.context_files = sorted(new_context_files)
-        _ = session_file.write_text(session_data.model_dump_json(indent=2))
+        save_session(session_file, session_data)
 
     if errors_found:
         raise typer.Exit(code=1)
-
-
-@runtime_checkable
-class LiteLLMUsage(Protocol):
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-
-
-@runtime_checkable
-class LiteLLMDelta(Protocol):
-    content: str | None
-
-
-@runtime_checkable
-class LiteLLMStreamChoice(Protocol):
-    delta: LiteLLMDelta
-
-
-@runtime_checkable
-class LiteLLMChoiceContainer(Protocol):
-    choices: Sequence[LiteLLMStreamChoice]
 
 
 def _build_token_usage(usage: LiteLLMUsage) -> TokenUsage | None:
@@ -257,7 +238,7 @@ def _build_token_usage(usage: LiteLLMUsage) -> TokenUsage | None:
 def _handle_unified_streaming(
     session_data: SessionData,
     original_file_contents: dict[str, str],
-    messages: list[dict[str, str]],
+    messages: list[LLMChatMessage],
 ) -> tuple[str, str | None, TokenUsage | None, float | None]:
     """
     Handles the streaming logic for all modes, always attempting to parse
@@ -390,7 +371,7 @@ def prompt(
     user_prompt_xml = "".join(user_prompt_parts)
 
     # 4. Construct Messages
-    messages: list[dict[str, str]] = []
+    messages: list[LLMChatMessage] = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
 
@@ -398,8 +379,12 @@ def prompt(
     messages.extend(reconstruct_historical_messages(active_history))
 
     if mode in ALIGNMENT_PROMPTS:
-        alignment_msgs = ALIGNMENT_PROMPTS[mode]
-        messages.extend([msg.model_dump() for msg in alignment_msgs])
+        messages.extend(
+            [
+                {"role": msg.role, "content": msg.content}
+                for msg in ALIGNMENT_PROMPTS[mode]
+            ]
+        )
 
     messages.append({"role": "user", "content": user_prompt_xml})
 
@@ -480,7 +465,7 @@ def prompt(
         duration_ms=duration_ms,
     )
 
-    _ = session_file.write_text(session_data.model_dump_json(indent=2))
+    save_session(session_file, session_data)
 
     # 8. Print Final Output
     # This phase handles non-interactive output. All interactive output is handled
