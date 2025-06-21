@@ -5,7 +5,10 @@ from pathlib import Path
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
+import pytest
+
 from aico.main import app, complete_files_in_context
+from aico.models import Mode
 from aico.utils import SESSION_FILE_NAME
 
 runner = CliRunner()
@@ -242,20 +245,51 @@ def test_last_smart_default_falls_back_to_raw_in_tty(tmp_path: Path, mocker) -> 
     assert "```diff" not in result.stdout
 
 
-def test_last_smart_default_shows_unified_diff_when_piped(
-    tmp_path: Path, mocker
-) -> None:
-    # GIVEN a session where the last response contained a diff
-    _create_session_with_last_response(tmp_path, DIFF_IN_CONVERSATION_RESPONSE)
+def test_last_diff_mode_when_piped_shows_unified_diff(tmp_path: Path, mocker) -> None:
+    # GIVEN a session where the last response was from `diff` mode
+    diff_mode_response = {
+        "raw_content": "File: a.py\n<<<<<<< SEARCH\nold\n=======\nnew\n>>>>>>> REPLACE",
+        "mode_used": "diff",
+        "unified_diff": "--- a/a.py\n+++ b/a.py\n-old\n+new",
+        "display_content": "File: a.py\n```diff\n--- a/a.py\n+++ b/a.py\n-old\n+new\n```\n",
+        "model": "test-model",
+        "timestamp": "2024-01-01T00:00:00Z",
+        "duration_ms": 123,
+    }
+    _create_session_with_last_response(tmp_path, diff_mode_response)
     mocker.patch("aico.main.is_terminal", return_value=False)
 
     # WHEN `aico last` is piped
     with runner.isolated_filesystem(temp_dir=tmp_path):
         result = runner.invoke(app, ["last"])
 
-    # THEN the clean `unified_diff` is printed
+    # THEN the clean `unified_diff` is printed for use with tools like `git apply`
     assert result.exit_code == 0
-    assert result.stdout.strip() == DIFF_IN_CONVERSATION_RESPONSE["unified_diff"]
+    assert result.stdout.strip() == diff_mode_response["unified_diff"]
+
+
+@pytest.mark.parametrize(
+    "last_response_data",
+    [
+        (DIFF_IN_CONVERSATION_RESPONSE),
+        (CONVERSATIONAL_RESPONSE),
+    ],
+    ids=["conversation_with_diff", "pure_conversation"],
+)
+def test_last_conversation_mode_when_piped_shows_display_content(
+    tmp_path: Path, mocker, last_response_data: dict
+) -> None:
+    # GIVEN a session where the last response was in 'conversation' mode
+    _create_session_with_last_response(tmp_path, last_response_data)
+    mocker.patch("aico.main.is_terminal", return_value=False)
+
+    # WHEN `aico last` is piped
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(app, ["last"])
+
+    # THEN the full display_content (with markdown) is shown
+    assert result.exit_code == 0
+    assert result.stdout.strip() == last_response_data["display_content"].strip()
 
 
 def test_last_verbatim_shows_raw_content_in_tty(tmp_path: Path, mocker) -> None:

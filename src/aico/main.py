@@ -124,8 +124,14 @@ def last(
             content_to_show = last_resp.display_content or last_resp.raw_content
             use_rich_markdown = True
         else:
-            # When piped, output the clean unified_diff. This will be null/empty if no diffs.
-            content_to_show = last_resp.unified_diff
+            # When piped, output depends on the mode that was used.
+            if last_resp.mode_used == Mode.DIFF:
+                # For diff mode, output the clean unified_diff for piping to `git apply`.
+                content_to_show = last_resp.unified_diff
+            else:
+                # For conversation/raw, output the display_content, which contains formatted
+                # markdown suitable for piping to tools like `less` or for review.
+                content_to_show = last_resp.display_content or last_resp.raw_content
 
     # Render the content
     if content_to_show:
