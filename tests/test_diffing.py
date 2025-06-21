@@ -290,6 +290,29 @@ def test_patching_with_blank_lines_in_search_block() -> None:
     assert "+replacement" in diff
 
 
+def test_patching_with_trailing_blank_lines_in_search_block() -> None:
+    # GIVEN original content and a search block with trailing blank lines
+    # This specifically tests that the diffing regex doesn't prematurely consume
+    # the trailing newlines as part of the delimiter's whitespace.
+    original_contents = {"file.py": "code block\n\n\nsome other code"}
+    llm_response = (
+        "File: file.py\n"
+        "<<<<<<< SEARCH\n"
+        "code block\n\n\n"
+        "=======\n"
+        "replacement\n"
+        ">>>>>>> REPLACE"
+    )
+    # WHEN the diff is generated
+    diff = generate_unified_diff(original_contents, llm_response)
+
+    # THEN the patch applies successfully, proving the SEARCH block was parsed correctly
+    assert "patch failed" not in diff
+    assert "-code block" in diff
+    assert "+replacement" in diff
+    assert "some other code" in diff  # check context is preserved
+
+
 def test_patch_that_changes_indentation() -> None:
     # GIVEN code that needs to be indented
     original_contents = {"file.py": "to_be_indented()"}

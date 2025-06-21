@@ -6,10 +6,25 @@ import regex as re
 
 from aico.models import AIPatch, ProcessedDiffBlock
 
-# This single regex is the core of the parser. It finds a complete `File:` block
-# that contains a valid SEARCH/REPLACE block.
+# This regex is the core of the parser. It finds a complete `File:` block.
+# It uses named capture groups and backreferences to be robust.
+#
+# - `(?P<indent> *)`: Captures the leading indentation of the `<<<<<<<` line.
+# - `(?P<search_content>.*?)`: Non-greedily captures the search content.
+# - `\n(?P=indent)=======`: Uses a backreference `(?P=indent)` to ensure the `=======`
+#   delimiter has the same indentation as the opening delimiter.
+# - `\s*$`: Allows for trailing whitespace on the final `>>>>>>> REPLACE` line.
+# - `re.DOTALL`: Allows `.` to match newlines, so the content blocks can be multiline.
+# - `re.MULTILINE`: Allows `^` and `$` to match the start/end of lines, not just the string.
 _FILE_BLOCK_REGEX = re.compile(
-    r"^File: (.*?)\n(^ *<<<<<<< SEARCH\n(.*?)\s*=======\n(.*?)\s*>>>>>>> REPLACE\s*$)",
+    r"^File: (.*?)\n"
+    r"(?P<block>"
+    r"^(?P<indent> *)<<<<<<< SEARCH\n"
+    r"(?P<search_content>.*?)"
+    r"^(?P=indent)=======\n"  # <-- The ^ anchors this to the start of a line
+    r"(?P<replace_content>.*?)"
+    r"^(?P=indent)>>>>>>> REPLACE\s*$"  # <-- Same here
+    r")",
     re.MULTILINE | re.DOTALL | re.UNICODE,
 )
 
@@ -154,8 +169,8 @@ def _create_aipatch_from_match(match: re.Match[str]) -> AIPatch:
     """Helper to create an AIPatch from a regex match object."""
     return AIPatch(
         llm_file_path=match.group(1).strip(),
-        search_content=match.group(3),
-        replace_content=match.group(4),
+        search_content=match.group("search_content").rstrip(),
+        replace_content=match.group("replace_content").rstrip(),
     )
 
 
@@ -302,16 +317,27 @@ def _process_llm_response_stream(
         is_new_file = False
         if actual_file_path:
             content_before_patch = current_file_contents[actual_file_path]
-        elif search_content == "":
+        elif (
+            search_content == ""
+            and parsed_block.llm_file_path not in current_file_contents
+        ):
             actual_file_path = parsed_block.llm_file_path
             content_before_patch = ""
             is_new_file = True
         else:
-            diff_string = _create_file_not_found_error_diff(parsed_block.llm_file_path)
-            yield ProcessedDiffBlock(
-                llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string
-            )
-            continue
+            # If the search content is not empty, but we couldn't find a file, it's an error.
+            if not actual_file_path:
+                diff_string = _create_file_not_found_error_diff(
+                    parsed_block.llm_file_path
+                )
+                yield ProcessedDiffBlock(
+                    llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string
+                )
+                continue
+            # This case should now be rare, but handles if an empty search block is
+            # provided for a file that already exists in the context. We treat it as
+            # a patch against the existing content.
+            content_before_patch = current_file_contents.get(actual_file_path, "")
 
         # Now we have a valid file path and content. Apply the patch.
         new_content_full = _create_patched_content(
@@ -379,7 +405,7 @@ def generate_unified_diff(
                 # Ignore conversational text for the unified diff
                 pass
 
-    return "".join(diff_parts)
+    return "".join(diff_parts).strip()
 
 
 def generate_display_content(
