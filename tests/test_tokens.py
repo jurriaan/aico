@@ -26,6 +26,8 @@ def test_tokens_command_no_cost_or_window_info(tmp_path: Path, mocker) -> None:
         (session_dir / SESSION_FILE_NAME).write_text(session_data.model_dump_json())
 
         # AND the token counter is mocked
+        # It will be called for system prompt, 2x alignment prompts, 1x context file.
+        # All will return 10. Max alignment is 10. Total = 10+10+10 = 30.
         mocker.patch("litellm.token_counter", return_value=10)
 
         # AND litellm provides no cost or context window info
@@ -37,13 +39,16 @@ def test_tokens_command_no_cost_or_window_info(tmp_path: Path, mocker) -> None:
 
         # THEN the command succeeds and prints the correct token breakdown
         assert result.exit_code == 0
-        assert "10" in result.stdout and "system prompt" in result.stdout
-        assert "20" in result.stdout and "total" in result.stdout
+        output = result.stdout
+        assert "10" in output and "system prompt" in output
+        assert "10" in output and "alignment prompts" in output
+        assert "10" in output and "file1.py" in output
+        assert "30" in output and "total" in output
 
         # AND no cost or context window information is displayed
-        assert "$" not in result.stdout
-        assert "max tokens" not in result.stdout
-        assert "remaining tokens" not in result.stdout
+        assert "$" not in output
+        assert "max tokens" not in output
+        assert "remaining tokens" not in output
 
 
 def test_tokens_command_shows_full_breakdown(tmp_path: Path, mocker) -> None:
@@ -69,7 +74,8 @@ def test_tokens_command_shows_full_breakdown(tmp_path: Path, mocker) -> None:
         )
         (session_dir / SESSION_FILE_NAME).write_text(session_data.model_dump_json())
 
-        mocker.patch("litellm.token_counter", side_effect=[100, 50, 20])
+        # system, align-convo, align-diff, history, file1
+        mocker.patch("litellm.token_counter", side_effect=[100, 30, 40, 50, 20])
         mocker.patch(
             "litellm.completion_cost",
             side_effect=lambda completion_response: float(
@@ -84,16 +90,19 @@ def test_tokens_command_shows_full_breakdown(tmp_path: Path, mocker) -> None:
 
         # THEN the command succeeds and prints all information
         assert result.exit_code == 0
-        # Costs
-        assert "$0.00100" in result.stdout  # system prompt
-        assert "$0.00050" in result.stdout  # history
-        assert "$0.00020" in result.stdout  # file1
-        assert "$0.00170" in result.stdout and "total" in result.stdout
+        output = result.stdout
+        # Costs based on tokens: 100, 40 (max of 30, 40), 50, 20
+        # Total tokens = 100+40+50+20 = 210
+        assert "$0.00100" in output  # system prompt (100 tokens)
+        assert "$0.00040" in output  # alignment prompts (40 tokens)
+        assert "$0.00050" in output  # history (50 tokens)
+        assert "$0.00020" in output  # file1 (20 tokens)
+        assert "$0.00210" in output and "total" in output
         # Context window
-        assert "8,192" in result.stdout and "max tokens" in result.stdout
-        # 8192 - (100+50+20) = 8022
-        assert "8,022" in result.stdout and "remaining tokens" in result.stdout
-        assert "(98%)" in result.stdout
+        assert "8,192" in output and "max tokens" in output
+        # 8192 - 210 = 7982
+        assert "7,982" in output and "remaining tokens" in output
+        assert "(97%)" in output
 
 
 def test_tokens_command_json_output(tmp_path: Path, mocker) -> None:
@@ -118,7 +127,7 @@ def test_tokens_command_json_output(tmp_path: Path, mocker) -> None:
         )
         (session_dir / SESSION_FILE_NAME).write_text(session_data.model_dump_json())
 
-        mocker.patch("litellm.token_counter", side_effect=[100, 50, 20])
+        mocker.patch("litellm.token_counter", side_effect=[100, 30, 40, 50, 20])
         mocker.patch(
             "litellm.completion_cost",
             side_effect=lambda completion_response: float(
@@ -136,15 +145,19 @@ def test_tokens_command_json_output(tmp_path: Path, mocker) -> None:
         data = json.loads(result.stdout)
 
         # AND the JSON data matches the expected TokenReport structure and values
+        # Total tokens = 100 (sys) + 40 (align) + 50 (hist) + 20 (file) = 210
         assert data["model"] == "test-model-json"
-        assert len(data["components"]) == 3
+        assert len(data["components"]) == 4
         assert data["components"][0]["description"] == "system prompt"
         assert data["components"][0]["tokens"] == 100
         assert data["components"][0]["cost"] == pytest.approx(0.001)
-        assert data["total_tokens"] == 170
-        assert data["total_cost"] == pytest.approx(0.0017)
+        assert data["components"][1]["description"] == "alignment prompts"
+        assert data["components"][1]["tokens"] == 40
+        assert data["components"][1]["cost"] == pytest.approx(0.0004)
+        assert data["total_tokens"] == 210
+        assert data["total_cost"] == pytest.approx(0.0021)
         assert data["max_input_tokens"] == 8192
-        assert data["remaining_tokens"] == 8022
+        assert data["remaining_tokens"] == 7982
 
 
 def test_tokens_command_hides_zero_remaining_tokens(tmp_path: Path, mocker) -> None:
@@ -161,9 +174,10 @@ def test_tokens_command_hides_zero_remaining_tokens(tmp_path: Path, mocker) -> N
         (session_dir / SESSION_FILE_NAME).write_text(session_data.model_dump_json())
 
         # AND litellm is mocked to return a context window size equal to total tokens
-        # total tokens = system prompt (100)
+        # Calls: system prompt, align-convo, align-diff. All return 100.
+        # total tokens = system prompt (100) + alignment (100) = 200
         mocker.patch("litellm.token_counter", return_value=100)
-        mocker.patch("litellm.get_model_info", return_value={"max_input_tokens": 100})
+        mocker.patch("litellm.get_model_info", return_value={"max_input_tokens": 200})
         mocker.patch("litellm.completion_cost", return_value=None)
 
         # WHEN `aico tokens` is run
@@ -171,7 +185,7 @@ def test_tokens_command_hides_zero_remaining_tokens(tmp_path: Path, mocker) -> N
 
         # THEN the command succeeds
         assert result.exit_code == 0
-        # AND 'max tokens' is displayed
-        assert "100" in result.stdout and "max tokens" in result.stdout
+        # AND 'max tokens' is displayed with the new total
+        assert "200" in result.stdout and "max tokens" in result.stdout
         # AND 'remaining tokens' is NOT displayed
         assert "remaining tokens" not in result.stdout

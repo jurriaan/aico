@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.table import Table
 
 from aico.models import TokenInfo, TokenReport
-from aico.prompts import DIFF_MODE_INSTRUCTIONS
+from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
 from aico.utils import load_session
 
 tokens_app = typer.Typer(
@@ -43,7 +43,32 @@ def tokens(
     )
     total_tokens += system_prompt_tokens
 
-    # 2. Chat History Tokens
+    # 2. Alignment Prompts Tokens (worst-case)
+    alignment_prompts_tokens = 0
+    if ALIGNMENT_PROMPTS:
+        # Find the alignment prompts with the max token count
+        max_alignment_tokens = 0
+        for mode_prompts in ALIGNMENT_PROMPTS.values():
+            messages_as_dicts = [p.model_dump() for p in mode_prompts]
+            tokens = litellm.token_counter(  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]
+                model=session_data.model, messages=messages_as_dicts
+            )
+            if tokens > max_alignment_tokens:
+                max_alignment_tokens = tokens
+
+        alignment_prompts_tokens = max_alignment_tokens
+
+    if alignment_prompts_tokens > 0:
+        components.append(
+            TokenInfo(
+                description="alignment prompts",
+                tokens=alignment_prompts_tokens,
+                note="(worst-case)",
+            )
+        )
+        total_tokens += alignment_prompts_tokens
+
+    # 3. Chat History Tokens
     active_history = session_data.chat_history[session_data.history_start_index :]
     if active_history:
         # Convert Pydantic models to dicts for litellm
@@ -62,7 +87,7 @@ def tokens(
         )
         total_tokens += history_tokens
 
-    # 3. Context File Tokens
+    # 4. Context File Tokens
     for file_path_str in session_data.context_files:
         try:
             file_path = session_root / file_path_str
