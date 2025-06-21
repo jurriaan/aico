@@ -27,7 +27,7 @@ def test_tokens_command_no_cost_or_window_info(tmp_path: Path, mocker) -> None:
         mocker.patch("litellm.token_counter", return_value=10)
 
         # AND litellm provides no cost or context window info
-        mocker.patch("litellm.completion_cost", return_value=None)
+        mocker.patch("litellm.completion_cost", side_effect=ValueError("No cost data"))
         mocker.patch("litellm.get_model_info", return_value={"max_input_tokens": None})
 
         # WHEN `aico tokens` is run

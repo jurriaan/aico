@@ -2,9 +2,10 @@ import json
 import sys
 import time
 import warnings
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Protocol, cast, runtime_checkable
 
 import typer
 from pydantic import ValidationError
@@ -40,11 +41,11 @@ app = typer.Typer()
 app.add_typer(history_app, name="history")
 app.add_typer(tokens_app, name="tokens")
 
+# Suppress warnings from litellm, see https://github.com/BerriAI/litellm/issues/11759
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
 # Workaround for `no_args_is_help` not working, keep this until #1240 in typer is fixed
-# CANNOT BE REMOVED!
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context):
     if ctx.invoked_subcommand is None:
@@ -249,7 +250,7 @@ def _calculate_and_display_cost(
     }
 
     try:
-        message_cost = litellm.completion_cost(completion_response=mock_response)
+        message_cost = litellm.completion_cost(completion_response=mock_response)  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]
     except Exception as _:
         pass
 
@@ -277,6 +278,39 @@ def _calculate_and_display_cost(
     return message_cost
 
 
+@runtime_checkable
+class LiteLLMUsage(Protocol):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+@runtime_checkable
+class LiteLLMDelta(Protocol):
+    content: str | None
+
+
+@runtime_checkable
+class LiteLLMStreamChoice(Protocol):
+    delta: LiteLLMDelta
+
+
+@runtime_checkable
+class LiteLLMChoiceContainer(Protocol):
+    choices: Sequence[LiteLLMStreamChoice]
+
+
+def _build_token_usage(usage: LiteLLMUsage) -> TokenUsage | None:
+    """
+    Converts a litellm usage object to our TokenUsage model.
+    """
+    return TokenUsage(
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        total_tokens=usage.total_tokens,
+    )
+
+
 def _handle_unified_streaming(
     session_data: SessionData,
     original_file_contents: dict[str, str],
@@ -288,10 +322,11 @@ def _handle_unified_streaming(
     """
     import litellm
 
-    full_llm_response_buffer: str = ""
+    full_llm_response_buffer: str
+    full_llm_response_buffer = ""
     token_usage: TokenUsage | None = None
 
-    stream = litellm.completion(
+    stream = litellm.completion(  # pyright: ignore[reportUnknownMemberType]
         model=session_data.model,
         messages=messages,
         stream=True,
@@ -301,42 +336,33 @@ def _handle_unified_streaming(
     if is_terminal():
         with Live(console=Console(), auto_refresh=False) as live:
             for chunk in stream:
-                if hasattr(chunk, "usage") and chunk.usage:
-                    usage = chunk.usage
-                    token_usage = TokenUsage(
-                        prompt_tokens=usage.prompt_tokens,
-                        completion_tokens=usage.completion_tokens,
-                        total_tokens=usage.total_tokens,
-                    )
-                if hasattr(chunk, "choices") and chunk.choices:
-                    delta = chunk.choices[0].delta.content or ""
-                    if not delta:
-                        continue
-                    full_llm_response_buffer += delta
-                    display_content = generate_display_content(
-                        original_file_contents, full_llm_response_buffer
-                    )
-                    live.update(Markdown(display_content), refresh=True)
+                chunk = cast(object, chunk)
+
+                if isinstance(chunk, LiteLLMChoiceContainer) and chunk.choices:
+                    if delta := chunk.choices[0].delta.content:
+                        full_llm_response_buffer += delta
+                        display_content = generate_display_content(
+                            original_file_contents, full_llm_response_buffer
+                        )
+                        live.update(Markdown(display_content), refresh=True)
+                if usage := getattr(chunk, "usage", None):
+                    if isinstance(usage, LiteLLMUsage):
+                        token_usage = _build_token_usage(usage)
     else:
         for chunk in stream:
-            if hasattr(chunk, "usage") and chunk.usage:
-                usage = chunk.usage
-                token_usage = TokenUsage(
-                    prompt_tokens=usage.prompt_tokens,
-                    completion_tokens=usage.completion_tokens,
-                    total_tokens=usage.total_tokens,
-                )
-            if hasattr(chunk, "choices") and chunk.choices:
-                delta = chunk.choices[0].delta.content or ""
-                full_llm_response_buffer += delta
+            # LiteLLM has weird typing, we treat it as a generic object and use protocols to use the data.
+            chunk = cast(object, chunk)
 
-    if not token_usage and hasattr(stream, "usage") and stream.usage:
-        usage = stream.usage
-        token_usage = TokenUsage(
-            prompt_tokens=usage.prompt_tokens,
-            completion_tokens=usage.completion_tokens,
-            total_tokens=usage.total_tokens,
-        )
+            if isinstance(chunk, LiteLLMChoiceContainer) and chunk.choices:
+                if delta := chunk.choices[0].delta.content:
+                    full_llm_response_buffer += delta
+                if usage := getattr(chunk, "usage", None):
+                    if isinstance(usage, LiteLLMUsage):
+                        token_usage = _build_token_usage(usage)
+
+    if usage := getattr(stream, "usage", None):
+        if not token_usage and isinstance(usage, LiteLLMUsage):
+            token_usage = _build_token_usage(usage)
 
     final_display_content = generate_display_content(
         original_file_contents, full_llm_response_buffer

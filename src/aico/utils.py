@@ -34,8 +34,7 @@ def load_session() -> tuple[Path, SessionData]:
     session_file = find_session_file()
     if not session_file:
         print(
-            f"Error: No session file '{SESSION_FILE_NAME}' found. "
-            "Please run 'aico init' first.",
+            f"Error: No session file '{SESSION_FILE_NAME}' found. Please run 'aico init' first.",
             file=sys.stderr,
         )
         raise typer.Exit(code=1)

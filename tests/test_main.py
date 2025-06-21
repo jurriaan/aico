@@ -2,12 +2,32 @@ import json
 import os
 from pathlib import Path
 
+from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
 from aico.main import app, complete_files_in_context
 from aico.utils import SESSION_FILE_NAME
 
 runner = CliRunner()
+
+
+def _create_mock_stream_chunk(
+    content: str | None, mocker: MockerFixture, usage: object | None = None
+) -> object:
+    """
+    Creates a mock stream chunk that conforms to the LiteLLMChoiceContainer
+    and LiteLLMUsageContainer protocols.
+    """
+    mock_delta = mocker.MagicMock()
+    mock_delta.content = content
+
+    mock_choice = mocker.MagicMock()
+    mock_choice.delta = mock_delta
+
+    mock_chunk = mocker.MagicMock()
+    mock_chunk.choices = [mock_choice]
+    mock_chunk.usage = usage
+    return mock_chunk
 
 
 def test_init_creates_session_file_in_empty_dir(tmp_path: Path) -> None:
@@ -297,19 +317,13 @@ def test_prompt_conversation_mode_injects_alignment(tmp_path: Path, mocker) -> N
         mock_usage_obj.completion_tokens = 20
         mock_usage_obj.total_tokens = 120
 
-        mock_chunk_1 = mocker.MagicMock()
-        mock_chunk_1.choices[0].delta.content = "This is a "
-        mock_chunk_1.usage = None  # Ensure intermediate chunks have no usage data
-
-        mock_chunk_2 = mocker.MagicMock()
-        mock_chunk_2.choices[0].delta.content = "raw response."
-        mock_chunk_2.usage = mock_usage_obj  # Attach usage data to the final chunk
-
-        mock_chunks = [mock_chunk_1, mock_chunk_2]
+        mock_chunk_1 = _create_mock_stream_chunk("This is a ", mocker=mocker)
+        mock_chunk_2 = _create_mock_stream_chunk(
+            "raw response.", mocker=mocker, usage=mock_usage_obj
+        )
 
         mock_stream = mocker.MagicMock()
-        mock_stream.__iter__.return_value = iter(mock_chunks)
-
+        mock_stream.__iter__.return_value = iter([mock_chunk_1, mock_chunk_2])
         mock_completion.return_value = mock_stream
         mocker.patch("litellm.completion_cost", return_value=0.001)
 
@@ -411,19 +425,13 @@ def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
         mock_usage_obj.completion_tokens = 50
         mock_usage_obj.total_tokens = 200
 
-        mock_chunk_1 = mocker.MagicMock()
-        mock_chunk_1.choices[0].delta.content = llm_diff_response[:60]
-        mock_chunk_1.usage = None
-
-        mock_chunk_2 = mocker.MagicMock()
-        mock_chunk_2.choices[0].delta.content = llm_diff_response[60:]
-        mock_chunk_2.usage = mock_usage_obj
-
-        mock_chunks = [mock_chunk_1, mock_chunk_2]
+        mock_chunk_1 = _create_mock_stream_chunk(llm_diff_response[:60], mocker=mocker)
+        mock_chunk_2 = _create_mock_stream_chunk(
+            llm_diff_response[60:], mocker=mocker, usage=mock_usage_obj
+        )
 
         mock_stream = mocker.MagicMock()
-        mock_stream.__iter__.return_value = iter(mock_chunks)
-
+        mock_stream.__iter__.return_value = iter([mock_chunk_1, mock_chunk_2])
         mock_completion.return_value = mock_stream
         mocker.patch("litellm.completion_cost", return_value=0.002)
 
@@ -627,9 +635,8 @@ def test_prompt_raw_mode_does_not_inject_alignment(tmp_path: Path, mocker) -> No
     with runner.isolated_filesystem(temp_dir=tmp_path):
         runner.invoke(app, ["init"])
         mock_completion = mocker.patch("litellm.completion")
+        mock_chunk = _create_mock_stream_chunk("raw output", mocker=mocker)
         mock_stream = mocker.MagicMock()
-        mock_chunk = mocker.MagicMock()
-        mock_chunk.choices[0].delta.content = "raw output"
         mock_stream.__iter__.return_value = iter([mock_chunk])
         mock_completion.return_value = mock_stream
         mocker.patch("litellm.completion_cost", return_value=None)
@@ -681,19 +688,13 @@ def test_prompt_conversation_mode_with_diff_response_renders_live_diff(
         mock_usage_obj.completion_tokens = 50
         mock_usage_obj.total_tokens = 200
 
-        mock_chunk_1 = mocker.MagicMock()
-        mock_chunk_1.choices[0].delta.content = llm_diff_response[:60]
-        mock_chunk_1.usage = None
-
-        mock_chunk_2 = mocker.MagicMock()
-        mock_chunk_2.choices[0].delta.content = llm_diff_response[60:]
-        mock_chunk_2.usage = mock_usage_obj
-
-        mock_chunks = [mock_chunk_1, mock_chunk_2]
+        mock_chunk_1 = _create_mock_stream_chunk(llm_diff_response[:60], mocker=mocker)
+        mock_chunk_2 = _create_mock_stream_chunk(
+            llm_diff_response[60:], mocker=mocker, usage=mock_usage_obj
+        )
 
         mock_stream = mocker.MagicMock()
-        mock_stream.__iter__.return_value = iter(mock_chunks)
-
+        mock_stream.__iter__.return_value = iter([mock_chunk_1, mock_chunk_2])
         mock_completion.return_value = mock_stream
         mocker.patch("litellm.completion_cost", return_value=0.002)
 
@@ -762,9 +763,8 @@ def test_prompt_conversation_mode_with_diff_response_saves_parsed_diff(
             ">>>>>>> REPLACE"
         )
         mock_completion = mocker.patch("litellm.completion")
+        mock_chunk = _create_mock_stream_chunk(llm_diff_response, mocker=mocker)
         mock_stream = mocker.MagicMock()
-        mock_chunk = mocker.MagicMock()
-        mock_chunk.choices[0].delta.content = llm_diff_response
         mock_stream.__iter__.return_value = iter([mock_chunk])
         mock_completion.return_value = mock_stream
         mocker.patch("litellm.completion_cost", return_value=None)
