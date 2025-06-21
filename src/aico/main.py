@@ -377,7 +377,9 @@ def prompt(
     user_prompt_parts = [context_str]
     if piped_content and prompt_text:
         # Scenario A: piped content is subject, argument is instruction
-        user_prompt_parts.append(f"<stdin_content>\n{piped_content}\n</stdin_content>\n")
+        user_prompt_parts.append(
+            f"<stdin_content>\n{piped_content}\n</stdin_content>\n"
+        )
         user_prompt_parts.append(f"<prompt>\n{prompt_text}\n</prompt>")
     elif piped_content:
         # Scenario B: piped content is the prompt

@@ -80,19 +80,27 @@ def is_terminal() -> bool:
 def reconstruct_historical_messages(
     history: list[ChatMessageHistoryItem],
 ) -> list[dict[str, str]]:
-    reconstructed = []
+    reconstructed: list[dict[str, str]] = []
     for msg in history:
-        if isinstance(msg, UserChatMessage):
-            if msg.piped_content:
-                content = (
-                    f"<stdin_content>\n{msg.piped_content}\n</stdin_content>\n"
-                    f"<prompt>\n{msg.content}\n</prompt>"
-                )
-            else:
-                content = f"<prompt>\n{msg.content}\n</prompt>"
-            reconstructed.append({"role": "user", "content": content})
-        elif isinstance(msg, AssistantChatMessage):
-            reconstructed.append({"role": "assistant", "content": msg.content})
+        reconstructed_msg = None
+        match msg:
+            case UserChatMessage(content=str(prompt), piped_content=str(piped_content)):
+                reconstructed_msg = {
+                    "role": "user",
+                    "content": (
+                        f"<stdin_content>\n{piped_content}\n</stdin_content>\n"
+                        + f"<prompt>\n{prompt}\n</prompt>"
+                    ),
+                }
+            case UserChatMessage(content=str(prompt)):
+                reconstructed_msg = {
+                    "role": "user",
+                    "content": f"<prompt>\n{msg.content}\n</prompt>",
+                }
+            case AssistantChatMessage(content=str(content)):
+                reconstructed_msg = {"role": "assistant", "content": content}
+
+        reconstructed.append(reconstructed_msg)
     return reconstructed
 
 

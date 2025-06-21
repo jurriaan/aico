@@ -957,9 +957,7 @@ def test_prompt_with_piped_input_and_argument(
         # AND the LLM was called with both stdin content and the prompt
         messages = mock_completion.call_args.kwargs["messages"]
         user_message_xml = messages[-1]["content"]
-        assert (
-            f"<stdin_content>\n{piped_content}\n</stdin_content>" in user_message_xml
-        )
+        assert f"<stdin_content>\n{piped_content}\n</stdin_content>" in user_message_xml
         assert f"<prompt>\n{cli_prompt}\n</prompt>" in user_message_xml
 
         # AND the session history is saved correctly
