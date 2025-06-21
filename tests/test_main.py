@@ -1,14 +1,14 @@
+# pyright: standard
+
 import json
 import os
 from pathlib import Path
 
+import pytest
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
-import pytest
-
 from aico.main import app, complete_files_in_context
-from aico.models import Mode
 from aico.utils import SESSION_FILE_NAME
 
 runner = CliRunner()

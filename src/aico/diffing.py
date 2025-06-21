@@ -18,13 +18,13 @@ from aico.models import AIPatch, ProcessedDiffBlock
 # - `re.MULTILINE`: Allows `^` and `$` to match the start/end of lines, not just the string.
 _FILE_BLOCK_REGEX = re.compile(
     r"^File: (.*?)\n"
-    r"(?P<block>"
-    r"^(?P<indent> *)<<<<<<< SEARCH\n"
-    r"(?P<search_content>.*?)"
-    r"^(?P=indent)=======\n"  # <-- The ^ anchors this to the start of a line
-    r"(?P<replace_content>.*?)"
-    r"^(?P=indent)>>>>>>> REPLACE\s*$"  # <-- Same here
-    r")",
+    + r"(?P<block>"
+    + r"^(?P<indent> *)<<<<<<< SEARCH\n"
+    + r"(?P<search_content>.*?)"
+    + r"^(?P=indent)=======\n"  # <-- The ^ anchors this to the start of a line
+    + r"(?P<replace_content>.*?)"
+    + r"^(?P=indent)>>>>>>> REPLACE\s*$"  # <-- Same here
+    + r")",
     re.MULTILINE | re.DOTALL | re.UNICODE,
 )
 
@@ -254,9 +254,6 @@ def _create_patch_failed_error_diff(
             tofile=f"b/{file_path} (patch failed)",
         )
     )
-
-
-
 
 
 def _process_llm_response_stream(

@@ -35,7 +35,7 @@ def tokens(
     total_tokens = 0
 
     # 1. System Prompt Tokens
-    system_prompt_tokens = litellm.token_counter(
+    system_prompt_tokens = litellm.token_counter(  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]
         model=session_data.model, text=system_prompt
     )
     components.append(
@@ -50,7 +50,7 @@ def tokens(
         history_messages = [
             {"role": msg.role, "content": msg.content} for msg in active_history
         ]
-        history_tokens = litellm.token_counter(
+        history_tokens = litellm.token_counter(  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]
             model=session_data.model, messages=history_messages
         )
         components.append(
@@ -69,7 +69,7 @@ def tokens(
             content = file_path.read_text()
             # The prompt includes the XML wrapper, so we account for its tokens too
             file_prompt_wrapper = f'<file path="{file_path_str}">\n{content}\n</file>\n'
-            file_tokens = litellm.token_counter(
+            file_tokens = litellm.token_counter(  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]
                 model=session_data.model, text=file_prompt_wrapper
             )
             components.append(
@@ -93,8 +93,11 @@ def tokens(
         "usage": {"prompt_tokens": 1, "completion_tokens": 0},
         "model": session_data.model,
     }
-    if litellm.completion_cost(completion_response=dummy_response) is not None:
+    try:
+        _ = litellm.completion_cost(completion_response=dummy_response)  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]
         has_cost_info = True
+    except Exception:
+        pass
 
     if has_cost_info:
         for component in components:
@@ -106,13 +109,15 @@ def tokens(
                 },
                 "model": session_data.model,
             }
-            cost = litellm.completion_cost(completion_response=mock_response)
+            cost = litellm.completion_cost(completion_response=mock_response)  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]
+
             component.cost = cost
             if cost:
                 total_cost += cost
 
     # Get context window info
-    model_info: litellm.router.ModelInfo = litellm.get_model_info(session_data.model)
+    model_info: litellm.router.ModelInfo = litellm.get_model_info(session_data.model)  # pyright: ignore[reportPrivateImportUsage]
+
     remaining_tokens: int | None = None
     if max_input_tokens := model_info["max_input_tokens"]:
         remaining_tokens = max_input_tokens - total_tokens

@@ -1,3 +1,5 @@
+# pyright: standard
+
 from typing import Callable
 
 import pytest

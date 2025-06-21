@@ -1,4 +1,5 @@
 import sys
+from typing import Annotated
 
 import typer
 
@@ -33,16 +34,19 @@ def reset() -> None:
     """
     session_file, session_data = load_session()
     session_data.history_start_index = 0
-    session_file.write_text(session_data.model_dump_json(indent=2))
+    _ = session_file.write_text(session_data.model_dump_json(indent=2))
     print("History index reset to 0. Full chat history is now active.")
 
 
 @history_app.command(name="set", context_settings={"ignore_unknown_options": True})
 def set_index(
-    index_str: str = typer.Argument(
-        ...,
-        help="The new start index. Can be an absolute number (e.g., '10') or relative from the end (e.g., '-5').",
-    ),
+    index_str: Annotated[
+        str,
+        typer.Argument(
+            ...,
+            help="The new start index. Can be an absolute number (e.g., '10') or relative from the end (e.g., '-5').",
+        ),
+    ],
 ) -> None:
     """
     Sets the history start index to control how much context is sent.
@@ -72,5 +76,5 @@ def set_index(
         raise typer.Exit(code=1)
 
     session_data.history_start_index = target_index
-    session_file.write_text(session_data.model_dump_json(indent=2))
+    _ = session_file.write_text(session_data.model_dump_json(indent=2))
     print(f"History start index set to {target_index}.")
