@@ -7,27 +7,6 @@ from pydantic import ValidationError
 from aico.models import SessionData
 
 SESSION_FILE_NAME = ".ai_session.json"
-DIFF_MODE_INSTRUCTIONS = (
-    "\n\n---\n"
-    "IMPORTANT: You are an automated code generation tool. Your response MUST ONLY contain one or more raw SEARCH/REPLACE blocks. "
-    "You MUST NOT add any other text, commentary, or markdown. "
-    "Your entire response must strictly follow the format specified below.\n"
-    "- To create a new file, use an empty SEARCH block.\n"
-    "- To delete a file, provide a SEARCH block with the entire file content and an empty REPLACE block.\n\n"
-    "EXAMPLE of a multi-file change:\n"
-    "File: path/to/existing/file.py\n"
-    "<<<<<<< SEARCH\n"
-    "    # code to be changed\n"
-    "=======\n"
-    "    # the new code\n"
-    ">>>>>>> REPLACE\n"
-    "File: path/to/new/file.py\n"
-    "<<<<<<< SEARCH\n"
-    "=======\n"
-    "def new_function():\n"
-    "    pass\n"
-    ">>>>>>> REPLACE"
-)
 
 
 def find_session_file() -> Path | None:

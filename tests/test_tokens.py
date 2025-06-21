@@ -58,7 +58,10 @@ def test_tokens_command_shows_full_breakdown(tmp_path: Path, mocker) -> None:
             context_files=["file1.py"],
             chat_history=[
                 UserChatMessage(
-                    role="user", content="message 2", mode=Mode.RAW, timestamp="ts2"
+                    role="user",
+                    content="message 2",
+                    mode=Mode.CONVERSATION,
+                    timestamp="ts2",
                 )
             ],
         )
@@ -104,7 +107,10 @@ def test_tokens_command_json_output(tmp_path: Path, mocker) -> None:
             context_files=["file1.py"],
             chat_history=[
                 UserChatMessage(
-                    role="user", content="message 2", mode=Mode.RAW, timestamp="ts2"
+                    role="user",
+                    content="message 2",
+                    mode=Mode.CONVERSATION,
+                    timestamp="ts2",
                 )
             ],
         )

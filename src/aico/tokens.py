@@ -6,7 +6,8 @@ from rich.console import Console
 from rich.table import Table
 
 from aico.models import TokenInfo, TokenReport
-from aico.utils import DIFF_MODE_INSTRUCTIONS, load_session
+from aico.prompts import DIFF_MODE_INSTRUCTIONS
+from aico.utils import load_session
 
 tokens_app = typer.Typer(
     help="Commands for inspecting prompt token usage and costs.",

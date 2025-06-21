@@ -151,10 +151,10 @@ def test_add_file_outside_session_root_fails(tmp_path: Path) -> None:
 
 
 # --- Tests for the `last` command ---
-# Test data for a response that was `raw` but contained a diff
-DIFF_IN_RAW_RESPONSE = {
+# Test data for a response that was `conversation` but contained a diff
+DIFF_IN_CONVERSATION_RESPONSE = {
     "raw_content": "File: a.py\n<<<<<<< SEARCH\nold\n=======\nnew\n>>>>>>> REPLACE",
-    "mode_used": "raw",
+    "mode_used": "conversation",
     "unified_diff": "--- a/a.py\n+++ b/a.py\n-old\n+new",
     "display_content": "File: a.py\n```diff\n--- a/a.py\n+++ b/a.py\n-old\n+new\n```\n",
     "model": "test-model",
@@ -165,7 +165,7 @@ DIFF_IN_RAW_RESPONSE = {
 # Test data for a response that was just conversational
 CONVERSATIONAL_RESPONSE = {
     "raw_content": "Hello there!",
-    "mode_used": "raw",
+    "mode_used": "conversation",
     "unified_diff": "",
     "display_content": "Hello there!",
     "model": "test-model",
@@ -191,7 +191,7 @@ def _create_session_with_last_response(
 
 def test_last_smart_default_shows_parsed_diff_in_tty(tmp_path: Path, mocker) -> None:
     # GIVEN a session where the last response contained a diff
-    _create_session_with_last_response(tmp_path, DIFF_IN_RAW_RESPONSE)
+    _create_session_with_last_response(tmp_path, DIFF_IN_CONVERSATION_RESPONSE)
     mocker.patch("aico.main.is_terminal", return_value=True)
 
     # WHEN `aico last` is run in a TTY
@@ -204,7 +204,7 @@ def test_last_smart_default_shows_parsed_diff_in_tty(tmp_path: Path, mocker) -> 
     assert "--- a/a.py" in result.stdout
     assert "-old" in result.stdout
     assert "+new" in result.stdout
-    assert DIFF_IN_RAW_RESPONSE["raw_content"] not in result.stdout
+    assert DIFF_IN_CONVERSATION_RESPONSE["raw_content"] not in result.stdout
 
 
 def test_last_smart_default_falls_back_to_raw_in_tty(tmp_path: Path, mocker) -> None:
@@ -226,7 +226,7 @@ def test_last_smart_default_shows_unified_diff_when_piped(
     tmp_path: Path, mocker
 ) -> None:
     # GIVEN a session where the last response contained a diff
-    _create_session_with_last_response(tmp_path, DIFF_IN_RAW_RESPONSE)
+    _create_session_with_last_response(tmp_path, DIFF_IN_CONVERSATION_RESPONSE)
     mocker.patch("aico.main.is_terminal", return_value=False)
 
     # WHEN `aico last` is piped
@@ -235,12 +235,12 @@ def test_last_smart_default_shows_unified_diff_when_piped(
 
     # THEN the clean `unified_diff` is printed
     assert result.exit_code == 0
-    assert result.stdout.strip() == DIFF_IN_RAW_RESPONSE["unified_diff"]
+    assert result.stdout.strip() == DIFF_IN_CONVERSATION_RESPONSE["unified_diff"]
 
 
 def test_last_verbatim_shows_raw_content_in_tty(tmp_path: Path, mocker) -> None:
     # GIVEN a session with a diff-containing response
-    _create_session_with_last_response(tmp_path, DIFF_IN_RAW_RESPONSE)
+    _create_session_with_last_response(tmp_path, DIFF_IN_CONVERSATION_RESPONSE)
     mocker.patch("aico.main.is_terminal", return_value=True)
 
     # WHEN `aico last --verbatim` is run in a TTY
@@ -254,7 +254,7 @@ def test_last_verbatim_shows_raw_content_in_tty(tmp_path: Path, mocker) -> None:
 
 def test_last_verbatim_shows_raw_content_when_piped(tmp_path: Path, mocker) -> None:
     # GIVEN a session with a diff-containing response
-    _create_session_with_last_response(tmp_path, DIFF_IN_RAW_RESPONSE)
+    _create_session_with_last_response(tmp_path, DIFF_IN_CONVERSATION_RESPONSE)
     mocker.patch("aico.main.is_terminal", return_value=False)
 
     # WHEN `aico last --verbatim` is piped
@@ -263,7 +263,7 @@ def test_last_verbatim_shows_raw_content_when_piped(tmp_path: Path, mocker) -> N
 
     # THEN the raw content is printed without modification
     assert result.exit_code == 0
-    assert result.stdout.strip() == DIFF_IN_RAW_RESPONSE["raw_content"]
+    assert result.stdout.strip() == DIFF_IN_CONVERSATION_RESPONSE["raw_content"]
 
 
 def test_last_fails_when_no_last_response_exists(tmp_path: Path) -> None:
@@ -279,7 +279,7 @@ def test_last_fails_when_no_last_response_exists(tmp_path: Path) -> None:
         assert "Error: No last response found in session." in result.stderr
 
 
-def test_prompt_raw_mode(tmp_path: Path, mocker) -> None:
+def test_prompt_conversation_mode_injects_alignment(tmp_path: Path, mocker) -> None:
     # GIVEN a session with a context file
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         runner.invoke(app, ["init"])
@@ -313,9 +313,9 @@ def test_prompt_raw_mode(tmp_path: Path, mocker) -> None:
         mock_completion.return_value = mock_stream
         mocker.patch("litellm.completion_cost", return_value=0.001)
 
-        # WHEN `aico prompt --mode raw` is run
+        # WHEN `aico prompt` is run (defaulting to conversation mode)
         prompt_text = "Explain this code"
-        result = runner.invoke(app, ["prompt", "--mode", "raw", prompt_text])
+        result = runner.invoke(app, ["prompt", prompt_text])
 
         # THEN the command succeeds and prints the raw response. This works because
         # the test runner's stdout is not a TTY, so our handler silently
@@ -323,16 +323,23 @@ def test_prompt_raw_mode(tmp_path: Path, mocker) -> None:
         assert result.exit_code == 0
         assert "This is a raw response." in result.stdout
 
-        # AND the API was called with the correct context and prompt
+        # AND the API was called with the correct context and prompt, including alignment
         mock_completion.assert_called_once()
-        # The `messages` are passed as a keyword argument to litellm.completion
         call_kwargs = mock_completion.call_args.kwargs
         messages = call_kwargs["messages"]
+        # system, history (0), align-user, align-asst, user
+        assert len(messages) == 4
 
         system_message = messages[0]["content"]
+        align_user_msg = messages[1]
+        align_asst_msg = messages[2]
         user_message = messages[-1]["content"]
 
         assert "You are an expert pair programmer." in system_message
+        assert align_user_msg["role"] == "user"
+        assert "conversational assistant" in align_user_msg["content"]
+        assert align_asst_msg["role"] == "assistant"
+        assert "Understood" in align_asst_msg["content"]
         assert '<file path="code.py">\ndef hello():\n    pass\n</file>' in user_message
         assert f"<prompt>\n{prompt_text}\n</prompt>" in user_message
 
@@ -348,13 +355,13 @@ def test_prompt_raw_mode(tmp_path: Path, mocker) -> None:
         user_msg = session_data["chat_history"][0]
         assert user_msg["role"] == "user"
         assert user_msg["content"] == prompt_text
-        assert user_msg["mode"] == "raw"
+        assert user_msg["mode"] == "conversation"
         assert "timestamp" in user_msg
 
         assistant_msg = session_data["chat_history"][1]
         assert assistant_msg["role"] == "assistant"
         assert assistant_msg["content"] == "This is a raw response."
-        assert assistant_msg["mode"] == "raw"
+        assert assistant_msg["mode"] == "conversation"
         assert "timestamp" in assistant_msg
         assert assistant_msg["model"] == "openrouter/google/gemini-2.5-pro"
         assert assistant_msg["duration_ms"] > -1
@@ -363,7 +370,7 @@ def test_prompt_raw_mode(tmp_path: Path, mocker) -> None:
 
         last_response = session_data["last_response"]
         assert last_response["raw_content"] == "This is a raw response."
-        # For a truly raw response, derived fields will be calculated but empty/same.
+        # For a truly conversational response, derived fields will be calculated but empty/same.
         assert last_response["unified_diff"] == ""
         assert last_response["display_content"] == "This is a raw response."
 
@@ -615,7 +622,33 @@ def test_drop_file_not_in_context_fails(tmp_path: Path) -> None:
         assert session_data["context_files"] == ["file1.py"]
 
 
-def test_prompt_raw_mode_with_diff_response_renders_live_diff(
+def test_prompt_raw_mode_does_not_inject_alignment(tmp_path: Path, mocker) -> None:
+    # GIVEN an initialized session
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        runner.invoke(app, ["init"])
+        mock_completion = mocker.patch("litellm.completion")
+        mock_stream = mocker.MagicMock()
+        mock_chunk = mocker.MagicMock()
+        mock_chunk.choices[0].delta.content = "raw output"
+        mock_stream.__iter__.return_value = iter([mock_chunk])
+        mock_completion.return_value = mock_stream
+        mocker.patch("litellm.completion_cost", return_value=None)
+        mocker.patch("litellm.token_counter", return_value=1)
+
+        # WHEN `aico prompt --mode raw` is run
+        result = runner.invoke(app, ["prompt", "--mode", "raw", "some prompt"])
+
+        # THEN the command succeeds
+        assert result.exit_code == 0
+
+        # AND the API was called without any alignment messages
+        messages = mock_completion.call_args.kwargs["messages"]
+        assert len(messages) == 2  # system, user
+        message_contents = [m["content"] for m in messages]
+        assert not any("conversational assistant" in c for c in message_contents)
+
+
+def test_prompt_conversation_mode_with_diff_response_renders_live_diff(
     tmp_path: Path, mocker
 ) -> None:
     # GIVEN a TTY-enabled environment and a session with a context file
@@ -664,9 +697,9 @@ def test_prompt_raw_mode_with_diff_response_renders_live_diff(
         mock_completion.return_value = mock_stream
         mocker.patch("litellm.completion_cost", return_value=0.002)
 
-        # WHEN `aico prompt --mode raw` is run
+        # WHEN `aico prompt` is run (defaulting to conversation mode)
         prompt_text = "Add a name parameter and print it"
-        result = runner.invoke(app, ["prompt", "--mode", "raw", prompt_text])
+        result = runner.invoke(app, ["prompt", prompt_text])
 
         # THEN the command succeeds
         assert result.exit_code == 0
@@ -676,11 +709,11 @@ def test_prompt_raw_mode_with_diff_response_renders_live_diff(
         assert "--- a/code.py" in result.stdout
         assert "+def hello(name: str):" in result.stdout
 
-        # AND the session file still correctly records that `--mode raw` was used
+        # AND the session file still correctly records that mode was `conversation`
         session_file = Path(td) / SESSION_FILE_NAME
         session_data = json.loads(session_file.read_text())
         last_response = session_data["last_response"]
-        assert last_response["mode_used"] == "raw"
+        assert last_response["mode_used"] == "conversation"
 
 
 def test_drop_multiple_with_one_not_in_context_partially_fails(tmp_path: Path) -> None:
@@ -709,7 +742,7 @@ def test_drop_multiple_with_one_not_in_context_partially_fails(tmp_path: Path) -
         assert sorted(session_data["context_files"]) == ["file2.py"]
 
 
-def test_prompt_raw_mode_with_diff_response_saves_parsed_diff(
+def test_prompt_conversation_mode_with_diff_response_saves_parsed_diff(
     tmp_path: Path, mocker
 ) -> None:
     # GIVEN an initialized session
@@ -737,8 +770,8 @@ def test_prompt_raw_mode_with_diff_response_saves_parsed_diff(
         mocker.patch("litellm.completion_cost", return_value=None)
         mocker.patch("litellm.token_counter", return_value=1)
 
-        # WHEN `aico prompt --mode raw` is run
-        result = runner.invoke(app, ["prompt", "--mode", "raw", "make a change"])
+        # WHEN `aico prompt` is run (defaulting to conversation)
+        result = runner.invoke(app, ["prompt", "make a change"])
 
         # THEN the command succeeds and still prints the raw output for now
         assert result.exit_code == 0
@@ -750,7 +783,7 @@ def test_prompt_raw_mode_with_diff_response_saves_parsed_diff(
         last_response = session_data["last_response"]
 
         assert last_response["raw_content"] == llm_diff_response
-        assert last_response["mode_used"] == "raw"
+        assert last_response["mode_used"] == "conversation"
         assert "--- a/file.py" in last_response["unified_diff"]
         assert "```diff" in last_response["display_content"]
 

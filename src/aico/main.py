@@ -25,9 +25,9 @@ from aico.models import (
     TokenUsage,
     UserChatMessage,
 )
+from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
 from aico.tokens import tokens_app
 from aico.utils import (
-    DIFF_MODE_INSTRUCTIONS,
     SESSION_FILE_NAME,
     find_session_file,
     format_tokens,
@@ -358,10 +358,10 @@ def prompt(
     mode: Annotated[
         Mode,
         typer.Option(
-            help="Output mode: 'raw' for plain text, 'diff' for git diff.",
+            help="Output mode: 'diff' for git diffs, 'conversation' for discussion (default), or 'raw' for no prompt additions.",
             case_sensitive=False,
         ),
-    ] = Mode.RAW,
+    ] = Mode.CONVERSATION,
 ) -> None:
     """
     Sends a prompt to the AI with the current context.
@@ -404,6 +404,11 @@ def prompt(
     messages.extend(
         [{"role": msg.role, "content": msg.content} for msg in active_history]
     )
+
+    if mode in ALIGNMENT_PROMPTS:
+        alignment_msgs = ALIGNMENT_PROMPTS[mode]
+        messages.extend([msg.model_dump() for msg in alignment_msgs])
+
     messages.append({"role": "user", "content": user_prompt_xml})
 
     # 5. Call LLM (Streaming)
@@ -480,8 +485,8 @@ def prompt(
             case Mode.DIFF:
                 if unified_diff:
                     print(unified_diff)
-            case Mode.RAW:
-                # For raw mode, the handler is silent in non-TTY, so we print the final result.
+            case Mode.CONVERSATION | Mode.RAW:
+                # For these modes, the handler is silent in non-TTY, so we print the final result.
                 print(llm_response_content)
 
 

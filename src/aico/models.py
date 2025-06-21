@@ -6,8 +6,22 @@ from pydantic import BaseModel
 
 
 class Mode(str, Enum):
-    RAW = "raw"
+    CONVERSATION = "conversation"
     DIFF = "diff"
+    RAW = "raw"
+
+
+class BasicUserChatMessage(BaseModel):
+    role: Literal["user"]
+    content: str
+
+
+class BasicAssistantChatMessage(BaseModel):
+    role: Literal["assistant"]
+    content: str
+
+
+AlignmentMessage = BasicUserChatMessage | BasicAssistantChatMessage
 
 
 class TokenUsage(BaseModel):

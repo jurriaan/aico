@@ -21,7 +21,7 @@ def test_history_set_with_negative_index_argument(tmp_path: Path) -> None:
                 UserChatMessage(
                     role="user",
                     content=f"msg {i}",
-                    mode=Mode.RAW,
+                    mode=Mode.CONVERSATION,
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
                 for i in range(10)
@@ -52,7 +52,7 @@ def test_history_view_shows_correct_status(tmp_path: Path) -> None:
                 UserChatMessage(
                     role="user",
                     content=f"msg {i}",
-                    mode=Mode.RAW,
+                    mode=Mode.CONVERSATION,
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
                 for i in range(10)
@@ -81,7 +81,7 @@ def test_history_reset_sets_index_to_zero(tmp_path: Path) -> None:
                 UserChatMessage(
                     role="user",
                     content=f"msg {i}",
-                    mode=Mode.RAW,
+                    mode=Mode.CONVERSATION,
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
                 for i in range(10)
@@ -112,7 +112,7 @@ def test_history_set_with_positive_index(tmp_path: Path) -> None:
                 UserChatMessage(
                     role="user",
                     content=f"msg {i}",
-                    mode=Mode.RAW,
+                    mode=Mode.CONVERSATION,
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
                 for i in range(10)
@@ -152,7 +152,7 @@ def test_history_set_fails_with_invalid_index(
                 UserChatMessage(
                     role="user",
                     content=f"msg {i}",
-                    mode=Mode.RAW,
+                    mode=Mode.CONVERSATION,
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
                 for i in range(10)
