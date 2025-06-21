@@ -66,10 +66,10 @@ def test_history_view_shows_correct_status(tmp_path: Path) -> None:
 
         # THEN the command succeeds and shows the correct status
         assert result.exit_code == 0
+        assert "Active history starts at index 4 of 10 total messages." in result.stdout
         assert (
-            "Active history starts at index 4 of 10 total messages." in result.stdout
+            "(6 messages will be sent as context in the next prompt.)" in result.stdout
         )
-        assert "(6 messages will be sent as context in the next prompt.)" in result.stdout
 
 
 def test_history_reset_sets_index_to_zero(tmp_path: Path) -> None:
@@ -96,7 +96,10 @@ def test_history_reset_sets_index_to_zero(tmp_path: Path) -> None:
 
         # THEN the command succeeds and reports the reset
         assert result.exit_code == 0
-        assert "History index reset to 0. Full chat history is now active." in result.stdout
+        assert (
+            "History index reset to 0. Full chat history is now active."
+            in result.stdout
+        )
 
         # AND the session file is updated
         updated_session_data = json.loads(session_file.read_text())
