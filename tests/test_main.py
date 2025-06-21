@@ -1,7 +1,6 @@
 # pyright: standard
 
 import json
-import os
 from pathlib import Path
 
 import pytest
@@ -63,32 +62,9 @@ def test_init_fails_if_session_already_exists(tmp_path: Path) -> None:
         assert result.exit_code == 1
 
         assert (
-            f"Error: An existing session was found at '{expected_path}'"
+            f"Error: Session file '{expected_path}' already exists in this directory."
             in result.stderr
         )
-
-
-def test_init_fails_if_session_exists_in_parent_dir(tmp_path: Path) -> None:
-    # GIVEN a session file exists in a parent directory
-    (tmp_path / SESSION_FILE_NAME).touch()
-    sub_dir = tmp_path / "sub"
-    sub_dir.mkdir()
-
-    original_cwd = os.getcwd()
-    try:
-        os.chdir(sub_dir)
-        # WHEN `aico init` is run from the subdirectory
-        result = runner.invoke(app, ["init"])
-
-        # THEN the command fails with an error message about the found session
-        assert result.exit_code == 1
-        expected_path = tmp_path / SESSION_FILE_NAME
-        assert (
-            f"Error: An existing session was found at '{expected_path}'"
-            in result.stderr
-        )
-    finally:
-        os.chdir(original_cwd)
 
 
 def test_add_file_to_context(tmp_path: Path) -> None:

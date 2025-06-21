@@ -32,7 +32,6 @@ from aico.utils import (
     SESSION_FILE_NAME,
     calculate_and_display_cost,
     complete_files_in_context,
-    find_session_file,
     get_relative_path_or_error,
     is_terminal,
     load_session,
@@ -71,14 +70,6 @@ def init(
     """
     Initializes a new AI session in the current directory.
     """
-    existing_session_file = find_session_file()
-    if existing_session_file:
-        print(
-            f"Error: An existing session was found at '{existing_session_file}'. Please run commands from that directory or its subdirectories.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
-
     session_file = Path.cwd() / SESSION_FILE_NAME
     if session_file.exists():
         print(
