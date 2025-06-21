@@ -8,9 +8,9 @@ A command-line tool for scripting AI-driven code edits.
 
 `aico` is guided by a few core principles that differentiate it from chat-based assistants.
 
-*   **It's a Tool, Not an Agent.** `aico` is not a conversational partner. It is a command-line utility that transforms text. It takes files and instructions as input and produces diffs or raw text as output. Its behavior is designed to be as predictable as `grep` or `sed`.
+*   **It's a Tool, Not an Agent.** It is a command-line utility that transforms text. It takes files and instructions as input and produces diffs or raw text as output. Its behavior is designed to be as predictable as `grep` or `sed`.
 
-*   **Built for Composition.** The primary output of `aico` is a clean, standard unified diff printed to `stdout`. This allows it to be piped directly into other powerful command-line tools you already use.
+*   **Built for Composition.** One of the primary outputs of `aico` is a clean, standard unified diff printed to `stdout`. This allows it to be piped directly into other powerful command-line tools you already use.
 
     ```bash
     # Generate a diff and pipe it directly to git to apply it
@@ -46,19 +46,24 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
     aico add src/utils.py src/main.py
     ```
 
-3.  **Plan the work. Ask the AI for a behavior-driven implementation plan.**
+3.  **(Optional) Check the context size and cost.** Before sending a complex prompt, you can see how large the context will be and the estimated cost.
     ```bash
-    aico prompt --mode raw "Propose a multi-increment, test-driven plan to refactor the 'hello' function in main.py. It should accept a 'name' argument and print a greeting."
+    aico tokens
     ```
-    The AI will respond with a numbered plan, which becomes part of the session history.
 
-4.  **Execute one step. Ask the AI to implement the first increment of the plan.**
+4.  **Plan the work. Start a conversation with the AI to create a plan.**
+    ```bash
+    aico prompt "Propose a multi-increment, test-driven plan to refactor the 'hello' function in main.py. It should accept a 'name' argument and print a greeting."
+    ```
+    The AI will respond with a numbered plan. This starts a conversation that becomes part of the session history.
+
+5.  **Execute one step. Ask the AI to write the code for the first increment.**
     ```bash
     aico prompt --mode diff "Implement Increment 1 of the plan."
     ```
     `aico` will stream a response, ending with a proposed diff.
 
-5.  **Review and apply.**
+6.  **Review and apply.**
     ```bash
     # Review the diff from the last command with a tool like delta
     aico last | delta
@@ -67,17 +72,18 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
     aico last | git apply
     ```
 
-Repeat steps 4 and 5 for each increment of the plan.
+Repeat steps 5 and 6 for each increment of the plan.
 
 ## Commands Overview
 
 *   `aico init`: Creates a `.ai_session.json` file in the current directory.
 *   `aico add <files...>`: Adds one or more files to the session context.
 *   `aico drop <files...>`: Removes one or more files from the context.
-*   `aico prompt "<instruction>"`: Sends the context and prompt to the AI.
+*   `aico tokens`: Shows a breakdown of token usage and estimated cost for the current context.
+*   `aico prompt "<instruction>"`: Sends the context and prompt to the AI. By default, this starts a conversation for planning and discussion.
     *   `--mode diff`: The AI responds with code edits; output is a unified diff.
-    *   `--mode raw`: The AI gives a standard text response for planning or discussion.
-*   `aico last`: Prints the last response from the AI.
+*   `aico last`: Shows the last response from the AI. If the response contained code edits, it displays a formatted diff.
+    *   `--verbatim`: Prints the original, unprocessed response from the AI.
 *   `aico history`: A subcommand group for managing the chat history.
     *   `aico history view`: See the current status of the history.
     *   `aico history set <index>`: Set which message the active history starts from.
