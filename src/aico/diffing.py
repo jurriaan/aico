@@ -17,9 +17,9 @@ from aico.models import AIPatch, ProcessedDiffBlock
 # - `re.DOTALL`: Allows `.` to match newlines, so the content blocks can be multiline.
 # - `re.MULTILINE`: Allows `^` and `$` to match the start/end of lines, not just the string.
 _FILE_BLOCK_REGEX = re.compile(
-    r"^File: (.*?)\n"
+    r"File: (?P<file_path>.*?)\n"
     + r"(?P<block>"
-    + r"^(?P<indent> *)<<<<<<< SEARCH\n"
+    + r"^(?P<indent>\p{H}*)<<<<<<< SEARCH\n"
     + r"(?P<search_content>.*?)"
     + r"^(?P=indent)=======\n"  # <-- The ^ anchors this to the start of a line
     + r"(?P<replace_content>.*?)"
@@ -46,8 +46,7 @@ def _try_exact_string_patch(
     if not search_block.strip():
         return None
 
-    count = original_content.count(search_block)
-    if count == 0:
+    if search_block not in original_content:
         # Block not found. Fall back to the flexible patcher.
         return None
 
@@ -172,7 +171,7 @@ def _find_best_matching_filename(
 def _create_aipatch_from_match(match: re.Match[str]) -> AIPatch:
     """Helper to create an AIPatch from a regex match object."""
     return AIPatch(
-        llm_file_path=match.group(1).strip(),
+        llm_file_path=match.group("file_path").strip(),
         search_content=match.group("search_content").rstrip(),
         replace_content=match.group("replace_content").rstrip(),
     )

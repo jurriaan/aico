@@ -1,9 +1,10 @@
 import sys
 import time
 import warnings
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -226,6 +227,17 @@ def _build_token_usage(usage: LiteLLMUsage) -> TokenUsage | None:
     )
 
 
+def _process_chunk(chunk: object) -> tuple[str | None, TokenUsage | None]:
+    token_usage: TokenUsage | None = None
+    if usage := getattr(chunk, "usage", None):
+        if isinstance(usage, LiteLLMUsage):
+            token_usage = _build_token_usage(usage)
+    if isinstance(chunk, LiteLLMChoiceContainer) and chunk.choices:
+        if delta := chunk.choices[0].delta.content:
+            return delta, token_usage
+    return None, token_usage
+
+
 def _handle_unified_streaming(
     session_data: SessionData,
     original_file_contents: dict[str, str],
@@ -237,8 +249,7 @@ def _handle_unified_streaming(
     """
     import litellm
 
-    full_llm_response_buffer: str
-    full_llm_response_buffer = ""
+    full_llm_response_buffer: str = ""
     token_usage: TokenUsage | None = None
 
     stream = litellm.completion(  # pyright: ignore[reportUnknownMemberType]
@@ -251,29 +262,18 @@ def _handle_unified_streaming(
     if is_terminal():
         with Live(console=Console(), auto_refresh=False) as live:
             for chunk in stream:
-                chunk = cast(object, chunk)
-
-                if isinstance(chunk, LiteLLMChoiceContainer) and chunk.choices:
-                    if delta := chunk.choices[0].delta.content:
-                        full_llm_response_buffer += delta
-                        display_content = generate_display_content(
-                            original_file_contents, full_llm_response_buffer
-                        )
-                        live.update(Markdown(display_content), refresh=True)
-                if usage := getattr(chunk, "usage", None):
-                    if isinstance(usage, LiteLLMUsage):
-                        token_usage = _build_token_usage(usage)
+                delta, token_usage = _process_chunk(chunk)
+                if delta:
+                    full_llm_response_buffer += delta
+                    display_content = generate_display_content(
+                        original_file_contents, full_llm_response_buffer
+                    )
+                    live.update(Markdown(display_content), refresh=True)
     else:
         for chunk in stream:
-            # LiteLLM has weird typing, we treat it as a generic object and use protocols to use the data.
-            chunk = cast(object, chunk)
-
-            if isinstance(chunk, LiteLLMChoiceContainer) and chunk.choices:
-                if delta := chunk.choices[0].delta.content:
-                    full_llm_response_buffer += delta
-                if usage := getattr(chunk, "usage", None):
-                    if isinstance(usage, LiteLLMUsage):
-                        token_usage = _build_token_usage(usage)
+            delta, token_usage = _process_chunk(chunk)
+            if delta:
+                full_llm_response_buffer += delta
 
     if usage := getattr(stream, "usage", None):
         if not token_usage and isinstance(usage, LiteLLMUsage):
@@ -288,6 +288,57 @@ def _handle_unified_streaming(
         message_cost = calculate_and_display_cost(token_usage, session_data)
 
     return full_llm_response_buffer, final_display_content, token_usage, message_cost
+
+
+def _build_messages(
+    session_data: SessionData,
+    system_prompt: str,
+    prompt_text: str | None,
+    piped_content: str | None,
+    mode: Mode,
+    original_file_contents: Mapping[str, str],
+) -> list[LLMChatMessage]:
+    if mode == Mode.DIFF:
+        system_prompt += DIFF_MODE_INSTRUCTIONS
+
+    context_str = "<context>\n"
+    for relative_path_str, content in original_file_contents.items():
+        context_str += f'  <file path="{relative_path_str}">\n{content}\n</file>\n'
+    context_str += "</context>\n"
+
+    user_prompt_parts = [context_str]
+    if piped_content and prompt_text:
+        # Scenario A: piped content is subject, argument is instruction
+        user_prompt_parts.append(
+            f"<stdin_content>\n{piped_content}\n</stdin_content>\n"
+        )
+        user_prompt_parts.append(f"<prompt>\n{prompt_text}\n</prompt>")
+    elif piped_content:
+        # Scenario B: piped content is the prompt
+        user_prompt_parts.append(f"<prompt>\n{piped_content}\n</prompt>")
+    elif prompt_text:
+        # Scenario C: argument is the prompt
+        user_prompt_parts.append(f"<prompt>\n{prompt_text}\n</prompt>")
+    user_prompt_xml = "".join(user_prompt_parts)
+
+    messages: list[LLMChatMessage] = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+
+    active_history = session_data.chat_history[session_data.history_start_index :]
+    messages.extend(reconstruct_historical_messages(active_history))
+
+    if mode in ALIGNMENT_PROMPTS:
+        messages.extend(
+            [
+                {"role": msg.role, "content": msg.content}
+                for msg in ALIGNMENT_PROMPTS[mode]
+            ]
+        )
+
+    messages.append({"role": "user", "content": user_prompt_xml})
+
+    return messages
 
 
 @app.command()
@@ -307,7 +358,6 @@ def prompt(
     """
     Sends a prompt to the AI with the current context.
     """
-    # 1. Load State and Process Inputs
     session_file, session_data = load_session()
     session_root = session_file.parent
     timestamp = datetime.now(timezone.utc).isoformat()
@@ -323,63 +373,26 @@ def prompt(
         print("Error: Prompt is required.", file=sys.stderr)
         raise typer.Exit(code=1)
 
-    # 2. Prepare System Prompt
-    if mode == Mode.DIFF:
-        system_prompt += DIFF_MODE_INSTRUCTIONS
-
-    # 3. Construct User Prompt
-    context_str = "<context>\n"
     original_file_contents: dict[str, str] = {}
     for relative_path_str in session_data.context_files:
         try:
-            # Reconstruct absolute path to read the file
             abs_path = session_root / relative_path_str
-            content = abs_path.read_text()
-            # Key the contents by the relative path
-            original_file_contents[relative_path_str] = content
-            # Send the relative path to the LLM
-            context_str += f'  <file path="{relative_path_str}">\n{content}\n</file>\n'
+            original_file_contents[relative_path_str] = abs_path.read_text()
         except FileNotFoundError:
             print(
                 f"Warning: Context file not found, skipping: {relative_path_str}",
                 file=sys.stderr,
             )
-    context_str += "</context>\n"
 
-    user_prompt_parts = [context_str]
-    if piped_content and prompt_text:
-        # Scenario A: piped content is subject, argument is instruction
-        user_prompt_parts.append(
-            f"<stdin_content>\n{piped_content}\n</stdin_content>\n"
-        )
-        user_prompt_parts.append(f"<prompt>\n{prompt_text}\n</prompt>")
-    elif piped_content:
-        # Scenario B: piped content is the prompt
-        user_prompt_parts.append(f"<prompt>\n{piped_content}\n</prompt>")
-    elif prompt_text:
-        # Scenario C: argument is the prompt
-        user_prompt_parts.append(f"<prompt>\n{prompt_text}\n</prompt>")
-    user_prompt_xml = "".join(user_prompt_parts)
+    messages = _build_messages(
+        session_data,
+        system_prompt,
+        prompt_text=prompt_text,
+        piped_content=piped_content,
+        mode=mode,
+        original_file_contents=original_file_contents,
+    )
 
-    # 4. Construct Messages
-    messages: list[LLMChatMessage] = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-
-    active_history = session_data.chat_history[session_data.history_start_index :]
-    messages.extend(reconstruct_historical_messages(active_history))
-
-    if mode in ALIGNMENT_PROMPTS:
-        messages.extend(
-            [
-                {"role": msg.role, "content": msg.content}
-                for msg in ALIGNMENT_PROMPTS[mode]
-            ]
-        )
-
-    messages.append({"role": "user", "content": user_prompt_xml})
-
-    # 5. Call LLM (Streaming)
     llm_response_content: str = ""
     display_content: str | None = None
     token_usage: TokenUsage | None = None

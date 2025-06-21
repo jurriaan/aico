@@ -70,14 +70,19 @@ def test_generate_diff_for_file_deletion() -> None:
     assert "-line 2" in diff
 
 
-def test_whitespace_flexible_patching_succeeds() -> None:
-    # GIVEN original content with 4-space indent and a SEARCH block with 2-space indent
+@pytest.mark.parametrize(
+    "indentation",
+    ["\t ", "  \t ", "\t", " \t  ", "  "],
+    ids=["tab_space", "space_tab_space", "tab", "tab_space", "space"],
+)
+def test_whitespace_flexible_patching_succeeds(indentation) -> None:
+    # GIVEN original content with 4-space indent and a SEARCH block with different indent
     original_contents = {"file.py": "def my_func():\n    print('hello')\n"}
     llm_response = (
         "File: file.py\n"
         "<<<<<<< SEARCH\n"
         "def my_func():\n"
-        "  print('hello')\n"
+        f"{indentation}print('hello')\n"
         "=======\n"
         "def my_func():\n"
         "    # A new comment\n"
@@ -652,6 +657,14 @@ def test_generate_embedded_markdown_diff_malformed_block() -> None:
     "llm_response_template",
     [
         (
+            "   File: file.py\n"
+            "   <<<<<<< SEARCH\n"  # Indented
+            "   {search}\n"
+            "   =======\n"
+            "   {replace}\n"
+            "   >>>>>>> REPLACE"
+        ),
+        (
             "File: file.py\n"
             "   <<<<<<< SEARCH\n"  # Indented
             "{search}\n"
@@ -674,7 +687,7 @@ def test_generate_embedded_markdown_diff_malformed_block() -> None:
             "<<<<<<< SEARCH\n{search}\n=======\n{replace}\n>>>>>>> REPLACE"  # No trailing newli
         ),
     ],
-    ids=["indented", "extra_whitespace", "no_trailing_newline"],
+    ids=["fully_indented", "indented", "extra_whitespace", "no_trailing_newline"],
 )
 @pytest.mark.parametrize(
     "func_to_test",
