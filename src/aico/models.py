@@ -35,6 +35,7 @@ class UserChatMessage(BaseModel):
     content: str
     mode: Mode
     timestamp: str
+    piped_content: str | None = None
 
 
 class AssistantChatMessage(BaseModel):

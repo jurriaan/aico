@@ -319,7 +319,7 @@ def _handle_unified_streaming(
 
 @app.command()
 def prompt(
-    prompt_text: str,
+    prompt_text: Annotated[str | None, typer.Argument()] = None,
     system_prompt: Annotated[
         str, typer.Option(help="The system prompt to guide the AI.")
     ] = "You are an expert pair programmer.",
@@ -334,10 +334,21 @@ def prompt(
     """
     Sends a prompt to the AI with the current context.
     """
-    # 1. Load State
+    # 1. Load State and Process Inputs
     session_file, session_data = load_session()
     session_root = session_file.parent
     timestamp = datetime.now(timezone.utc).isoformat()
+
+    piped_content: str | None = None
+    if not sys.stdin.isatty():
+        content = sys.stdin.read()
+        if content:
+            piped_content = content
+
+    # Validate that we have some form of prompt
+    if not prompt_text and not piped_content:
+        print("Error: Prompt is required.", file=sys.stderr)
+        raise typer.Exit(code=1)
 
     # 2. Prepare System Prompt
     if mode == Mode.DIFF:
@@ -362,7 +373,18 @@ def prompt(
             )
     context_str += "</context>\n"
 
-    user_prompt_xml = f"{context_str}<prompt>\n{prompt_text}\n</prompt>"
+    user_prompt_parts = [context_str]
+    if piped_content and prompt_text:
+        # Scenario A: piped content is subject, argument is instruction
+        user_prompt_parts.append(f"<stdin_content>\n{piped_content}\n</stdin_content>\n")
+        user_prompt_parts.append(f"<prompt>\n{prompt_text}\n</prompt>")
+    elif piped_content:
+        # Scenario B: piped content is the prompt
+        user_prompt_parts.append(f"<prompt>\n{piped_content}\n</prompt>")
+    elif prompt_text:
+        # Scenario C: argument is the prompt
+        user_prompt_parts.append(f"<prompt>\n{prompt_text}\n</prompt>")
+    user_prompt_xml = "".join(user_prompt_parts)
 
     # 4. Construct Messages
     messages: list[dict[str, str]] = []
@@ -409,10 +431,25 @@ def prompt(
     # 7. Update State & Save
     assistant_response_timestamp = datetime.now(timezone.utc).isoformat()
 
+    # Determine what to save in history based on inputs
+    final_content: str
+    final_piped_content: str | None = None
+    if piped_content and prompt_text:
+        final_content = prompt_text
+        final_piped_content = piped_content
+    elif piped_content:
+        final_content = piped_content
+    elif prompt_text:
+        final_content = prompt_text
+    else:
+        # This case is unreachable due to the validation above
+        raise typer.Exit(code=1)  # Should not happen
+
     session_data.chat_history.append(
         UserChatMessage(
             role="user",
-            content=prompt_text,
+            content=final_content,
+            piped_content=final_piped_content,
             mode=mode,
             timestamp=timestamp,
         )

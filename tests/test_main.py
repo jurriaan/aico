@@ -403,6 +403,7 @@ def test_prompt_conversation_mode_injects_alignment(tmp_path: Path, mocker) -> N
         user_msg = session_data["chat_history"][0]
         assert user_msg["role"] == "user"
         assert user_msg["content"] == prompt_text
+        assert user_msg["piped_content"] is None
         assert user_msg["mode"] == "conversation"
         assert "timestamp" in user_msg
 
@@ -493,6 +494,7 @@ def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
         user_msg = session_data["chat_history"][0]
         assert user_msg["role"] == "user"
         assert user_msg["content"] == prompt_text
+        assert user_msg["piped_content"] is None
         assert user_msg["mode"] == "diff"
         assert "timestamp" in user_msg
 
@@ -814,6 +816,12 @@ def test_prompt_conversation_mode_with_diff_response_saves_parsed_diff(
         # AND the session file is updated with BOTH the raw content AND parsed diffs
         session_file = Path(td) / SESSION_FILE_NAME
         session_data = json.loads(session_file.read_text())
+
+        # AND check the user message in history
+        user_msg = session_data["chat_history"][0]
+        assert user_msg["content"] == "make a change"
+        assert user_msg["piped_content"] is None
+
         last_response = session_data["last_response"]
 
         assert last_response["raw_content"] == llm_diff_response
@@ -867,3 +875,96 @@ def test_no_command_shows_help() -> None:
     assert " last" in result.stdout
     assert " drop" in result.stdout
     assert " prompt" in result.stdout
+
+
+# --- Tests for stdin piping ---
+
+
+def test_prompt_fails_with_no_input(tmp_path: Path) -> None:
+    # GIVEN an initialized session
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        runner.invoke(app, ["init"])
+
+        # WHEN `aico prompt` is run with no argument and no piped input
+        result = runner.invoke(app, ["prompt"])
+
+        # THEN the command fails with an error
+        # NOTE: This test will fail until Increment 3 is implemented, as it depends
+        # on the `prompt_text` argument becoming optional.
+        assert result.exit_code == 1
+        assert "Error: Prompt is required." in result.stderr
+
+
+def test_prompt_with_piped_input_only(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN an initialized session
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+        mock_completion = mocker.patch("litellm.completion")
+        mock_chunk = _create_mock_stream_chunk("response", mocker=mocker)
+        mock_stream = mocker.MagicMock()
+        mock_stream.__iter__.return_value = iter([mock_chunk])
+        mock_completion.return_value = mock_stream
+        mocker.patch("litellm.token_counter", return_value=1)
+        mocker.patch("litellm.completion_cost", return_value=None)
+
+        piped_prompt = "This is my prompt from a pipe."
+
+        # WHEN `aico prompt` is run with piped input and no CLI argument
+        # NOTE: This test will fail until Increment 3 is implemented.
+        result = runner.invoke(app, ["prompt"], input=piped_prompt)
+
+        # THEN the command succeeds
+        assert result.exit_code == 0
+
+        # AND the LLM was called with the piped content as the prompt
+        messages = mock_completion.call_args.kwargs["messages"]
+        user_message_xml = messages[-1]["content"]
+        assert f"<prompt>\n{piped_prompt}\n</prompt>" in user_message_xml
+        assert "<stdin_content>" not in user_message_xml
+
+        # AND the session history is saved correctly
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = json.loads(session_file.read_text())
+        user_msg = session_data["chat_history"][0]
+        assert user_msg["content"] == piped_prompt
+        assert user_msg["piped_content"] is None
+
+
+def test_prompt_with_piped_input_and_argument(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    # GIVEN an initialized session
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+        mock_completion = mocker.patch("litellm.completion")
+        mock_chunk = _create_mock_stream_chunk("response", mocker=mocker)
+        mock_stream = mocker.MagicMock()
+        mock_stream.__iter__.return_value = iter([mock_chunk])
+        mock_completion.return_value = mock_stream
+        mocker.patch("litellm.token_counter", return_value=1)
+        mocker.patch("litellm.completion_cost", return_value=None)
+
+        piped_content = "Here is a code snippet."
+        cli_prompt = "Summarize this."
+
+        # WHEN `aico prompt` is run with both piped input and a CLI argument
+        # NOTE: This test will fail until Increment 3 is implemented.
+        result = runner.invoke(app, ["prompt", cli_prompt], input=piped_content)
+
+        # THEN the command succeeds
+        assert result.exit_code == 0
+
+        # AND the LLM was called with both stdin content and the prompt
+        messages = mock_completion.call_args.kwargs["messages"]
+        user_message_xml = messages[-1]["content"]
+        assert (
+            f"<stdin_content>\n{piped_content}\n</stdin_content>" in user_message_xml
+        )
+        assert f"<prompt>\n{cli_prompt}\n</prompt>" in user_message_xml
+
+        # AND the session history is saved correctly
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = json.loads(session_file.read_text())
+        user_msg = session_data["chat_history"][0]
+        assert user_msg["content"] == cli_prompt
+        assert user_msg["piped_content"] == piped_content
