@@ -1,4 +1,3 @@
-import json
 import sys
 import time
 import warnings
@@ -8,7 +7,6 @@ from pathlib import Path
 from typing import Annotated, Protocol, cast, runtime_checkable
 
 import typer
-from pydantic import ValidationError
 from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
@@ -30,8 +28,9 @@ from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
 from aico.tokens import tokens_app
 from aico.utils import (
     SESSION_FILE_NAME,
+    calculate_and_display_cost,
+    complete_files_in_context,
     find_session_file,
-    format_tokens,
     get_relative_path_or_error,
     is_terminal,
     load_session,
@@ -180,21 +179,6 @@ def add(file_paths: list[Path]) -> None:
         raise typer.Exit(code=1)
 
 
-def complete_files_in_context(incomplete: str) -> list[str]:
-    session_file = find_session_file()
-    if not session_file:
-        return []
-
-    try:
-        session_data = SessionData.model_validate_json(session_file.read_text())
-        completions = [
-            f for f in session_data.context_files if f.startswith(incomplete)
-        ]
-        return completions
-    except (ValidationError, json.JSONDecodeError):
-        return []
-
-
 @app.command()
 def drop(
     file_paths: Annotated[
@@ -234,54 +218,6 @@ def drop(
 
     if errors_found:
         raise typer.Exit(code=1)
-
-
-def _calculate_and_display_cost(
-    token_usage: TokenUsage, session_data: SessionData
-) -> float | None:
-    """Calculates the message cost and displays token/cost information."""
-    import litellm
-
-    message_cost: float | None = None
-    # Create a mock response object as a dictionary.
-    # This provides litellm.completion_cost with the usage data AND the model name
-    # in a format it expects for calculating costs robustly.
-    mock_response = {
-        "usage": {
-            "prompt_tokens": token_usage.prompt_tokens,
-            "completion_tokens": token_usage.completion_tokens,
-            "total_tokens": token_usage.total_tokens,
-        },
-        "model": session_data.model,
-    }
-
-    try:
-        message_cost = litellm.completion_cost(completion_response=mock_response)  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]
-    except Exception as _:
-        pass
-
-    prompt_tokens_str = format_tokens(token_usage.prompt_tokens)
-    completion_tokens_str = format_tokens(token_usage.completion_tokens)
-
-    cost_str: str = ""
-    if message_cost is not None:
-        history_cost = sum(
-            msg.cost
-            for msg in session_data.chat_history
-            if isinstance(msg, AssistantChatMessage) and msg.cost is not None
-        )
-        session_cost = history_cost + message_cost
-        cost_str = f"Cost: ${message_cost:.2f} message, ${session_cost:.2f} session."
-
-    info_str = f"Tokens: {prompt_tokens_str} sent, {completion_tokens_str} received. {cost_str}"
-
-    if is_terminal():
-        console = Console()
-        console.print(f"\n[dim]---[/dim]\n[dim]{info_str}[/dim]")
-    else:
-        print(info_str, file=sys.stderr)
-
-    return message_cost
 
 
 @runtime_checkable
@@ -376,7 +312,7 @@ def _handle_unified_streaming(
 
     message_cost: float | None = None
     if token_usage:
-        message_cost = _calculate_and_display_cost(token_usage, session_data)
+        message_cost = calculate_and_display_cost(token_usage, session_data)
 
     return full_llm_response_buffer, final_display_content, token_usage, message_cost
 
@@ -401,6 +337,7 @@ def prompt(
     # 1. Load State
     session_file, session_data = load_session()
     session_root = session_file.parent
+    timestamp = datetime.now(timezone.utc).isoformat()
 
     # 2. Prepare System Prompt
     if mode == Mode.DIFF:
@@ -477,7 +414,7 @@ def prompt(
             role="user",
             content=prompt_text,
             mode=mode,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=timestamp,
         )
     )
     session_data.chat_history.append(
