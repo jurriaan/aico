@@ -6,7 +6,13 @@ import typer
 from pydantic import ValidationError
 from rich.console import Console
 
-from aico.models import AssistantChatMessage, SessionData, TokenUsage
+from aico.models import (
+    AssistantChatMessage,
+    ChatMessageHistoryItem,
+    SessionData,
+    TokenUsage,
+    UserChatMessage,
+)
 
 SESSION_FILE_NAME = ".ai_session.json"
 
@@ -69,6 +75,25 @@ def get_relative_path_or_error(file_path: Path, session_root: Path) -> str | Non
 def is_terminal() -> bool:
     """Checks if stdout is a TTY."""
     return sys.stdout.isatty()
+
+
+def reconstruct_historical_messages(
+    history: list[ChatMessageHistoryItem],
+) -> list[dict[str, str]]:
+    reconstructed = []
+    for msg in history:
+        if isinstance(msg, UserChatMessage):
+            if msg.piped_content:
+                content = (
+                    f"<stdin_content>\n{msg.piped_content}\n</stdin_content>\n"
+                    f"<prompt>\n{msg.content}\n</prompt>"
+                )
+            else:
+                content = f"<prompt>\n{msg.content}\n</prompt>"
+            reconstructed.append({"role": "user", "content": content})
+        elif isinstance(msg, AssistantChatMessage):
+            reconstructed.append({"role": "assistant", "content": msg.content})
+    return reconstructed
 
 
 def calculate_and_display_cost(

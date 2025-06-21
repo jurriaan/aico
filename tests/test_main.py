@@ -968,3 +968,55 @@ def test_prompt_with_piped_input_and_argument(
         user_msg = session_data["chat_history"][0]
         assert user_msg["content"] == cli_prompt
         assert user_msg["piped_content"] == piped_content
+
+
+def test_prompt_with_history_reconstructs_piped_content(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    # GIVEN an initialized session
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        runner.invoke(app, ["init"])
+        mock_completion = mocker.patch("litellm.completion")
+        mocker.patch("litellm.token_counter", return_value=1)
+        mocker.patch("litellm.completion_cost", return_value=None)
+
+        # WHEN the first prompt has piped input and an argument
+        mock_chunk_1 = _create_mock_stream_chunk("response 1", mocker=mocker)
+        mock_stream_1 = mocker.MagicMock()
+        mock_stream_1.__iter__.return_value = iter([mock_chunk_1])
+        mock_completion.return_value = mock_stream_1
+
+        piped_content = "Here is some code."
+        cli_prompt = "Summarize this."
+        runner.invoke(app, ["prompt", cli_prompt], input=piped_content)
+
+        # AND a second prompt is made
+        mock_chunk_2 = _create_mock_stream_chunk("response 2", mocker=mocker)
+        mock_stream_2 = mocker.MagicMock()
+        mock_stream_2.__iter__.return_value = iter([mock_chunk_2])
+        mock_completion.return_value = mock_stream_2
+
+        runner.invoke(app, ["prompt", "Thanks"])
+
+        # THEN the LLM call for the second prompt contains the reconstructed history
+        assert mock_completion.call_count == 2
+        messages = mock_completion.call_args.kwargs["messages"]
+
+        # Expected messages: [system, user1_reconstructed, asst1, align_user, align_asst, user2]
+        historical_user_msg = messages[1]
+        assert historical_user_msg["role"] == "user"
+
+        expected_reconstructed_content = (
+            f"<stdin_content>\n{piped_content}\n</stdin_content>\n"
+            f"<prompt>\n{cli_prompt}\n</prompt>"
+        )
+        assert historical_user_msg["content"] == expected_reconstructed_content
+
+        historical_asst_msg = messages[2]
+        assert historical_asst_msg["role"] == "assistant"
+        assert historical_asst_msg["content"] == "response 1"
+
+        current_user_msg = messages[-1]
+        assert current_user_msg["role"] == "user"
+        # The current prompt has file context as well, so we check for `in`
+        assert "<prompt>\nThanks\n</prompt>" in current_user_msg["content"]

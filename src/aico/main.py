@@ -34,6 +34,7 @@ from aico.utils import (
     get_relative_path_or_error,
     is_terminal,
     load_session,
+    reconstruct_historical_messages,
 )
 
 app = typer.Typer()
@@ -392,9 +393,7 @@ def prompt(
         messages.append({"role": "system", "content": system_prompt})
 
     active_history = session_data.chat_history[session_data.history_start_index :]
-    messages.extend(
-        [{"role": msg.role, "content": msg.content} for msg in active_history]
-    )
+    messages.extend(reconstruct_historical_messages(active_history))
 
     if mode in ALIGNMENT_PROMPTS:
         alignment_msgs = ALIGNMENT_PROMPTS[mode]

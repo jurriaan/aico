@@ -75,7 +75,8 @@ def test_tokens_command_shows_full_breakdown(tmp_path: Path, mocker) -> None:
         (session_dir / SESSION_FILE_NAME).write_text(session_data.model_dump_json())
 
         # system, align-convo, align-diff, history, file1
-        mocker.patch("litellm.token_counter", side_effect=[100, 30, 40, 50, 20])
+        # History is now wrapped in prompt tags, so its token count is slightly higher
+        mocker.patch("litellm.token_counter", side_effect=[100, 30, 40, 54, 20])
         mocker.patch(
             "litellm.completion_cost",
             side_effect=lambda completion_response: float(
@@ -91,17 +92,17 @@ def test_tokens_command_shows_full_breakdown(tmp_path: Path, mocker) -> None:
         # THEN the command succeeds and prints all information
         assert result.exit_code == 0
         output = result.stdout
-        # Costs based on tokens: 100, 40 (max of 30, 40), 50, 20
-        # Total tokens = 100+40+50+20 = 210
+        # Costs based on tokens: 100, 40 (max of 30, 40), 54, 20
+        # Total tokens = 100+40+54+20 = 214
         assert "$0.00100" in output  # system prompt (100 tokens)
         assert "$0.00040" in output  # alignment prompts (40 tokens)
-        assert "$0.00050" in output  # history (50 tokens)
+        assert "$0.00054" in output  # history (54 tokens)
         assert "$0.00020" in output  # file1 (20 tokens)
-        assert "$0.00210" in output and "total" in output
+        assert "$0.00214" in output and "total" in output
         # Context window
         assert "8,192" in output and "max tokens" in output
-        # 8192 - 210 = 7982
-        assert "7,982" in output and "remaining tokens" in output
+        # 8192 - 214 = 7978
+        assert "7,978" in output and "remaining tokens" in output
         assert "(97%)" in output
 
 
@@ -127,7 +128,7 @@ def test_tokens_command_json_output(tmp_path: Path, mocker) -> None:
         )
         (session_dir / SESSION_FILE_NAME).write_text(session_data.model_dump_json())
 
-        mocker.patch("litellm.token_counter", side_effect=[100, 30, 40, 50, 20])
+        mocker.patch("litellm.token_counter", side_effect=[100, 30, 40, 54, 20])
         mocker.patch(
             "litellm.completion_cost",
             side_effect=lambda completion_response: float(
@@ -145,7 +146,7 @@ def test_tokens_command_json_output(tmp_path: Path, mocker) -> None:
         data = json.loads(result.stdout)
 
         # AND the JSON data matches the expected TokenReport structure and values
-        # Total tokens = 100 (sys) + 40 (align) + 50 (hist) + 20 (file) = 210
+        # Total tokens = 100 (sys) + 40 (align) + 54 (hist) + 20 (file) = 214
         assert data["model"] == "test-model-json"
         assert len(data["components"]) == 4
         assert data["components"][0]["description"] == "system prompt"
@@ -154,10 +155,10 @@ def test_tokens_command_json_output(tmp_path: Path, mocker) -> None:
         assert data["components"][1]["description"] == "alignment prompts"
         assert data["components"][1]["tokens"] == 40
         assert data["components"][1]["cost"] == pytest.approx(0.0004)
-        assert data["total_tokens"] == 210
-        assert data["total_cost"] == pytest.approx(0.0021)
+        assert data["total_tokens"] == 214
+        assert data["total_cost"] == pytest.approx(0.00214)
         assert data["max_input_tokens"] == 8192
-        assert data["remaining_tokens"] == 7982
+        assert data["remaining_tokens"] == 7978
 
 
 def test_tokens_command_hides_zero_remaining_tokens(tmp_path: Path, mocker) -> None:
