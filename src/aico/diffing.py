@@ -40,13 +40,18 @@ def _try_exact_string_patch(
     if not replace_block and search_block == original_content:
         return ""
 
-    count = original_content.count(search_block)
-    if count != 1:
-        # Block not found (count=0) or is ambiguous (count>1).
-        # Fall back to the flexible patcher for more detailed analysis.
+    # An empty or whitespace-only search block is only valid for whole-file operations
+    # (new file or full replacement), which are handled above. For a partial patch
+    # on an existing file, it's invalid.
+    if not search_block.strip():
         return None
 
-    # Use replace with a count of 1. At this point, we know there's exactly one occurrence.
+    count = original_content.count(search_block)
+    if count == 0:
+        # Block not found. Fall back to the flexible patcher.
+        return None
+
+    # Use replace with a count of 1 to replace only the first occurrence.
     return original_content.replace(search_block, replace_block, 1)
 
 
@@ -83,11 +88,10 @@ def _try_whitespace_flexible_patch(
         if stripped_original_lines_chunk == stripped_search_lines:
             matching_block_start_indices.append(i)
 
-    if len(matching_block_start_indices) > 1:
-        return "AMBIGUOUS_PATCH"
     if not matching_block_start_indices:
         return None
 
+    # If there are multiple matches, we now default to patching the first one.
     match_start_index = matching_block_start_indices[0]
     matched_original_lines_chunk = original_lines[
         match_start_index : match_start_index + len(search_lines)
@@ -252,19 +256,7 @@ def _create_patch_failed_error_diff(
     )
 
 
-def _create_ambiguous_patch_error_diff(file_path: str) -> str:
-    error_message_lines = [
-        f"Error: The SEARCH block is ambiguous and was found multiple times in the file '{file_path}'.\n",
-        "Please provide a more specific SEARCH block that uniquely identifies the target code.",
-    ]
-    return "".join(
-        difflib.unified_diff(
-            [],
-            error_message_lines,
-            fromfile=f"a/{file_path}",
-            tofile=f"b/{file_path} (patch failed)",
-        )
-    )
+
 
 
 def _process_llm_response_stream(
@@ -350,8 +342,7 @@ def _process_llm_response_stream(
             diff_string = _create_patch_failed_error_diff(
                 actual_file_path, search_content, content_before_patch
             )
-        elif new_content_full == "AMBIGUOUS_PATCH":
-            diff_string = _create_ambiguous_patch_error_diff(actual_file_path)
+
         else:
             # --- Success Path ---
             from_file = f"a/{actual_file_path}"

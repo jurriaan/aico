@@ -248,9 +248,11 @@ def test_ambiguous_filepath_fails() -> None:
     assert "is ambiguous and matches multiple files" in diff
 
 
-def test_ambiguous_patch_fails() -> None:
+def test_ambiguous_patch_succeeds_on_first_match() -> None:
     # GIVEN a file where the target code block appears twice
-    original_contents = {"file.py": "repeatable_line = 1\n\nrepeatable_line = 1\n"}
+    original_contents = {
+        "file.py": "repeatable_line = 1\n\nsome_other_code = True\n\nrepeatable_line = 1\n"
+    }
     llm_response = (
         "File: file.py\n"
         "<<<<<<< SEARCH\n"
@@ -263,9 +265,21 @@ def test_ambiguous_patch_fails() -> None:
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
 
-    # THEN an ambiguity error is reported
-    assert "b/file.py (patch failed)" in diff
-    assert "The SEARCH block is ambiguous and was found multiple times" in diff
+    # THEN the patch is applied only to the first occurrence
+    assert "patch failed" not in diff
+    assert "ambiguous" not in diff
+    diff_lines = diff.splitlines()
+
+    # The first block should be changed
+    assert "-repeatable_line = 1" in diff_lines
+    assert "+changed_line = 2" in diff_lines
+
+    # Verify context lines are present to ensure we're looking at the right part of the diff
+    assert " some_other_code = True" in diff_lines
+
+    # Count occurrences to ensure the change happened only once
+    assert diff.count("-repeatable_line = 1") == 1
+    assert diff.count("+changed_line = 2") == 1
 
 
 def test_patching_with_blank_lines_in_search_block() -> None:
