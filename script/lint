@@ -1,0 +1,23 @@
+#!/bin/bash
+set -e
+
+cd "$(dirname "$0")/.."
+
+fix_mode=false
+files_to_process_args=()
+
+for arg in "$@"; do
+  if [[ "$arg" == "--fix" ]]; then
+    fix_mode=true
+  else
+    files_to_process_args+=("$arg")
+  fi
+done
+
+if [ "$fix_mode" = true ]; then
+  uv run ruff check --fix-only "${files_to_process_args[@]}" >/dev/null 2>&1
+  uv run ruff format "${files_to_process_args[@]}" >/dev/null 2>&1
+fi
+
+uv run basedpyright "${files_to_process_args[@]}"
+uv run ruff check "${files_to_process_args[@]}"
