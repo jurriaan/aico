@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "litellm>=1.72.6",
     "pydantic>=2.11",
+    "regex>=2024.11.6",
     "rich>=14.0.0",
     "typer>=0.16.0",
 ]
@@ -23,6 +24,8 @@ packages = ["src/aico"]
 
 [dependency-groups]
 dev = [
+    "basedpyright>=1.29.4",
     "pytest>=8.4.1",
     "pytest-mock>=3.14.1",
+    "ruff>=0.12.0",
 ]
