@@ -24,9 +24,7 @@ def test_init_creates_session_file_in_empty_dir(tmp_path: Path) -> None:
         assert f"Initialized session file: {session_file}" in result.stdout
 
         # AND the session file contains the default model
-        assert (
-            '"model": "openrouter/google/gemini-2.5-pro"' in session_file.read_text()
-        )
+        assert '"model": "openrouter/google/gemini-2.5-pro"' in session_file.read_text()
 
 
 def test_init_fails_if_session_already_exists(tmp_path: Path) -> None:
@@ -152,62 +150,120 @@ def test_add_file_outside_session_root_fails(tmp_path: Path) -> None:
         )
 
 
-def test_last_prints_last_response_raw_mode(tmp_path: Path) -> None:
-    # GIVEN a session file with a last_response object from a RAW mode command
-    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        session_file = Path(td) / SESSION_FILE_NAME
-        # This represents the new, cleaner model where derived content is null for RAW mode.
-        session_data = {
-            "model": "test-model",
-            "history_start_index": 0,
-            "context_files": [],
-            "chat_history": [],
-            "last_response": {
-                "raw_content": "This is the raw content.",
-                "mode_used": "raw",
-                "model": "test-model",
-                "timestamp": "2024-01-01T00:00:00Z",
-                "duration_ms": 123,
-            },
-        }
-        session_file.write_text(json.dumps(session_data))
+# --- Tests for the `last` command ---
+# Test data for a response that was `raw` but contained a diff
+DIFF_IN_RAW_RESPONSE = {
+    "raw_content": "File: a.py\n<<<<<<< SEARCH\nold\n=======\nnew\n>>>>>>> REPLACE",
+    "mode_used": "raw",
+    "unified_diff": "--- a/a.py\n+++ b/a.py\n-old\n+new",
+    "display_content": "File: a.py\n```diff\n--- a/a.py\n+++ b/a.py\n-old\n+new\n```\n",
+    "model": "test-model",
+    "timestamp": "2024-01-01T00:00:00Z",
+    "duration_ms": 123,
+}
 
-        # WHEN `aico last` is run
+# Test data for a response that was just conversational
+CONVERSATIONAL_RESPONSE = {
+    "raw_content": "Hello there!",
+    "mode_used": "raw",
+    "unified_diff": "",
+    "display_content": "Hello there!",
+    "model": "test-model",
+    "timestamp": "2024-01-01T00:00:00Z",
+    "duration_ms": 123,
+}
+
+
+def _create_session_with_last_response(
+    tmp_path: Path, last_response_data: dict
+) -> None:
+    """Helper to create a session file in a temp directory."""
+    session_file = tmp_path / SESSION_FILE_NAME
+    session_data = {
+        "model": "test-model",
+        "history_start_index": 0,
+        "context_files": [],
+        "chat_history": [],
+        "last_response": last_response_data,
+    }
+    session_file.write_text(json.dumps(session_data))
+
+
+def test_last_smart_default_shows_parsed_diff_in_tty(tmp_path: Path, mocker) -> None:
+    # GIVEN a session where the last response contained a diff
+    _create_session_with_last_response(tmp_path, DIFF_IN_RAW_RESPONSE)
+    mocker.patch("aico.main.is_terminal", return_value=True)
+
+    # WHEN `aico last` is run in a TTY
+    with runner.isolated_filesystem(temp_dir=tmp_path):
         result = runner.invoke(app, ["last"])
 
-        # THEN the raw content is printed to stdout
-        assert result.exit_code == 0
-        assert "This is the raw content." in result.stdout
+    # THEN the pretty diff (`display_content`) is shown
+    assert result.exit_code == 0
+    # Check for the content inside the rendered diff, not the markdown syntax
+    assert "--- a/a.py" in result.stdout
+    assert "-old" in result.stdout
+    assert "+new" in result.stdout
+    assert DIFF_IN_RAW_RESPONSE["raw_content"] not in result.stdout
 
 
-def test_last_prints_last_response_diff_mode_pipeable(tmp_path: Path) -> None:
-    # GIVEN a session file with a last_response from a DIFF mode command
-    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        session_file = Path(td) / SESSION_FILE_NAME
-        session_data = {
-            "model": "test-model",
-            "history_start_index": 0,
-            "context_files": [],
-            "chat_history": [],
-            "last_response": {
-                "raw_content": "File: ...",
-                "mode_used": "diff",
-                "unified_diff": "--- a/file.py\n+++ b/file.py\n-old\n+new",
-                "display_content": "Hello! ```diff...```",
-                "model": "test-model",
-                "timestamp": "2024-01-01T00:00:00Z",
-                "duration_ms": 456,
-            },
-        }
-        session_file.write_text(json.dumps(session_data))
+def test_last_smart_default_falls_back_to_raw_in_tty(tmp_path: Path, mocker) -> None:
+    # GIVEN a session where the last response was purely conversational
+    _create_session_with_last_response(tmp_path, CONVERSATIONAL_RESPONSE)
+    mocker.patch("aico.main.is_terminal", return_value=True)
 
-        # WHEN `aico last` is run (not in a TTY)
+    # WHEN `aico last` is run in a TTY
+    with runner.isolated_filesystem(temp_dir=tmp_path):
         result = runner.invoke(app, ["last"])
 
-        # THEN the unified_diff is printed for machine consumption
-        assert result.exit_code == 0
-        assert "--- a/file.py\n+++ b/file.py\n-old\n+new" in result.stdout
-        assert "Hello!" not in result.stdout
+    # THEN the raw content is shown (as it's the best available)
+    assert result.exit_code == 0
+    assert "Hello there!" in result.stdout
+    assert "```diff" not in result.stdout
+
+
+def test_last_smart_default_shows_unified_diff_when_piped(
+    tmp_path: Path, mocker
+) -> None:
+    # GIVEN a session where the last response contained a diff
+    _create_session_with_last_response(tmp_path, DIFF_IN_RAW_RESPONSE)
+    mocker.patch("aico.main.is_terminal", return_value=False)
+
+    # WHEN `aico last` is piped
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(app, ["last"])
+
+    # THEN the clean `unified_diff` is printed
+    assert result.exit_code == 0
+    assert result.stdout.strip() == DIFF_IN_RAW_RESPONSE["unified_diff"]
+
+
+def test_last_verbatim_shows_raw_content_in_tty(tmp_path: Path, mocker) -> None:
+    # GIVEN a session with a diff-containing response
+    _create_session_with_last_response(tmp_path, DIFF_IN_RAW_RESPONSE)
+    mocker.patch("aico.main.is_terminal", return_value=True)
+
+    # WHEN `aico last --verbatim` is run in a TTY
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(app, ["last", "--verbatim"])
+
+    # THEN the original raw response is shown
+    assert result.exit_code == 0
+    assert "<<<<<<< SEARCH" in result.stdout
+
+
+def test_last_verbatim_shows_raw_content_when_piped(tmp_path: Path, mocker) -> None:
+    # GIVEN a session with a diff-containing response
+    _create_session_with_last_response(tmp_path, DIFF_IN_RAW_RESPONSE)
+    mocker.patch("aico.main.is_terminal", return_value=False)
+
+    # WHEN `aico last --verbatim` is piped
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(app, ["last", "--verbatim"])
+
+    # THEN the raw content is printed without modification
+    assert result.exit_code == 0
+    assert result.stdout.strip() == DIFF_IN_RAW_RESPONSE["raw_content"]
 
 
 def test_last_fails_when_no_last_response_exists(tmp_path: Path) -> None:
@@ -307,9 +363,9 @@ def test_prompt_raw_mode(tmp_path: Path, mocker) -> None:
 
         last_response = session_data["last_response"]
         assert last_response["raw_content"] == "This is a raw response."
-        # For raw mode, derived fields should be null
-        assert last_response["unified_diff"] is None
-        assert last_response["display_content"] is None
+        # For a truly raw response, derived fields will be calculated but empty/same.
+        assert last_response["unified_diff"] == ""
+        assert last_response["display_content"] == "This is a raw response."
 
         # AND the new metadata is present
         assert last_response["model"] == "openrouter/google/gemini-2.5-pro"
@@ -336,7 +392,7 @@ def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
             "def hello():\n"
             "    pass\n"
             "=======\n"
-            'def hello(name: str):\n'
+            "def hello(name: str):\n"
             "    print(f'Hello, {name}!')\n"
             ">>>>>>> REPLACE"
         )
@@ -559,6 +615,74 @@ def test_drop_file_not_in_context_fails(tmp_path: Path) -> None:
         assert session_data["context_files"] == ["file1.py"]
 
 
+def test_prompt_raw_mode_with_diff_response_renders_live_diff(
+    tmp_path: Path, mocker
+) -> None:
+    # GIVEN a TTY-enabled environment and a session with a context file
+    mocker.patch("aico.main.is_terminal", return_value=True)
+
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+
+        code_file = Path(td) / "code.py"
+        original_content = "def hello():\n    pass"
+        code_file.write_text(original_content)
+        runner.invoke(app, ["add", "code.py"])
+
+        # AND the LLM API is mocked to return a stream of chunks for a diff
+        llm_diff_response = (
+            "File: code.py\n"
+            "<<<<<<< SEARCH\n"
+            "def hello():\n"
+            "    pass\n"
+            "=======\n"
+            "def hello(name: str):\n"
+            "    print(f'Hello, {name}!')\n"
+            ">>>>>>> REPLACE"
+        )
+        mock_completion = mocker.patch("litellm.completion")
+
+        # Simulate the response being streamed in two parts
+        mock_usage_obj = mocker.MagicMock()
+        mock_usage_obj.prompt_tokens = 150
+        mock_usage_obj.completion_tokens = 50
+        mock_usage_obj.total_tokens = 200
+
+        mock_chunk_1 = mocker.MagicMock()
+        mock_chunk_1.choices[0].delta.content = llm_diff_response[:60]
+        mock_chunk_1.usage = None
+
+        mock_chunk_2 = mocker.MagicMock()
+        mock_chunk_2.choices[0].delta.content = llm_diff_response[60:]
+        mock_chunk_2.usage = mock_usage_obj
+
+        mock_chunks = [mock_chunk_1, mock_chunk_2]
+
+        mock_stream = mocker.MagicMock()
+        mock_stream.__iter__.return_value = iter(mock_chunks)
+
+        mock_completion.return_value = mock_stream
+        mocker.patch("litellm.completion_cost", return_value=0.002)
+
+        # WHEN `aico prompt --mode raw` is run
+        prompt_text = "Add a name parameter and print it"
+        result = runner.invoke(app, ["prompt", "--mode", "raw", prompt_text])
+
+        # THEN the command succeeds
+        assert result.exit_code == 0
+
+        # AND the live display was updated with rendered diff content
+        assert "<<<<<<< SEARCH" not in result.stdout
+        assert "--- a/code.py" in result.stdout
+        assert "+def hello(name: str):" in result.stdout
+
+        # AND the session file still correctly records that `--mode raw` was used
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = json.loads(session_file.read_text())
+        last_response = session_data["last_response"]
+        assert last_response["mode_used"] == "raw"
+
+
 def test_drop_multiple_with_one_not_in_context_partially_fails(tmp_path: Path) -> None:
     # GIVEN a session with two files in context
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
@@ -583,6 +707,52 @@ def test_drop_multiple_with_one_not_in_context_partially_fails(tmp_path: Path) -
         session_file = Path(td) / SESSION_FILE_NAME
         session_data = json.loads(session_file.read_text())
         assert sorted(session_data["context_files"]) == ["file2.py"]
+
+
+def test_prompt_raw_mode_with_diff_response_saves_parsed_diff(
+    tmp_path: Path, mocker
+) -> None:
+    # GIVEN an initialized session
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+        file_to_edit = Path(td) / "file.py"
+        file_to_edit.write_text("old content")
+        runner.invoke(app, ["add", "file.py"])
+
+        # AND the LLM API is mocked to return a diff-formatted response
+        llm_diff_response = (
+            "File: file.py\n"
+            "<<<<<<< SEARCH\n"
+            "old content\n"
+            "=======\n"
+            "new content\n"
+            ">>>>>>> REPLACE"
+        )
+        mock_completion = mocker.patch("litellm.completion")
+        mock_stream = mocker.MagicMock()
+        mock_chunk = mocker.MagicMock()
+        mock_chunk.choices[0].delta.content = llm_diff_response
+        mock_stream.__iter__.return_value = iter([mock_chunk])
+        mock_completion.return_value = mock_stream
+        mocker.patch("litellm.completion_cost", return_value=None)
+        mocker.patch("litellm.token_counter", return_value=1)
+
+        # WHEN `aico prompt --mode raw` is run
+        result = runner.invoke(app, ["prompt", "--mode", "raw", "make a change"])
+
+        # THEN the command succeeds and still prints the raw output for now
+        assert result.exit_code == 0
+        assert llm_diff_response in result.stdout
+
+        # AND the session file is updated with BOTH the raw content AND parsed diffs
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = json.loads(session_file.read_text())
+        last_response = session_data["last_response"]
+
+        assert last_response["raw_content"] == llm_diff_response
+        assert last_response["mode_used"] == "raw"
+        assert "--- a/file.py" in last_response["unified_diff"]
+        assert "```diff" in last_response["display_content"]
 
 
 def test_drop_autocompletion(tmp_path: Path) -> None:

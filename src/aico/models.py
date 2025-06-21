@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import Enum
 from typing import Literal
 
@@ -41,7 +42,7 @@ class LastResponse(BaseModel):
     raw_content: str
     mode_used: Mode
 
-    # Derived content, populated only when mode_used is DIFF.
+    # Derived content, populated whenever diff blocks are found in the raw_content.
     # A clean, standard unified diff for tools, redirection, or scripting.
     unified_diff: str | None = None
     # The full conversational response, with diffs embedded, for rich terminal display.
@@ -82,3 +83,9 @@ class AIPatch(BaseModel):
     llm_file_path: str
     search_content: str
     replace_content: str
+
+
+@dataclass
+class ProcessedDiffBlock:
+    llm_file_path: str
+    unified_diff: str

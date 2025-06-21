@@ -1,10 +1,10 @@
 import difflib
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator, Literal, TypedDict
 
 import regex as re
 
-from aico.models import AIPatch
+from aico.models import AIPatch, ProcessedDiffBlock
 
 # This single regex is the core of the parser. It finds a complete `File:` block
 # that contains a valid SEARCH/REPLACE block.
@@ -60,7 +60,7 @@ def _try_whitespace_flexible_patch(
         # for flexible patching. The exact patcher should handle it if it's an exact match.
         return None
 
-    matching_block_start_indices = []
+    matching_block_start_indices: list[int] = []
     for i in range(len(original_lines) - len(search_lines) + 1):
         original_lines_chunk = original_lines[i : i + len(search_lines)]
         stripped_original_lines_chunk = [line.strip() for line in original_lines_chunk]
@@ -81,7 +81,7 @@ def _try_whitespace_flexible_patch(
     original_anchor_indent = _get_consistent_indentation(matched_original_lines_chunk)
     replace_min_indent = _get_consistent_indentation(replace_lines)
 
-    indented_replace_lines = []
+    indented_replace_lines: list[str] = []
     for line in replace_lines:
         if not line.strip():
             indented_replace_lines.append(line)
@@ -252,11 +252,6 @@ def _create_ambiguous_patch_error_diff(file_path: str) -> str:
     )
 
 
-class ProcessedDiffBlock(TypedDict):
-    llm_file_path: str
-    unified_diff: str
-
-
 def _process_llm_response_stream(
     original_file_contents: dict[str, str], llm_response: str
 ) -> Iterator[str | ProcessedDiffBlock]:
@@ -312,9 +307,7 @@ def _process_llm_response_stream(
             content_before_patch = ""
             is_new_file = True
         else:
-            diff_string = _create_file_not_found_error_diff(
-                parsed_block.llm_file_path
-            )
+            diff_string = _create_file_not_found_error_diff(parsed_block.llm_file_path)
             yield ProcessedDiffBlock(
                 llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string
             )
@@ -380,7 +373,7 @@ def generate_unified_diff(
 
     for item in stream:
         match item:
-            case {"unified_diff": diff_string}:
+            case ProcessedDiffBlock(unified_diff=diff_string):
                 diff_parts.append(diff_string)
             case str():
                 # Ignore conversational text for the unified diff
@@ -403,10 +396,11 @@ def generate_display_content(
         match item:
             case str() as text:
                 processed_parts.append(text)
-            case {"llm_file_path": llm_file_path, "unified_diff": diff_string}:
+            case ProcessedDiffBlock(
+                llm_file_path=llm_file_path, unified_diff=diff_string
+            ):
                 markdown_diff = (
-                    f"File: {llm_file_path}\n"
-                    f"```diff\n{diff_string.strip()}\n```\n"
+                    f"File: {llm_file_path}\n```diff\n{diff_string.strip()}\n```\n"
                 )
                 processed_parts.append(markdown_diff)
 

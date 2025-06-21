@@ -84,3 +84,8 @@ def get_relative_path_or_error(file_path: Path, session_root: Path) -> str | Non
             file=sys.stderr,
         )
         return None
+
+
+def is_terminal() -> bool:
+    """Checks if stdout is a TTY."""
+    return sys.stdout.isatty()

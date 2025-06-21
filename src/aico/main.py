@@ -32,6 +32,7 @@ from aico.utils import (
     find_session_file,
     format_tokens,
     get_relative_path_or_error,
+    is_terminal,
     load_session,
 )
 
@@ -89,7 +90,15 @@ def init(
 
 
 @app.command()
-def last() -> None:
+def last(
+    verbatim: Annotated[
+        bool,
+        typer.Option(
+            "--verbatim",
+            help="Show the verbatim response from the AI with no processing.",
+        ),
+    ] = False,
+) -> None:
     """
     Prints the last processed response from the AI to standard output.
     """
@@ -99,33 +108,31 @@ def last() -> None:
         print("Error: No last response found in session.", file=sys.stderr)
         raise typer.Exit(code=1)
 
-    match last_resp.mode_used:
-        case Mode.RAW:
-            # In RAW mode, raw_content is the single source of truth.
-            content = last_resp.raw_content
-            if sys.stdout.isatty():
-                from rich.console import Console
-                from rich.markdown import Markdown
+    # Determine what content to show based on the verbatim flag and TTY status
+    content_to_show: str | None = None
+    use_rich_markdown = False
 
-                console = Console()
-                console.print(Markdown(content))
-            else:
-                print(content)
+    if verbatim:
+        content_to_show = last_resp.raw_content
+        use_rich_markdown = is_terminal()
+    else:
+        # Smart default
+        if is_terminal():
+            # In a TTY, prefer the pretty display_content; if it's empty (e.g. no diffs found),
+            # fall back to the raw_content. This covers conversational responses.
+            content_to_show = last_resp.display_content or last_resp.raw_content
+            use_rich_markdown = True
+        else:
+            # When piped, output the clean unified_diff. This will be null/empty if no diffs.
+            content_to_show = last_resp.unified_diff
 
-        case Mode.DIFF:
-            # In DIFF mode, we choose between two different derived representations.
-            if sys.stdout.isatty():
-                # For interactive terminals, show the rich display content.
-                if last_resp.display_content:
-                    from rich.console import Console
-                    from rich.markdown import Markdown
-
-                    console = Console()
-                    console.print(Markdown(last_resp.display_content))
-            else:
-                # For pipes, print the clean, machine-readable diff.
-                if last_resp.unified_diff:
-                    print(last_resp.unified_diff)
+    # Render the content
+    if content_to_show:
+        if use_rich_markdown:
+            console = Console()
+            console.print(Markdown(content_to_show))
+        else:
+            print(content_to_show)
 
 
 @app.command()
@@ -240,9 +247,11 @@ def _calculate_and_display_cost(
         },
         "model": session_data.model,
     }
-    cost = litellm.completion_cost(completion_response=mock_response)
-    if cost is not None:
-        message_cost = cost
+
+    try:
+        message_cost = litellm.completion_cost(completion_response=mock_response)
+    except Exception as _:
+        pass
 
     prompt_tokens_str = format_tokens(token_usage.prompt_tokens)
     completion_tokens_str = format_tokens(token_usage.completion_tokens)
@@ -259,7 +268,7 @@ def _calculate_and_display_cost(
 
     info_str = f"Tokens: {prompt_tokens_str} sent, {completion_tokens_str} received. {cost_str}"
 
-    if sys.stdout.isatty():
+    if is_terminal():
         console = Console()
         console.print(f"\n[dim]---[/dim]\n[dim]{info_str}[/dim]")
     else:
@@ -268,71 +277,15 @@ def _calculate_and_display_cost(
     return message_cost
 
 
-def _handle_raw_streaming(
-    session_data: SessionData, messages: list[dict[str, str]]
-) -> tuple[str, TokenUsage | None, float | None]:
-    """Handles the streaming logic for raw mode with live markdown rendering."""
-    import litellm
-
-    llm_response_buffer: str = ""
-    token_usage: TokenUsage | None = None
-
-    stream = litellm.completion(
-        model=session_data.model,
-        messages=messages,
-        stream=True,
-        stream_options={"include_usage": True},
-    )
-
-    if sys.stdout.isatty():
-        with Live(console=Console(), auto_refresh=False) as live:
-            for chunk in stream:
-                if hasattr(chunk, "usage") and chunk.usage:
-                    usage = chunk.usage
-                    token_usage = TokenUsage(
-                        prompt_tokens=usage.prompt_tokens,
-                        completion_tokens=usage.completion_tokens,
-                        total_tokens=usage.total_tokens,
-                    )
-
-                if hasattr(chunk, "choices") and chunk.choices:
-                    delta = chunk.choices[0].delta.content or ""
-                    llm_response_buffer += delta
-                    live.update(Markdown(llm_response_buffer), refresh=True)
-    else:
-        for chunk in stream:
-            if hasattr(chunk, "usage") and chunk.usage:
-                usage = chunk.usage
-                token_usage = TokenUsage(
-                    prompt_tokens=usage.prompt_tokens,
-                    completion_tokens=usage.completion_tokens,
-                    total_tokens=usage.total_tokens,
-                )
-            if hasattr(chunk, "choices") and chunk.choices:
-                delta = chunk.choices[0].delta.content or ""
-                llm_response_buffer += delta
-
-    if not token_usage and hasattr(stream, "usage") and stream.usage:
-        usage = stream.usage
-        token_usage = TokenUsage(
-            prompt_tokens=usage.prompt_tokens,
-            completion_tokens=usage.completion_tokens,
-            total_tokens=usage.total_tokens,
-        )
-
-    message_cost: float | None = None
-    if token_usage:
-        message_cost = _calculate_and_display_cost(token_usage, session_data)
-
-    return llm_response_buffer, token_usage, message_cost
-
-
-def _handle_diff_streaming(
+def _handle_unified_streaming(
     session_data: SessionData,
     original_file_contents: dict[str, str],
     messages: list[dict[str, str]],
 ) -> tuple[str, str | None, TokenUsage | None, float | None]:
-    """Handles the streaming logic for diff mode with live updates."""
+    """
+    Handles the streaming logic for all modes, always attempting to parse
+    and render diffs live.
+    """
     import litellm
 
     full_llm_response_buffer: str = ""
@@ -345,7 +298,7 @@ def _handle_diff_streaming(
         stream_options={"include_usage": True},
     )
 
-    if sys.stdout.isatty():
+    if is_terminal():
         with Live(console=Console(), auto_refresh=False) as live:
             for chunk in stream:
                 if hasattr(chunk, "usage") and chunk.usage:
@@ -462,34 +415,24 @@ def prompt(
 
     try:
         start_time = time.monotonic()
-        match mode:
-            case Mode.RAW:
-                llm_response_content, token_usage, message_cost = _handle_raw_streaming(
-                    session_data, messages
-                )
-            case Mode.DIFF:
-                (
-                    llm_response_content,
-                    display_content,
-                    token_usage,
-                    message_cost,
-                ) = _handle_diff_streaming(
-                    session_data, original_file_contents, messages
-                )
+        (
+            llm_response_content,
+            display_content,
+            token_usage,
+            message_cost,
+        ) = _handle_unified_streaming(session_data, original_file_contents, messages)
         duration_ms = int((time.monotonic() - start_time) * 1000)
     except Exception as e:
         # Specific error handling can be improved in handlers if needed
         print(f"Error calling LLM API: {e}", file=sys.stderr)
         raise typer.Exit(code=1)
 
-    # 6. Process Output Based on Mode
-    unified_diff: str | None = None
-    if mode == Mode.DIFF:
-        # The display_content is already generated by the streaming handler.
-        # We only need to generate the unified_diff for saving and non-TTY output.
-        unified_diff = generate_unified_diff(
-            original_file_contents, llm_response_content
-        )
+    # 6. Process Output for Storage and Non-TTY
+    # The `display_content` is already generated by the streaming handler.
+    # We only need to generate the `unified_diff` for saving and non-TTY output.
+    unified_diff = generate_unified_diff(
+        original_file_contents, llm_response_content
+    )
 
     # 7. Update State & Save
     assistant_response_timestamp = datetime.now(timezone.utc).isoformat()
@@ -532,7 +475,7 @@ def prompt(
     # 8. Print Final Output
     # This phase handles non-interactive output. All interactive output is handled
     # by the streaming functions.
-    if not sys.stdout.isatty():
+    if not is_terminal():
         match mode:
             case Mode.DIFF:
                 if unified_diff:
