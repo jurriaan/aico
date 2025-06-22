@@ -1,7 +1,7 @@
 # pyright: standard
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -24,7 +24,7 @@ def test_history_set_with_negative_index_argument(tmp_path: Path) -> None:
                     role="user",
                     content=f"msg {i}",
                     mode=Mode.CONVERSATION,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    timestamp=datetime.now(UTC).isoformat(),
                 )
                 for i in range(10)
             ],
@@ -56,7 +56,7 @@ def test_history_view_shows_correct_status(tmp_path: Path) -> None:
                     role="user",
                     content=f"msg {i}",
                     mode=Mode.CONVERSATION,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    timestamp=datetime.now(UTC).isoformat(),
                 )
                 for i in range(10)
             ],
@@ -71,9 +71,7 @@ def test_history_view_shows_correct_status(tmp_path: Path) -> None:
         # THEN the command succeeds and shows the correct status
         assert result.exit_code == 0
         assert "Active history starts at index 4 of 10 total messages." in result.stdout
-        assert (
-            "(6 messages will be sent as context in the next prompt.)" in result.stdout
-        )
+        assert "(6 messages will be sent as context in the next prompt.)" in result.stdout
 
 
 def test_history_reset_sets_index_to_zero(tmp_path: Path) -> None:
@@ -87,7 +85,7 @@ def test_history_reset_sets_index_to_zero(tmp_path: Path) -> None:
                     role="user",
                     content=f"msg {i}",
                     mode=Mode.CONVERSATION,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    timestamp=datetime.now(UTC).isoformat(),
                 )
                 for i in range(10)
             ],
@@ -101,10 +99,7 @@ def test_history_reset_sets_index_to_zero(tmp_path: Path) -> None:
 
         # THEN the command succeeds and reports the reset
         assert result.exit_code == 0
-        assert (
-            "History index reset to 0. Full chat history is now active."
-            in result.stdout
-        )
+        assert "History index reset to 0. Full chat history is now active." in result.stdout
 
         # AND the session file is updated
         updated_session_data = json.loads(session_file.read_text())
@@ -122,7 +117,7 @@ def test_history_set_with_positive_index(tmp_path: Path) -> None:
                     role="user",
                     content=f"msg {i}",
                     mode=Mode.CONVERSATION,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    timestamp=datetime.now(UTC).isoformat(),
                 )
                 for i in range(10)
             ],
@@ -150,9 +145,7 @@ def test_history_set_with_positive_index(tmp_path: Path) -> None:
         ("abc", "Error: Invalid index 'abc'"),
     ],
 )
-def test_history_set_fails_with_invalid_index(
-    tmp_path: Path, invalid_input: str, error_message: str
-) -> None:
+def test_history_set_fails_with_invalid_index(tmp_path: Path, invalid_input: str, error_message: str) -> None:
     # GIVEN a session with 10 history messages and a non-zero start index
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_data = SessionData(
@@ -163,7 +156,7 @@ def test_history_set_fails_with_invalid_index(
                     role="user",
                     content=f"msg {i}",
                     mode=Mode.CONVERSATION,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    timestamp=datetime.now(UTC).isoformat(),
                 )
                 for i in range(10)
             ],
@@ -192,9 +185,7 @@ def test_history_set_fails_with_invalid_index(
         ["history", "set", "5"],
     ],
 )
-def test_history_commands_fail_without_session(
-    tmp_path: Path, command_args: list[str]
-) -> None:
+def test_history_commands_fail_without_session(tmp_path: Path, command_args: list[str]) -> None:
     # GIVEN an empty directory with no session file
     with runner.isolated_filesystem(temp_dir=tmp_path):
         # WHEN a history command is run

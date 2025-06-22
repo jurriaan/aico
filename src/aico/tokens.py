@@ -16,9 +16,7 @@ tokens_app = typer.Typer(
 
 @tokens_app.callback(invoke_without_command=True)
 def tokens(
-    json_output: Annotated[
-        bool, typer.Option("--json", help="Output the report as JSON.")
-    ] = False,
+    json_output: Annotated[bool, typer.Option("--json", help="Output the report as JSON.")] = False,
 ) -> None:
     """
     Calculates and displays the token usage and cost for the current session context.
@@ -40,9 +38,7 @@ def tokens(
     system_prompt_tokens = litellm.token_counter(  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]
         model=session_data.model, text=system_prompt
     )
-    components.append(
-        TokenInfo(description="system prompt", tokens=system_prompt_tokens)
-    )
+    components.append(TokenInfo(description="system prompt", tokens=system_prompt_tokens))
     total_tokens += system_prompt_tokens
 
     # 2. Alignment Prompts Tokens (worst-case)
@@ -51,9 +47,7 @@ def tokens(
         # Find the alignment prompts with the max token count
         max_alignment_tokens = 0
         for mode_prompts in ALIGNMENT_PROMPTS.values():
-            messages_as_dicts = [
-                {"role": p.role, "content": p.content} for p in mode_prompts
-            ]
+            messages_as_dicts = [{"role": p.role, "content": p.content} for p in mode_prompts]
             tokens = litellm.token_counter(  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]
                 model=session_data.model, messages=messages_as_dicts
             )
@@ -164,9 +158,7 @@ def tokens(
         return
 
     # Display results
-    console.print(
-        f"Approximate context window usage for {token_report.model}, in tokens:\n"
-    )
+    console.print(f"Approximate context window usage for {token_report.model}, in tokens:\n")
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column(justify="right")  # Tokens
     if has_cost_info:
@@ -211,10 +203,7 @@ def tokens(
         context_table.add_column()
         context_table.add_row(f"{token_report.max_input_tokens:,}", "max tokens")
 
-        if (
-            token_report.remaining_tokens is not None
-            and token_report.remaining_tokens != 0
-        ):
+        if token_report.remaining_tokens is not None and token_report.remaining_tokens != 0:
             remaining_percent = (
                 f"({token_report.remaining_tokens / token_report.max_input_tokens:.0%})"
                 if token_report.max_input_tokens > 0

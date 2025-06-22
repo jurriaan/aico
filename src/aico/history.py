@@ -21,9 +21,7 @@ def view() -> None:
     history_len = len(session_data.chat_history)
     start_index = session_data.history_start_index
     active_messages = history_len - start_index
-    print(
-        f"Active history starts at index {start_index} of {history_len} total messages."
-    )
+    print(f"Active history starts at index {start_index} of {history_len} total messages.")
     print(f"({active_messages} messages will be sent as context in the next prompt.)")
 
 
@@ -62,10 +60,8 @@ def set_index(
         else:
             target_index = int(index_str)
     except ValueError:
-        print(
-            f"Error: Invalid index '{index_str}'. Must be an integer.", file=sys.stderr
-        )
-        raise typer.Exit(code=1)
+        print(f"Error: Invalid index '{index_str}'. Must be an integer.", file=sys.stderr)
+        raise typer.Exit(code=1) from None
 
     # An index of history_len is valid; it means sending no history.
     if not (0 <= target_index <= history_len):

@@ -13,9 +13,7 @@ from aico.utils import SESSION_FILE_NAME
 runner = CliRunner()
 
 
-def _create_mock_stream_chunk(
-    content: str | None, mocker: MockerFixture, usage: object | None = None
-) -> object:
+def _create_mock_stream_chunk(content: str | None, mocker: MockerFixture, usage: object | None = None) -> object:
     """
     Creates a mock stream chunk that conforms to the LiteLLMChoiceContainer
     and LiteLLMUsageContainer protocols.
@@ -61,10 +59,7 @@ def test_init_fails_if_session_already_exists(tmp_path: Path) -> None:
         # THEN the command fails with an appropriate error message
         assert result.exit_code == 1
 
-        assert (
-            f"Error: Session file '{expected_path}' already exists in this directory."
-            in result.stderr
-        )
+        assert f"Error: Session file '{expected_path}' already exists in this directory." in result.stderr
 
 
 def test_add_file_to_context(tmp_path: Path) -> None:
@@ -144,8 +139,7 @@ def test_add_file_outside_session_root_fails(tmp_path: Path) -> None:
         # THEN the command fails with a clear error message
         assert result.exit_code == 1
         assert (
-            f"Error: File '{other_file.resolve()}' is outside the session root '{Path(td).resolve()}'"
-            in result.stderr
+            f"Error: File '{other_file.resolve()}' is outside the session root '{Path(td).resolve()}'" in result.stderr
         )
 
 
@@ -173,9 +167,7 @@ CONVERSATIONAL_RESPONSE = {
 }
 
 
-def _create_session_with_last_response(
-    tmp_path: Path, last_response_data: dict
-) -> None:
+def _create_session_with_last_response(tmp_path: Path, last_response_data: dict) -> None:
     """Helper to create a session file in a temp directory."""
     session_file = tmp_path / SESSION_FILE_NAME
     session_data = {
@@ -328,9 +320,7 @@ def test_prompt_conversation_mode_injects_alignment(tmp_path: Path, mocker) -> N
         mock_usage_obj.total_tokens = 120
 
         mock_chunk_1 = _create_mock_stream_chunk("This is a ", mocker=mocker)
-        mock_chunk_2 = _create_mock_stream_chunk(
-            "raw response.", mocker=mocker, usage=mock_usage_obj
-        )
+        mock_chunk_2 = _create_mock_stream_chunk("raw response.", mocker=mocker, usage=mock_usage_obj)
 
         mock_stream = mocker.MagicMock()
         mock_stream.__iter__.return_value = iter([mock_chunk_1, mock_chunk_2])
@@ -437,9 +427,7 @@ def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
         mock_usage_obj.total_tokens = 200
 
         mock_chunk_1 = _create_mock_stream_chunk(llm_diff_response[:60], mocker=mocker)
-        mock_chunk_2 = _create_mock_stream_chunk(
-            llm_diff_response[60:], mocker=mocker, usage=mock_usage_obj
-        )
+        mock_chunk_2 = _create_mock_stream_chunk(llm_diff_response[60:], mocker=mocker, usage=mock_usage_obj)
 
         mock_stream = mocker.MagicMock()
         mock_stream.__iter__.return_value = iter([mock_chunk_1, mock_chunk_2])
@@ -667,9 +655,7 @@ def test_prompt_raw_mode_does_not_inject_alignment(tmp_path: Path, mocker) -> No
         assert not any("conversational assistant" in c for c in message_contents)
 
 
-def test_prompt_conversation_mode_with_diff_response_renders_live_diff(
-    tmp_path: Path, mocker
-) -> None:
+def test_prompt_conversation_mode_with_diff_response_renders_live_diff(tmp_path: Path, mocker) -> None:
     # GIVEN a TTY-enabled environment and a session with a context file
     mocker.patch("aico.main.is_terminal", return_value=True)
 
@@ -701,9 +687,7 @@ def test_prompt_conversation_mode_with_diff_response_renders_live_diff(
         mock_usage_obj.total_tokens = 200
 
         mock_chunk_1 = _create_mock_stream_chunk(llm_diff_response[:60], mocker=mocker)
-        mock_chunk_2 = _create_mock_stream_chunk(
-            llm_diff_response[60:], mocker=mocker, usage=mock_usage_obj
-        )
+        mock_chunk_2 = _create_mock_stream_chunk(llm_diff_response[60:], mocker=mocker, usage=mock_usage_obj)
 
         mock_stream = mocker.MagicMock()
         mock_stream.__iter__.return_value = iter([mock_chunk_1, mock_chunk_2])
@@ -755,9 +739,7 @@ def test_drop_multiple_with_one_not_in_context_partially_fails(tmp_path: Path) -
         assert sorted(session_data["context_files"]) == ["file2.py"]
 
 
-def test_prompt_conversation_mode_with_diff_response_saves_parsed_diff(
-    tmp_path: Path, mocker
-) -> None:
+def test_prompt_conversation_mode_with_diff_response_saves_parsed_diff(tmp_path: Path, mocker) -> None:
     # GIVEN an initialized session
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         runner.invoke(app, ["init"])
@@ -766,14 +748,7 @@ def test_prompt_conversation_mode_with_diff_response_saves_parsed_diff(
         runner.invoke(app, ["add", "file.py"])
 
         # AND the LLM API is mocked to return a diff-formatted response
-        llm_diff_response = (
-            "File: file.py\n"
-            "<<<<<<< SEARCH\n"
-            "old content\n"
-            "=======\n"
-            "new content\n"
-            ">>>>>>> REPLACE"
-        )
+        llm_diff_response = "File: file.py\n<<<<<<< SEARCH\nold content\n=======\nnew content\n>>>>>>> REPLACE"
         mock_completion = mocker.patch("litellm.completion")
         mock_chunk = _create_mock_stream_chunk(llm_diff_response, mocker=mocker)
         mock_stream = mocker.MagicMock()
@@ -906,9 +881,7 @@ def test_prompt_with_piped_input_only(tmp_path: Path, mocker: MockerFixture) -> 
         assert user_msg["piped_content"] is None
 
 
-def test_prompt_with_piped_input_and_argument(
-    tmp_path: Path, mocker: MockerFixture
-) -> None:
+def test_prompt_with_piped_input_and_argument(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN an initialized session
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         runner.invoke(app, ["init"])
@@ -944,9 +917,7 @@ def test_prompt_with_piped_input_and_argument(
         assert user_msg["piped_content"] == piped_content
 
 
-def test_prompt_with_history_reconstructs_piped_content(
-    tmp_path: Path, mocker: MockerFixture
-) -> None:
+def test_prompt_with_history_reconstructs_piped_content(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN an initialized session
     with runner.isolated_filesystem(temp_dir=tmp_path):
         runner.invoke(app, ["init"])
@@ -981,8 +952,7 @@ def test_prompt_with_history_reconstructs_piped_content(
         assert historical_user_msg["role"] == "user"
 
         expected_reconstructed_content = (
-            f"<stdin_content>\n{piped_content}\n</stdin_content>\n"
-            f"<prompt>\n{cli_prompt}\n</prompt>"
+            f"<stdin_content>\n{piped_content}\n</stdin_content>\n<prompt>\n{cli_prompt}\n</prompt>"
         )
         assert historical_user_msg["content"] == expected_reconstructed_content
 

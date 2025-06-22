@@ -29,9 +29,7 @@ _FILE_BLOCK_REGEX = re.compile(
 )
 
 
-def _try_exact_string_patch(
-    original_content: str, search_block: str, replace_block: str
-) -> str | None:
+def _try_exact_string_patch(original_content: str, search_block: str, replace_block: str) -> str | None:
     # Handle file creation
     if not search_block and not original_content:
         return replace_block
@@ -61,9 +59,7 @@ def _get_consistent_indentation(lines: list[str]) -> str:
     return ""
 
 
-def _try_whitespace_flexible_patch(
-    original_content: str, search_block: str, replace_block: str
-) -> str | None:
+def _try_whitespace_flexible_patch(original_content: str, search_block: str, replace_block: str) -> str | None:
     original_lines = original_content.splitlines(keepends=True)
     search_lines = search_block.splitlines(keepends=True)
     replace_lines = replace_block.splitlines(keepends=True)
@@ -92,9 +88,7 @@ def _try_whitespace_flexible_patch(
 
     # If there are multiple matches, we now default to patching the first one.
     match_start_index = matching_block_start_indices[0]
-    matched_original_lines_chunk = original_lines[
-        match_start_index : match_start_index + len(search_lines)
-    ]
+    matched_original_lines_chunk = original_lines[match_start_index : match_start_index + len(search_lines)]
 
     original_anchor_indent = _get_consistent_indentation(matched_original_lines_chunk)
     replace_min_indent = _get_consistent_indentation(replace_lines)
@@ -123,45 +117,35 @@ def _try_whitespace_flexible_patch(
     return "".join(new_content_lines)
 
 
-def _create_patched_content(
-    original_content: str, search_block: str, replace_block: str
-) -> str | None:
+def _create_patched_content(original_content: str, search_block: str, replace_block: str) -> str | None:
     # Stage 1: Exact match
     exact_patch = _try_exact_string_patch(original_content, search_block, replace_block)
     if exact_patch is not None:
         return exact_patch
 
     # Stage 2: Whitespace-insensitive match
-    flexible_patch = _try_whitespace_flexible_patch(
-        original_content, search_block, replace_block
-    )
+    flexible_patch = _try_whitespace_flexible_patch(original_content, search_block, replace_block)
     if flexible_patch is not None:
         return flexible_patch
 
     return None
 
 
-def _find_best_matching_filename(
-    llm_path: str, available_paths: list[str]
-) -> str | None:
+def _find_best_matching_filename(llm_path: str, available_paths: list[str]) -> str | None:
     # 1. Exact Match
     if llm_path in available_paths:
         return llm_path
 
     # 2. Basename Match
     llm_basename = Path(llm_path).name
-    basename_matches = [
-        path for path in available_paths if Path(path).name == llm_basename
-    ]
+    basename_matches = [path for path in available_paths if Path(path).name == llm_basename]
     if len(basename_matches) == 1:
         return basename_matches[0]
     if len(basename_matches) > 1:
         return "AMBIGUOUS_FILE"
 
     # 3. Fuzzy match
-    close_matches = difflib.get_close_matches(
-        llm_path, available_paths, n=1, cutoff=0.8
-    )
+    close_matches = difflib.get_close_matches(llm_path, available_paths, n=1, cutoff=0.8)
     if close_matches:
         return close_matches[0]
 
@@ -197,9 +181,7 @@ def _create_file_not_found_error_diff(llm_path: str) -> str:
     )
 
 
-def _create_patch_failed_error_diff(
-    file_path: str, search_block: str, original_content: str
-) -> str:
+def _create_patch_failed_error_diff(file_path: str, search_block: str, original_content: str) -> str:
     error_message_lines: list[str] = [
         f"Error: The SEARCH block from the AI could not be found in '{file_path}'.\n",
         "This can happen if the file has changed, or if the AI made a mistake.\n",
@@ -210,9 +192,7 @@ def _create_patch_failed_error_diff(
     search_lines = search_block.splitlines()
 
     if search_lines:
-        matcher = difflib.SequenceMatcher(
-            None, original_lines, search_lines, autojunk=False
-        )
+        matcher = difflib.SequenceMatcher(None, original_lines, search_lines, autojunk=False)
         match = matcher.find_longest_match(0, len(original_lines), 0, len(search_lines))
 
         # Only show context if a reasonable portion of the search block was matched.
@@ -289,15 +269,11 @@ def _process_llm_response_stream(
         diff_string: str
 
         # Find file path first. Handle file path errors immediately.
-        actual_file_path = _find_best_matching_filename(
-            parsed_block.llm_file_path, list(current_file_contents.keys())
-        )
+        actual_file_path = _find_best_matching_filename(parsed_block.llm_file_path, list(current_file_contents.keys()))
 
         if actual_file_path == "AMBIGUOUS_FILE":
             diff_string = _create_ambiguous_file_error_diff(parsed_block.llm_file_path)
-            yield ProcessedDiffBlock(
-                llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string
-            )
+            yield ProcessedDiffBlock(llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string)
             continue
 
         # Determine if this is a new file vs. existing file vs. file not found.
@@ -305,22 +281,15 @@ def _process_llm_response_stream(
         is_new_file = False
         if actual_file_path:
             content_before_patch = current_file_contents[actual_file_path]
-        elif (
-            search_content == ""
-            and parsed_block.llm_file_path not in current_file_contents
-        ):
+        elif search_content == "" and parsed_block.llm_file_path not in current_file_contents:
             actual_file_path = parsed_block.llm_file_path
             content_before_patch = ""
             is_new_file = True
         else:
             # If the search content is not empty, but we couldn't find a file, it's an error.
             if not actual_file_path:
-                diff_string = _create_file_not_found_error_diff(
-                    parsed_block.llm_file_path
-                )
-                yield ProcessedDiffBlock(
-                    llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string
-                )
+                diff_string = _create_file_not_found_error_diff(parsed_block.llm_file_path)
+                yield ProcessedDiffBlock(llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string)
                 continue
             # This case should now be rare, but handles if an empty search block is
             # provided for a file that already exists in the context. We treat it as
@@ -335,9 +304,7 @@ def _process_llm_response_stream(
         )
 
         if new_content_full is None:
-            diff_string = _create_patch_failed_error_diff(
-                actual_file_path, search_content, content_before_patch
-            )
+            diff_string = _create_patch_failed_error_diff(actual_file_path, search_content, content_before_patch)
 
         else:
             # --- Success Path ---
@@ -365,9 +332,7 @@ def _process_llm_response_stream(
                 current_file_contents[actual_file_path] = new_content_full
 
         # 3. Yield the processed block result
-        yield ProcessedDiffBlock(
-            llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string
-        )
+        yield ProcessedDiffBlock(llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string)
 
     # 4. Yield any remaining conversational text after the last block
     if last_end < len(llm_response):
@@ -388,9 +353,7 @@ def _generate_output_from_stream(
     return "".join(output_parts)
 
 
-def generate_unified_diff(
-    original_file_contents: FileContents, llm_response: str
-) -> str:
+def generate_unified_diff(original_file_contents: FileContents, llm_response: str) -> str:
     """
     Generates a unified diff string by processing all `File:` blocks sequentially.
     Conversational text is ignored.
@@ -403,14 +366,10 @@ def generate_unified_diff(
             case str():
                 return ""
 
-    return _generate_output_from_stream(
-        original_file_contents, llm_response, formatter
-    ).strip()
+    return _generate_output_from_stream(original_file_contents, llm_response, formatter).strip()
 
 
-def generate_display_content(
-    original_file_contents: FileContents, llm_response: str
-) -> str:
+def generate_display_content(original_file_contents: FileContents, llm_response: str) -> str:
     """
     Generates a markdown-formatted string with diffs embedded in conversational text.
     Processes all `File:` blocks sequentially.
@@ -420,9 +379,7 @@ def generate_display_content(
         match item:
             case str() as text:
                 return text
-            case ProcessedDiffBlock(
-                llm_file_path=llm_file_path, unified_diff=diff_string
-            ):
+            case ProcessedDiffBlock(llm_file_path=llm_file_path, unified_diff=diff_string):
                 return f"File: {llm_file_path}\n```diff\n{diff_string.strip()}\n```\n"
 
     return _generate_output_from_stream(original_file_contents, llm_response, formatter)

@@ -1,3 +1,4 @@
+import contextlib
 import os
 import sys
 from json import JSONDecodeError
@@ -56,11 +57,9 @@ def load_session() -> tuple[Path, SessionData]:
     try:
         session_data = SessionDataAdapter.validate_json(session_file.read_text())
 
-    except ValidationError:
-        print(
-            "Error: Session file is corrupt or has an invalid format.", file=sys.stderr
-        )
-        raise typer.Exit(code=1)
+    except ValidationError as e:
+        print("Error: Session file is corrupt or has an invalid format.", file=sys.stderr)
+        raise typer.Exit(code=1) from e
 
     return session_file, session_data
 
@@ -73,7 +72,8 @@ def get_relative_path_or_error(file_path: Path, session_root: Path) -> str | Non
         return str(relative_path)
     except ValueError:
         print(
-            f"Error: File '{abs_file_path}' is outside the session root '{session_root}'. Files must be within the same directory tree as the session file.",
+            f"Error: File '{abs_file_path}' is outside the session root '{session_root}'. "
+            + "Files must be within the same directory tree as the session file.",
             file=sys.stderr,
         )
         return None
@@ -95,8 +95,7 @@ def reconstruct_historical_messages(
                 reconstructed_msg = {
                     "role": "user",
                     "content": (
-                        f"<stdin_content>\n{piped_content}\n</stdin_content>\n"
-                        + f"<prompt>\n{prompt}\n</prompt>"
+                        f"<stdin_content>\n{piped_content}\n</stdin_content>\n" + f"<prompt>\n{prompt}\n</prompt>"
                     ),
                 }
             case UserChatMessage(content=str(prompt)):
@@ -111,9 +110,7 @@ def reconstruct_historical_messages(
     return reconstructed
 
 
-def calculate_and_display_cost(
-    token_usage: TokenUsage, session_data: SessionData
-) -> float | None:
+def calculate_and_display_cost(token_usage: TokenUsage, session_data: SessionData) -> float | None:
     """Calculates the message cost and displays token/cost information."""
     import litellm
 
@@ -130,10 +127,8 @@ def calculate_and_display_cost(
         "model": session_data.model,
     }
 
-    try:
+    with contextlib.suppress(Exception):
         message_cost = litellm.completion_cost(completion_response=mock_response)  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]
-    except Exception as _:
-        pass
 
     prompt_tokens_str = format_tokens(token_usage.prompt_tokens)
     completion_tokens_str = format_tokens(token_usage.completion_tokens)
@@ -166,23 +161,15 @@ def complete_files_in_context(incomplete: str) -> list[str]:
 
     try:
         session_data = SessionDataAdapter.validate_json(session_file.read_text())
-        completions = [
-            f for f in session_data.context_files if f.startswith(incomplete)
-        ]
-        completions += [
-            f
-            for f in session_data.context_files
-            if incomplete in f and f not in completions
-        ]
+        completions = [f for f in session_data.context_files if f.startswith(incomplete)]
+        completions += [f for f in session_data.context_files if incomplete in f and f not in completions]
         return completions
     except (ValidationError, JSONDecodeError):
         return []
 
 
 def save_session(session_file: Path, session_data: SessionData) -> None:
-    fd, tmp = mkstemp(
-        suffix=".json", prefix=session_file.name + ".tmp", dir=session_file.parent
-    )
+    fd, tmp = mkstemp(suffix=".json", prefix=session_file.name + ".tmp", dir=session_file.parent)
     session_file_tmp = Path(tmp)
     try:
         with os.fdopen(fd, "wb") as f:

@@ -1,6 +1,6 @@
 # pyright: standard
 
-from typing import Callable
+from collections.abc import Callable
 
 import pytest
 
@@ -13,14 +13,7 @@ from aico.diffing import (
 def test_generate_diff_for_standard_change() -> None:
     # GIVEN original content and a well-formed LLM response
     original_contents = {"file.py": "old_line = 1"}
-    llm_response = (
-        "File: file.py\n"
-        "<<<<<<< SEARCH\n"
-        "old_line = 1\n"
-        "=======\n"
-        "new_line = 2\n"
-        ">>>>>>> REPLACE"
-    )
+    llm_response = "File: file.py\n<<<<<<< SEARCH\nold_line = 1\n=======\nnew_line = 2\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
@@ -35,13 +28,7 @@ def test_generate_diff_for_standard_change() -> None:
 def test_generate_diff_for_new_file_creation() -> None:
     # GIVEN no original content and an LLM response to create a file
     original_contents = {}
-    llm_response = (
-        "File: new_file.py\n"
-        "<<<<<<< SEARCH\n"
-        "=======\n"
-        "print('hello world')\n"
-        ">>>>>>> REPLACE"
-    )
+    llm_response = "File: new_file.py\n<<<<<<< SEARCH\n=======\nprint('hello world')\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
@@ -56,9 +43,7 @@ def test_generate_diff_for_file_deletion() -> None:
     # GIVEN original content and an LLM response to delete the file
     file_content = "line 1\nline 2"
     original_contents = {"file.py": file_content}
-    llm_response = (
-        f"File: file.py\n<<<<<<< SEARCH\n{file_content}\n=======\n>>>>>>> REPLACE"
-    )
+    llm_response = f"File: file.py\n<<<<<<< SEARCH\n{file_content}\n=======\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
@@ -110,14 +95,7 @@ def test_whitespace_flexible_patching_succeeds(indentation) -> None:
 def test_filename_matching_logic(llm_filename: str) -> None:
     # GIVEN original content with a specific path
     original_contents = {"src/app/main.py": "import os"}
-    llm_response = (
-        f"File: {llm_filename}\n"
-        "<<<<<<< SEARCH\n"
-        "import os\n"
-        "=======\n"
-        "import sys\n"
-        ">>>>>>> REPLACE"
-    )
+    llm_response = f"File: {llm_filename}\n<<<<<<< SEARCH\nimport os\n=======\nimport sys\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated with various filename conventions
     diff = generate_unified_diff(original_contents, llm_response)
@@ -132,14 +110,7 @@ def test_filename_matching_logic(llm_filename: str) -> None:
 def test_patch_failure_when_search_block_not_found() -> None:
     # GIVEN a SEARCH block that doesn't exist in the original content
     original_contents = {"file.py": "original content"}
-    llm_response = (
-        "File: file.py\n"
-        "<<<<<<< SEARCH\n"
-        "non-existent content\n"
-        "=======\n"
-        "new content\n"
-        ">>>>>>> REPLACE"
-    )
+    llm_response = "File: file.py\n<<<<<<< SEARCH\nnon-existent content\n=======\nnew content\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
@@ -156,9 +127,7 @@ def test_patch_failure_when_search_block_not_found() -> None:
 def test_error_when_file_not_found_in_context() -> None:
     # GIVEN an LLM response for a file not in the context
     original_contents = {"real_file.py": "content"}
-    llm_response = (
-        "File: unknown_file.py\n<<<<<<< SEARCH\na\n=======\nb\n>>>>>>> REPLACE"
-    )
+    llm_response = "File: unknown_file.py\n<<<<<<< SEARCH\na\n=======\nb\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
@@ -166,10 +135,7 @@ def test_error_when_file_not_found_in_context() -> None:
     # THEN a 'not found' diff is generated
     assert "a/unknown_file.py (not found)" in diff
     assert "b/unknown_file.py (not found)" in diff
-    assert (
-        "Error: The file path 'unknown_file.py' from the AI does not match any file in the context."
-        in diff
-    )
+    assert "Error: The file path 'unknown_file.py' from the AI does not match any file in the context." in diff
 
 
 def test_handling_of_malformed_llm_responses() -> None:
@@ -238,14 +204,7 @@ def test_ambiguous_filepath_fails() -> None:
         "src/api/utils.py": "api stuff",
         "src/core/utils.py": "core stuff",
     }
-    llm_response = (
-        "File: utils.py\n"
-        "<<<<<<< SEARCH\n"
-        "api stuff\n"
-        "=======\n"
-        "new api stuff\n"
-        ">>>>>>> REPLACE"
-    )
+    llm_response = "File: utils.py\n<<<<<<< SEARCH\napi stuff\n=======\nnew api stuff\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated with the ambiguous basename
     diff = generate_unified_diff(original_contents, llm_response)
@@ -257,17 +216,8 @@ def test_ambiguous_filepath_fails() -> None:
 
 def test_ambiguous_patch_succeeds_on_first_match() -> None:
     # GIVEN a file where the target code block appears twice
-    original_contents = {
-        "file.py": "repeatable_line = 1\n\nsome_other_code = True\n\nrepeatable_line = 1\n"
-    }
-    llm_response = (
-        "File: file.py\n"
-        "<<<<<<< SEARCH\n"
-        "repeatable_line = 1\n"
-        "=======\n"
-        "changed_line = 2\n"
-        ">>>>>>> REPLACE"
-    )
+    original_contents = {"file.py": "repeatable_line = 1\n\nsome_other_code = True\n\nrepeatable_line = 1\n"}
+    llm_response = "File: file.py\n<<<<<<< SEARCH\nrepeatable_line = 1\n=======\nchanged_line = 2\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
@@ -292,16 +242,7 @@ def test_ambiguous_patch_succeeds_on_first_match() -> None:
 def test_patching_with_blank_lines_in_search_block() -> None:
     # GIVEN a search block containing blank lines
     original_contents = {"file.py": "line one\n\nline three"}
-    llm_response = (
-        "File: file.py\n"
-        "<<<<<<< SEARCH\n"
-        "line one\n"
-        "\n"
-        "line three\n"
-        "=======\n"
-        "replacement\n"
-        ">>>>>>> REPLACE"
-    )
+    llm_response = "File: file.py\n<<<<<<< SEARCH\nline one\n\nline three\n=======\nreplacement\n>>>>>>> REPLACE"
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
 
@@ -316,14 +257,7 @@ def test_patching_with_trailing_blank_lines_in_search_block() -> None:
     # This specifically tests that the diffing regex doesn't prematurely consume
     # the trailing newlines as part of the delimiter's whitespace.
     original_contents = {"file.py": "code block\n\n\nsome other code"}
-    llm_response = (
-        "File: file.py\n"
-        "<<<<<<< SEARCH\n"
-        "code block\n\n\n"
-        "=======\n"
-        "replacement\n"
-        ">>>>>>> REPLACE"
-    )
+    llm_response = "File: file.py\n<<<<<<< SEARCH\ncode block\n\n\n=======\nreplacement\n>>>>>>> REPLACE"
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
 
@@ -338,13 +272,7 @@ def test_patch_that_changes_indentation() -> None:
     # GIVEN code that needs to be indented
     original_contents = {"file.py": "to_be_indented()"}
     llm_response = (
-        "File: file.py\n"
-        "<<<<<<< SEARCH\n"
-        "to_be_indented()\n"
-        "=======\n"
-        "if True:\n"
-        "    to_be_indented()\n"
-        ">>>>>>> REPLACE"
+        "File: file.py\n<<<<<<< SEARCH\nto_be_indented()\n=======\nif True:\n    to_be_indented()\n>>>>>>> REPLACE"
     )
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
@@ -358,13 +286,7 @@ def test_patch_that_outdents_code() -> None:
     # GIVEN a file with code inside an if block
     original_contents = {"file.py": "if True:\n    code_to_outdent()\n"}
     llm_response = (
-        "File: file.py\n"
-        "<<<<<<< SEARCH\n"
-        "if True:\n"
-        "    code_to_outdent()\n"
-        "=======\n"
-        "code_to_outdent()\n"
-        ">>>>>>> REPLACE"
+        "File: file.py\n<<<<<<< SEARCH\nif True:\n    code_to_outdent()\n=======\ncode_to_outdent()\n>>>>>>> REPLACE"
     )
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
@@ -412,17 +334,8 @@ def test_patch_for_multi_line_indent() -> None:
 
 def test_partial_deletion_inside_file() -> None:
     # GIVEN a file with a function and an AI patch to remove lines from it
-    original_contents = {
-        "file.py": "def my_func():\n    line_one = 1\n    line_two = 2\n    line_three = 3\n"
-    }
-    llm_response = (
-        "File: file.py\n"
-        "<<<<<<< SEARCH\n"
-        "    line_one = 1\n"
-        "    line_two = 2\n"
-        "=======\n"
-        ">>>>>>> REPLACE"
-    )
+    original_contents = {"file.py": "def my_func():\n    line_one = 1\n    line_two = 2\n    line_three = 3\n"}
+    llm_response = "File: file.py\n<<<<<<< SEARCH\n    line_one = 1\n    line_two = 2\n=======\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
@@ -439,9 +352,7 @@ def test_partial_deletion_inside_file() -> None:
 def test_empty_search_on_existing_file_fails() -> None:
     # GIVEN an existing, non-empty file and an invalid AI patch with an empty search block
     original_contents = {"file.py": "some_content = True"}
-    llm_response = (
-        "File: file.py\n<<<<<<< SEARCH\n=======\nnew_content = False\n>>>>>>> REPLACE"
-    )
+    llm_response = "File: file.py\n<<<<<<< SEARCH\n=======\nnew_content = False\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
@@ -477,16 +388,7 @@ def test_patch_robust_to_delimiters_in_content() -> None:
 def test_patch_with_inconsistent_trailing_newlines() -> None:
     # GIVEN a source file with a trailing newline and an AI SEARCH block without one
     original_contents = {"file.py": "line1\nline2\n"}
-    llm_response = (
-        "File: file.py\n"
-        "<<<<<<< SEARCH\n"
-        "line1\n"
-        "line2\n"
-        "=======\n"
-        "line1\n"
-        "line_two_changed\n"
-        ">>>>>>> REPLACE"
-    )
+    llm_response = "File: file.py\n<<<<<<< SEARCH\nline1\nline2\n=======\nline1\nline_two_changed\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
@@ -501,17 +403,7 @@ def test_whitespace_only_change() -> None:
     # GIVEN a file with code separated by one blank line and a patch to add another
     original_contents = {"file.py": "line_one\n\nline_three"}
     llm_response = (
-        "File: file.py\n"
-        "<<<<<<< SEARCH\n"
-        "line_one\n"
-        "\n"
-        "line_three\n"
-        "=======\n"
-        "line_one\n"
-        "\n"
-        "\n"
-        "line_three\n"
-        ">>>>>>> REPLACE"
+        "File: file.py\n<<<<<<< SEARCH\nline_one\n\nline_three\n=======\nline_one\n\n\nline_three\n>>>>>>> REPLACE"
     )
 
     # WHEN the diff is generated
@@ -520,9 +412,7 @@ def test_whitespace_only_change() -> None:
     # THEN the diff correctly shows the addition of one blank line
     assert "patch failed" not in diff
     diff_lines = diff.splitlines()
-    added_lines = [
-        line for line in diff_lines if line.startswith("+") and "+++" not in line
-    ]
+    added_lines = [line for line in diff_lines if line.startswith("+") and "+++" not in line]
     # The change from the original content to the new content is one added blank line.
     assert len(added_lines) == 1
     assert added_lines[0] == "+"
@@ -531,16 +421,7 @@ def test_whitespace_only_change() -> None:
 def test_mismatched_line_endings_patch_succeeds() -> None:
     # GIVEN a source file with CRLF endings and an AI patch with LF endings
     original_contents = {"file.py": "line1\r\nline2\r\n"}
-    llm_response = (
-        "File: file.py\n"
-        "<<<<<<< SEARCH\n"
-        "line1\n"
-        "line2\n"
-        "=======\n"
-        "new_line1\n"
-        "new_line2\n"
-        ">>>>>>> REPLACE"
-    )
+    llm_response = "File: file.py\n<<<<<<< SEARCH\nline1\nline2\n=======\nnew_line1\nnew_line2\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)
@@ -683,8 +564,7 @@ def test_generate_embedded_markdown_diff_malformed_block() -> None:
             ">>>>>>> REPLACE"
         ),
         (
-            "File: file.py\n"
-            "<<<<<<< SEARCH\n{search}\n=======\n{replace}\n>>>>>>> REPLACE"  # No trailing newli
+            "File: file.py\n<<<<<<< SEARCH\n{search}\n=======\n{replace}\n>>>>>>> REPLACE"  # No trailing newli
         ),
     ],
     ids=["fully_indented", "indented", "extra_whitespace", "no_trailing_newline"],
@@ -700,9 +580,7 @@ def test_parser_is_robust_to_formatting(
     # GIVEN an LLM response with quirky but valid formatting
     search_block = "old_line"
     replace_block = "new_line"
-    llm_response = llm_response_template.format(
-        search=search_block, replace=replace_block
-    )
+    llm_response = llm_response_template.format(search=search_block, replace=replace_block)
     original_contents = {"file.py": "old_line"}
 
     # WHEN the diff/content is generated
@@ -730,14 +608,7 @@ def test_whitespace_only_search_block_fails_cleanly(
     # GIVEN a file with multiple blank lines
     original_contents = {"file.py": "line_one\n\n\nline_two"}
     # AND an LLM response where the SEARCH block is only whitespace
-    llm_response = (
-        "File: file.py\n"
-        "<<<<<<< SEARCH\n"
-        f"{whitespace_search_block}\n"
-        "=======\n"
-        "some_content\n"
-        ">>>>>>> REPLACE"
-    )
+    llm_response = f"File: file.py\n<<<<<<< SEARCH\n{whitespace_search_block}\n=======\nsome_content\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response)

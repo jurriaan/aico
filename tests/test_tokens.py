@@ -22,9 +22,7 @@ def test_tokens_command_no_cost_or_window_info(tmp_path: Path, mocker) -> None:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
         (session_dir / "file1.py").write_text("a" * 10)
-        session_data = SessionData(
-            model="test-model", chat_history=[], context_files=["file1.py"]
-        )
+        session_data = SessionData(model="test-model", chat_history=[], context_files=["file1.py"])
         save_session(session_dir / SESSION_FILE_NAME, session_data)
 
         # AND the token counter is mocked
@@ -81,10 +79,7 @@ def test_tokens_command_shows_full_breakdown(tmp_path: Path, mocker) -> None:
         mocker.patch("litellm.token_counter", side_effect=[100, 30, 40, 54, 20])
         mocker.patch(
             "litellm.completion_cost",
-            side_effect=lambda completion_response: float(
-                completion_response["usage"]["prompt_tokens"]
-            )
-            * 0.00001,
+            side_effect=lambda completion_response: float(completion_response["usage"]["prompt_tokens"]) * 0.00001,
         )
         mocker.patch("litellm.get_model_info", return_value={"max_input_tokens": 8192})
 
@@ -133,10 +128,7 @@ def test_tokens_command_json_output(tmp_path: Path, mocker) -> None:
         mocker.patch("litellm.token_counter", side_effect=[100, 30, 40, 54, 20])
         mocker.patch(
             "litellm.completion_cost",
-            side_effect=lambda completion_response: float(
-                completion_response["usage"]["prompt_tokens"]
-            )
-            * 0.00001,
+            side_effect=lambda completion_response: float(completion_response["usage"]["prompt_tokens"]) * 0.00001,
         )
         mocker.patch("litellm.get_model_info", return_value={"max_input_tokens": 8192})
 
@@ -171,9 +163,7 @@ def test_tokens_command_hides_zero_remaining_tokens(tmp_path: Path, mocker) -> N
     # GIVEN a session where the total tokens equals the context window
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
-        session_data = SessionData(
-            model="test-model", context_files=[], chat_history=[]
-        )
+        session_data = SessionData(model="test-model", context_files=[], chat_history=[])
         save_session(session_dir / SESSION_FILE_NAME, session_data)
 
         # AND litellm is mocked to return a context window size equal to total tokens
