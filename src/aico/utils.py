@@ -1,6 +1,8 @@
+import os
 import sys
 from json import JSONDecodeError
 from pathlib import Path
+from tempfile import mkstemp
 
 import typer
 from pydantic import TypeAdapter, ValidationError
@@ -178,4 +180,13 @@ def complete_files_in_context(incomplete: str) -> list[str]:
 
 
 def save_session(session_file: Path, session_data: SessionData) -> None:
-    _ = session_file.write_bytes(SessionDataAdapter.dump_json(session_data, indent=2))
+    fd, tmp = mkstemp(
+        suffix=".json", prefix=session_file.name + ".tmp", dir=session_file.parent
+    )
+    session_file_tmp = Path(tmp)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            _ = f.write(SessionDataAdapter.dump_json(session_data, indent=2))
+        os.replace(session_file_tmp, session_file)
+    finally:
+        session_file_tmp.unlink(missing_ok=True)
