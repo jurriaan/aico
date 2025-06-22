@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from enum import Enum
 from typing import Annotated, Literal, Protocol, TypedDict, runtime_checkable
 
@@ -143,3 +143,6 @@ class LiteLLMStreamChoice(Protocol):
 @runtime_checkable
 class LiteLLMChoiceContainer(Protocol):
     choices: Sequence[LiteLLMStreamChoice]
+
+
+type FileContents = Mapping[str, str]

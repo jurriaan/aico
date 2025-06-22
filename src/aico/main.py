@@ -1,7 +1,6 @@
 import sys
 import time
 import warnings
-from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
@@ -18,6 +17,7 @@ from aico.diffing import (
 from aico.history import history_app
 from aico.models import (
     AssistantChatMessage,
+    FileContents,
     LastResponse,
     LiteLLMChoiceContainer,
     LiteLLMUsage,
@@ -240,7 +240,7 @@ def _process_chunk(chunk: object) -> tuple[str | None, TokenUsage | None]:
 
 def _handle_unified_streaming(
     session_data: SessionData,
-    original_file_contents: dict[str, str],
+    original_file_contents: FileContents,
     messages: list[LLMChatMessage],
 ) -> tuple[str, str | None, TokenUsage | None, float | None]:
     """
@@ -296,7 +296,7 @@ def _build_messages(
     prompt_text: str | None,
     piped_content: str | None,
     mode: Mode,
-    original_file_contents: Mapping[str, str],
+    original_file_contents: FileContents,
 ) -> list[LLMChatMessage]:
     if mode == Mode.DIFF:
         system_prompt += DIFF_MODE_INSTRUCTIONS
@@ -341,6 +341,25 @@ def _build_messages(
     return messages
 
 
+def _build_original_file_contents(
+    context_files: list[str], session_root: Path
+) -> FileContents:
+    original_file_contents: FileContents = {
+        relative_path_str: abs_path.read_text()
+        for relative_path_str in context_files
+        if (abs_path := session_root / relative_path_str).exists()
+    }
+
+    missing_files = original_file_contents.keys() - set(context_files)
+    for relative_path_str in missing_files:
+        print(
+            f"Warning: Context file not found, skipping: {relative_path_str}",
+            file=sys.stderr,
+        )
+
+    return original_file_contents
+
+
 @app.command()
 def prompt(
     prompt_text: Annotated[str | None, typer.Argument()] = None,
@@ -369,20 +388,23 @@ def prompt(
             piped_content = content
 
     # Validate that we have some form of prompt
-    if not prompt_text and not piped_content:
-        print("Error: Prompt is required.", file=sys.stderr)
-        raise typer.Exit(code=1)
+    final_content: str
+    final_piped_content: str | None = None
+    match (piped_content, prompt_text):
+        case (str(), str()):
+            final_content = prompt_text
+            final_piped_content = piped_content
+        case (str(), None):
+            final_content = piped_content
+        case (None, str()):
+            final_content = prompt_text
+        case _:
+            print("Error: Prompt is required.", file=sys.stderr)
+            raise typer.Exit(code=1)
 
-    original_file_contents: dict[str, str] = {}
-    for relative_path_str in session_data.context_files:
-        try:
-            abs_path = session_root / relative_path_str
-            original_file_contents[relative_path_str] = abs_path.read_text()
-        except FileNotFoundError:
-            print(
-                f"Warning: Context file not found, skipping: {relative_path_str}",
-                file=sys.stderr,
-            )
+    original_file_contents = _build_original_file_contents(
+        context_files=session_data.context_files, session_root=session_root
+    )
 
     messages = _build_messages(
         session_data,
@@ -422,18 +444,6 @@ def prompt(
     assistant_response_timestamp = datetime.now(timezone.utc).isoformat()
 
     # Determine what to save in history based on inputs
-    final_content: str
-    final_piped_content: str | None = None
-    if piped_content and prompt_text:
-        final_content = prompt_text
-        final_piped_content = piped_content
-    elif piped_content:
-        final_content = piped_content
-    elif prompt_text:
-        final_content = prompt_text
-    else:
-        # This case is unreachable due to the validation above
-        raise typer.Exit(code=1)  # Should not happen
 
     session_data.chat_history.append(
         UserChatMessage(

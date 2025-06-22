@@ -4,7 +4,7 @@ from pathlib import Path
 
 import regex as re
 
-from aico.models import AIPatch, ProcessedDiffBlock
+from aico.models import AIPatch, FileContents, ProcessedDiffBlock
 
 # This regex is the core of the parser. It finds a complete `File:` block.
 # It uses named capture groups and backreferences to be robust.
@@ -256,7 +256,7 @@ def _create_patch_failed_error_diff(
 
 
 def _process_llm_response_stream(
-    original_file_contents: dict[str, str], llm_response: str
+    original_file_contents: FileContents, llm_response: str
 ) -> Iterator[str | ProcessedDiffBlock]:
     """
     Parses an LLM response, processes diff blocks sequentially, and yields results.
@@ -268,7 +268,7 @@ def _process_llm_response_stream(
     Yields:
         Either a string (for conversational text) or a ProcessedDiffBlock.
     """
-    current_file_contents = original_file_contents.copy()
+    current_file_contents = dict(original_file_contents)
     last_end = 0
     matches = list(_FILE_BLOCK_REGEX.finditer(llm_response))
 
@@ -375,7 +375,7 @@ def _process_llm_response_stream(
 
 
 def _generate_output_from_stream(
-    original_file_contents: dict[str, str],
+    original_file_contents: FileContents,
     llm_response: str,
     formatter: Callable[[str | ProcessedDiffBlock], str],
 ) -> str:
@@ -389,7 +389,7 @@ def _generate_output_from_stream(
 
 
 def generate_unified_diff(
-    original_file_contents: dict[str, str], llm_response: str
+    original_file_contents: FileContents, llm_response: str
 ) -> str:
     """
     Generates a unified diff string by processing all `File:` blocks sequentially.
@@ -409,7 +409,7 @@ def generate_unified_diff(
 
 
 def generate_display_content(
-    original_file_contents: dict[str, str], llm_response: str
+    original_file_contents: FileContents, llm_response: str
 ) -> str:
     """
     Generates a markdown-formatted string with diffs embedded in conversational text.
@@ -425,6 +425,4 @@ def generate_display_content(
             ):
                 return f"File: {llm_file_path}\n```diff\n{diff_string.strip()}\n```\n"
 
-    return _generate_output_from_stream(
-        original_file_contents, llm_response, formatter
-    )
+    return _generate_output_from_stream(original_file_contents, llm_response, formatter)
