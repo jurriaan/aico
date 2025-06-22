@@ -1,5 +1,5 @@
 import difflib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import regex as re
@@ -374,6 +374,20 @@ def _process_llm_response_stream(
         yield llm_response[last_end:]
 
 
+def _generate_output_from_stream(
+    original_file_contents: dict[str, str],
+    llm_response: str,
+    formatter: Callable[[str | ProcessedDiffBlock], str],
+) -> str:
+    output_parts: list[str] = []
+    stream = _process_llm_response_stream(original_file_contents, llm_response)
+
+    for item in stream:
+        output_parts.append(formatter(item))
+
+    return "".join(output_parts)
+
+
 def generate_unified_diff(
     original_file_contents: dict[str, str], llm_response: str
 ) -> str:
@@ -381,18 +395,17 @@ def generate_unified_diff(
     Generates a unified diff string by processing all `File:` blocks sequentially.
     Conversational text is ignored.
     """
-    diff_parts: list[str] = []
-    stream = _process_llm_response_stream(original_file_contents, llm_response)
 
-    for item in stream:
+    def formatter(item: str | ProcessedDiffBlock) -> str:
         match item:
             case ProcessedDiffBlock(unified_diff=diff_string):
-                diff_parts.append(diff_string)
+                return diff_string
             case str():
-                # Ignore conversational text for the unified diff
-                pass
+                return ""
 
-    return "".join(diff_parts).strip()
+    return _generate_output_from_stream(
+        original_file_contents, llm_response, formatter
+    ).strip()
 
 
 def generate_display_content(
@@ -402,19 +415,16 @@ def generate_display_content(
     Generates a markdown-formatted string with diffs embedded in conversational text.
     Processes all `File:` blocks sequentially.
     """
-    processed_parts: list[str] = []
-    stream = _process_llm_response_stream(original_file_contents, llm_response)
 
-    for item in stream:
+    def formatter(item: str | ProcessedDiffBlock) -> str:
         match item:
             case str() as text:
-                processed_parts.append(text)
+                return text
             case ProcessedDiffBlock(
                 llm_file_path=llm_file_path, unified_diff=diff_string
             ):
-                markdown_diff = (
-                    f"File: {llm_file_path}\n```diff\n{diff_string.strip()}\n```\n"
-                )
-                processed_parts.append(markdown_diff)
+                return f"File: {llm_file_path}\n```diff\n{diff_string.strip()}\n```\n"
 
-    return "".join(processed_parts)
+    return _generate_output_from_stream(
+        original_file_contents, llm_response, formatter
+    )
