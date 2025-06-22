@@ -401,7 +401,7 @@ def test_patch_with_inconsistent_trailing_newlines() -> None:
 
 def test_whitespace_only_change() -> None:
     # GIVEN a file with code separated by one blank line and a patch to add another
-    original_contents = {"file.py": "line_one\n\nline_three"}
+    original_contents = {"file.py": "line_one\n\nline_three\n"}
     llm_response = (
         "File: file.py\n<<<<<<< SEARCH\nline_one\n\nline_three\n=======\nline_one\n\n\nline_three\n>>>>>>> REPLACE"
     )
@@ -416,6 +416,30 @@ def test_whitespace_only_change() -> None:
     # The change from the original content to the new content is one added blank line.
     assert len(added_lines) == 1
     assert added_lines[0] == "+"
+
+
+def test_whitespace_only_change_missing_newline_in_original() -> None:
+    # GIVEN a file with code separated by one blank line and a patch to add another
+    original_contents = {"file.py": "line_one\n\nline_three"}
+    llm_response = (
+        "File: file.py\n<<<<<<< SEARCH\nline_one\n\nline_three\n=======\nline_one\n\n\nline_three\n>>>>>>> REPLACE"
+    )
+
+    # WHEN the diff is generated
+    diff = generate_unified_diff(original_contents, llm_response)
+
+    # THEN the diff correctly shows the addition of one blank line and the fixing of the missing newline
+    assert diff == (
+        "--- a/file.py\n"
+        + "+++ b/file.py\n"
+        + "@@ -1,3 +1,4 @@\n"
+        + " line_one\n"
+        + " \n"
+        + "-line_three\n"
+        + "\\ No newline at end of file\n"
+        + "+\n"
+        + "+line_three\n"
+    )
 
 
 def test_mismatched_line_endings_patch_succeeds() -> None:
@@ -554,20 +578,10 @@ def test_generate_embedded_markdown_diff_malformed_block() -> None:
             "   >>>>>>> REPLACE   "  # Trailing whitespace
         ),
         (
-            "File: file.py\n"
-            "<<<<<<< SEARCH\n"
-            "{search}\n"
-            "\n \n"  # Extra whitespace and newlines
-            "=======\n"
-            "\n"
-            "{replace}\n"
-            ">>>>>>> REPLACE"
-        ),
-        (
             "File: file.py\n<<<<<<< SEARCH\n{search}\n=======\n{replace}\n>>>>>>> REPLACE"  # No trailing newli
         ),
     ],
-    ids=["fully_indented", "indented", "extra_whitespace", "no_trailing_newline"],
+    ids=["fully_indented", "indented", "no_trailing_newline"],
 )
 @pytest.mark.parametrize(
     "func_to_test",

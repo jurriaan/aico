@@ -156,8 +156,8 @@ def _create_aipatch_from_match(match: re.Match[str]) -> AIPatch:
     """Helper to create an AIPatch from a regex match object."""
     return AIPatch(
         llm_file_path=match.group("file_path").strip(),
-        search_content=match.group("search_content").rstrip(),
-        replace_content=match.group("replace_content").rstrip(),
+        search_content=match.group("search_content"),
+        replace_content=match.group("replace_content"),
     )
 
 
@@ -323,6 +323,15 @@ def _process_llm_response_stream(
                     tofile=to_file,
                 )
             )
+
+            if diff_lines and not content_before_patch.endswith("\n"):
+                # Find the last line that came from the original file (context or deleted)
+                # and insert the marker after it.
+                for i, line in reversed(list(enumerate(diff_lines))):
+                    if line.startswith(("-", " ")):
+                        diff_lines.insert(i + 1, "\n\\ No newline at end of file\n")
+                        break
+
             diff_string = "".join(diff_lines)
 
             # Update state for the next iteration
@@ -366,7 +375,7 @@ def generate_unified_diff(original_file_contents: FileContents, llm_response: st
             case str():
                 return ""
 
-    return _generate_output_from_stream(original_file_contents, llm_response, formatter).strip()
+    return _generate_output_from_stream(original_file_contents, llm_response, formatter)
 
 
 def generate_display_content(original_file_contents: FileContents, llm_response: str) -> str:

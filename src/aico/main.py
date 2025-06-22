@@ -478,7 +478,7 @@ def prompt(
         match mode:
             case Mode.DIFF:
                 if unified_diff:
-                    print(unified_diff)
+                    print(unified_diff, end="")
             case Mode.CONVERSATION | Mode.RAW:
                 # For these modes, the handler is silent in non-TTY, so we print the final result.
                 print(llm_response_content)

@@ -473,7 +473,7 @@ def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
 
         last_response = session_data["last_response"]
         assert last_response["raw_content"] == llm_diff_response
-        assert last_response["unified_diff"] == result.stdout.strip()
+        assert last_response["unified_diff"] == result.stdout
         # Also check that display_content was generated and stored
         assert last_response["display_content"] is not None
         assert "```diff" in last_response["display_content"]
