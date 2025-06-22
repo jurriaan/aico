@@ -84,6 +84,11 @@ def is_terminal() -> bool:
     return sys.stdout.isatty()
 
 
+def is_input_terminal() -> bool:
+    """Checks if stdin is a TTY."""
+    return sys.stdin.isatty()
+
+
 def reconstruct_historical_messages(
     history: list[ChatMessageHistoryItem],
 ) -> list[LLMChatMessage]:

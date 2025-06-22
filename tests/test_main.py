@@ -831,17 +831,19 @@ def test_no_command_shows_help() -> None:
 # --- Tests for stdin piping ---
 
 
-def test_prompt_fails_with_no_input(tmp_path: Path) -> None:
+def test_prompt_fails_with_no_input(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN an initialized session
     with runner.isolated_filesystem(temp_dir=tmp_path):
+        mocker.patch("aico.main.is_input_terminal", return_value=True)
         runner.invoke(app, ["init"])
+
+        # AND the interactive prompt is mocked to return an empty string (user pressing Enter)
+        mocker.patch("aico.main.Prompt.ask", return_value="")
 
         # WHEN `aico prompt` is run with no argument and no piped input
         result = runner.invoke(app, ["prompt"])
 
         # THEN the command fails with an error
-        # NOTE: This test will fail until Increment 3 is implemented, as it depends
-        # on the `prompt_text` argument becoming optional.
         assert result.exit_code == 1
         assert "Error: Prompt is required." in result.stderr
 

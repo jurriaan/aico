@@ -9,6 +9,7 @@ import typer
 from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
+from rich.prompt import Prompt
 
 from aico.diffing import (
     generate_display_content,
@@ -34,6 +35,7 @@ from aico.utils import (
     calculate_and_display_cost,
     complete_files_in_context,
     get_relative_path_or_error,
+    is_input_terminal,
     is_terminal,
     load_session,
     reconstruct_historical_messages,
@@ -367,7 +369,7 @@ def prompt(
     timestamp = datetime.now(UTC).isoformat()
 
     piped_content: str | None = None
-    if not sys.stdin.isatty():
+    if not is_input_terminal():
         content = sys.stdin.read()
         if content:
             piped_content = content
@@ -384,8 +386,11 @@ def prompt(
         case (None, str()):
             final_content = prompt_text
         case _:
-            print("Error: Prompt is required.", file=sys.stderr)
-            raise typer.Exit(code=1)
+            prompt_text = Prompt.ask("Prompt")
+            if not prompt_text.strip():
+                print("Error: Prompt is required.", file=sys.stderr)
+                raise typer.Exit(code=1)
+            final_content = prompt_text
 
     original_file_contents = _build_original_file_contents(
         context_files=session_data.context_files, session_root=session_root
