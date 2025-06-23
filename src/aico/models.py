@@ -1,5 +1,6 @@
 from collections.abc import Mapping, Sequence
 from enum import Enum
+from pathlib import Path
 from typing import Annotated, Literal, Protocol, TypedDict, runtime_checkable
 
 from pydantic import Field
@@ -146,3 +147,11 @@ class LiteLLMChoiceContainer(Protocol):
 
 
 type FileContents = Mapping[str, str]
+
+
+@dataclass(slots=True, frozen=True)
+class AddonInfo:
+    name: str
+    path: Path
+    help_text: str
+    source: Literal["project", "user"]

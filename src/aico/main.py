@@ -11,6 +11,7 @@ from rich.live import Live
 from rich.markdown import Markdown
 from rich.prompt import Prompt
 
+from aico.addons import register_addon_commands
 from aico.diffing import (
     generate_display_content,
     generate_unified_diff,
@@ -45,6 +46,8 @@ from aico.utils import (
 app = typer.Typer()
 app.add_typer(history_app, name="history")
 app.add_typer(tokens_app, name="tokens")
+register_addon_commands(app)
+
 
 # Suppress warnings from litellm, see https://github.com/BerriAI/litellm/issues/11759
 warnings.filterwarnings("ignore", category=UserWarning)

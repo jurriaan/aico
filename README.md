@@ -88,3 +88,4 @@ Repeat steps 5 and 6 for each increment of the plan.
     *   `aico history view`: See the current status of the history.
     *   `aico history set <index>`: Set which message the active history starts from.
     *   `aico history reset`: Reset the history to include all messages.
+*   **Addons**: `aico` can be extended with custom scripts. Any executable script in `./.aico/addons` or `~/.config/aico/addons` will be available as a subcommand. Addons are automatically listed in the `aico --help` output.
