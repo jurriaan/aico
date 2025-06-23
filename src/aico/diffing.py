@@ -324,11 +324,12 @@ def _process_llm_response_stream(
                 )
             )
 
-            if diff_lines and not content_before_patch.endswith("\n"):
+            if diff_lines and not content_before_patch.endswith("\n") and content_before_patch:
                 # Find the last line that came from the original file (context or deleted)
                 # and insert the marker after it.
                 for i, line in reversed(list(enumerate(diff_lines))):
-                    if line.startswith(("-", " ")):
+                    # ignore the first three lines (header)
+                    if line.startswith(("-", " ")) and i > 2:
                         diff_lines.insert(i + 1, "\n\\ No newline at end of file\n")
                         break
 

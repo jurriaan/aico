@@ -632,3 +632,69 @@ def test_whitespace_only_search_block_fails_cleanly(
     assert "ambiguous" not in diff.lower()
     assert "patch failed" in diff
     assert "could not be found" in diff
+
+
+def test_no_newline_marker_added_for_existing_file_without_trailing_newline():
+    """Verifies the '\\ No newline...' marker is added for an existing file missing a final newline."""
+    # GIVEN an existing file without a trailing newline and an LLM patch
+    original_contents = {"file.py": "print('old')"}
+    llm_response = (
+        "File: file.py\n"
+        "<<<<<<< SEARCH\n"
+        "print('old')\n"
+        "=======\n"
+        "print('new')\n"
+        ">>>>>>> REPLACE"
+    )
+
+    # WHEN the unified diff is generated
+    diff = generate_unified_diff(original_contents, llm_response)
+
+    # THEN the diff should contain the "No newline" marker for the original file content
+    expected_diff = (
+        "--- a/file.py\n"
+        "+++ b/file.py\n"
+        "@@ -1 +1 @@\n"
+        "-print('old')\n"
+        "\\ No newline at end of file\n"
+        "+print('new')\n"
+    )
+    assert diff == expected_diff
+
+
+def test_no_newline_marker_logic_is_correct_for_new_file_creation():
+    # GIVEN a patch to create a new file that itself has no trailing newline
+    original_contents = {}
+    llm_response = "File: new.py\n<<<<<<< SEARCH\n=======\nnew content\n>>>>>>> REPLACE"
+
+    # WHEN the diff is generated
+    diff = generate_unified_diff(original_contents, llm_response)
+
+    # THEN the standard diff is produced. Our logic should not run for the `/dev/null` side.
+    # The standard `difflib` will correctly add a marker for the new content, and only that one.
+    # A bug would cause a second, incorrect marker to be added.
+    expected_diff = (
+        "--- /dev/null\n"
+        "+++ b/new.py\n"
+        "@@ -0,0 +1 @@\n"
+        "+new content\n"
+    )
+    assert diff == expected_diff
+
+
+def test_no_newline_marker_logic_is_correct_for_empty_file_diff():
+    # GIVEN a patch to update an enpty file that itself has no trailing newline
+    original_contents = {"new.py": ""}
+    llm_response = "File: new.py\n<<<<<<< SEARCH\n=======\nnew content\n>>>>>>> REPLACE"
+
+    # WHEN the diff is generated
+    diff = generate_unified_diff(original_contents, llm_response)
+
+    # THEN the standard diff is produced. 
+    expected_diff = (
+        "--- a/new.py\n"
+        "+++ b/new.py\n"
+        "@@ -0,0 +1 @@\n"
+        "+new content\n"
+    )
+    assert diff == expected_diff
