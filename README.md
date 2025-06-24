@@ -4,6 +4,14 @@ A command-line tool for scripting AI-driven code edits.
 
 `aico` is built to integrate Large Language Models into a traditional, terminal-based development workflow. It reads local files, takes a prompt, and produces a standard diff. It is designed to be a predictable and composable part of your existing toolchain.
 
+## Installation
+
+Install `aico` using `uv`:
+
+```bash
+uv tool install --from git+https://github.com/jurriaan/aico/ aico
+```
+
 ## Philosophy
 
 `aico` is guided by a few core principles that differentiate it from chat-based assistants.
