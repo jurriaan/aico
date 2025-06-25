@@ -1125,3 +1125,68 @@ def test_prompt_model_flag_overrides_session_default(tmp_path: Path, mocker: Moc
         session_data = json.loads(session_file.read_text())
         assert session_data["model"] == "session/default-model"  # Default is unchanged
         assert session_data["chat_history"][1]["model"] == override_model  # History reflects override
+
+
+def test_prompt_with_filesystem_fallback_and_warning(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN an initialized session, and two files that exist on disk but are NOT in the session context.
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+
+        fallback_file1 = Path(td) / "fallback1.py"
+        fallback_file1.write_text("content 1")
+
+        fallback_file2 = Path(td) / "sub/fallback2.py"
+        fallback_file2.parent.mkdir()
+        fallback_file2.write_text("content 2\n")
+
+        # AND the LLM is mocked to stream a response patching both files
+        llm_response_content = (
+            "File: fallback1.py\n"
+            "<<<<<<< SEARCH\n"
+            "content 1\n"
+            "=======\n"
+            "new content 1\n"
+            ">>>>>>> REPLACE\n"
+            "File: sub/fallback2.py\n"
+            "<<<<<<< SEARCH\n"
+            "content 2\n"
+            "=======\n"
+            "new content 2\n"
+            ">>>>>>> REPLACE\n"
+        )
+
+        mock_completion = mocker.patch("litellm.completion")
+        mock_chunk = _create_mock_stream_chunk(llm_response_content, mocker=mocker)
+        mock_stream = mocker.MagicMock()
+        mock_stream.__iter__.return_value = iter([mock_chunk])
+        mock_completion.return_value = mock_stream
+        mocker.patch("litellm.completion_cost", return_value=None)
+        mocker.patch("litellm.token_counter", return_value=1)
+
+        # WHEN the prompt command is run
+        result = runner.invoke(app, ["prompt", "--mode", "diff", "patch the files"])
+
+        # THEN the command succeeds and the diff is printed to stdout
+        assert result.exit_code == 0
+        expected_result = (
+            "--- a/fallback1.py\n"
+            "+++ b/fallback1.py\n"
+            "@@ -1 +1 @@\n"
+            "-content 1\n"
+            "\ No newline at end of file\n"
+            "+new content 1\n"
+            "--- a/sub/fallback2.py\n"
+            "+++ b/sub/fallback2.py\n"
+            "@@ -1 +1 @@\n"
+            "-content 2\n"
+            "+new content 2\n"
+        )
+
+        assert expected_result == result.stdout
+
+        # AND two distinct warnings about the fallbacks are printed to stderr
+        stderr = result.stderr.replace("\n", "")
+        assert "Warnings:" in stderr
+        assert "Warning: 'fallback1.py' was not in the session context but was found on disk." in stderr
+        assert "Warning: 'sub/fallback2.py' was not in the session context but was found on disk." in stderr
+        assert "Consider adding it to the session." in stderr

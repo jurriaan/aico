@@ -1,6 +1,7 @@
 # pyright: standard
 
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
@@ -10,13 +11,13 @@ from aico.diffing import (
 )
 
 
-def test_generate_diff_for_standard_change() -> None:
+def test_generate_diff_for_standard_change(tmp_path: Path) -> None:
     # GIVEN original content and a well-formed LLM response
     original_contents = {"file.py": "old_line = 1"}
     llm_response = "File: file.py\n<<<<<<< SEARCH\nold_line = 1\n=======\nnew_line = 2\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN it is a valid unified diff
     assert "--- a/file.py" in diff
@@ -25,13 +26,13 @@ def test_generate_diff_for_standard_change() -> None:
     assert "+new_line = 2" in diff
 
 
-def test_generate_diff_for_new_file_creation() -> None:
+def test_generate_diff_for_new_file_creation(tmp_path: Path) -> None:
     # GIVEN no original content and an LLM response to create a file
     original_contents = {}
     llm_response = "File: new_file.py\n<<<<<<< SEARCH\n=======\nprint('hello world')\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN it shows the file being created from /dev/null
     assert "--- /dev/null" in diff
@@ -39,14 +40,14 @@ def test_generate_diff_for_new_file_creation() -> None:
     assert "+print('hello world')" in diff
 
 
-def test_generate_diff_for_file_deletion() -> None:
+def test_generate_diff_for_file_deletion(tmp_path: Path) -> None:
     # GIVEN original content and an LLM response to delete the file
     file_content = "line 1\nline 2"
     original_contents = {"file.py": file_content}
     llm_response = f"File: file.py\n<<<<<<< SEARCH\n{file_content}\n=======\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN it shows the file being deleted to /dev/null
     assert "--- a/file.py" in diff
@@ -60,7 +61,7 @@ def test_generate_diff_for_file_deletion() -> None:
     ["\t ", "  \t ", "\t", " \t  ", "  "],
     ids=["tab_space", "space_tab_space", "tab", "tab_space", "space"],
 )
-def test_whitespace_flexible_patching_succeeds(indentation) -> None:
+def test_whitespace_flexible_patching_succeeds(indentation, tmp_path: Path) -> None:
     # GIVEN original content with 4-space indent and a SEARCH block with different indent
     original_contents = {"file.py": "def my_func():\n    print('hello')\n"}
     llm_response = (
@@ -76,7 +77,7 @@ def test_whitespace_flexible_patching_succeeds(indentation) -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the patch is applied correctly with original indentation
     assert "-    print('hello')" in diff
@@ -84,36 +85,13 @@ def test_whitespace_flexible_patching_succeeds(indentation) -> None:
     assert "+    print('world')" in diff
 
 
-@pytest.mark.parametrize(
-    "llm_filename",
-    [
-        "src/app/main.py",  # Exact match
-        "main.py",  # Basename match
-        "src/ap/main.py",  # Fuzzy match
-    ],
-)
-def test_filename_matching_logic(llm_filename: str) -> None:
-    # GIVEN original content with a specific path
-    original_contents = {"src/app/main.py": "import os"}
-    llm_response = f"File: {llm_filename}\n<<<<<<< SEARCH\nimport os\n=======\nimport sys\n>>>>>>> REPLACE"
-
-    # WHEN the diff is generated with various filename conventions
-    diff = generate_unified_diff(original_contents, llm_response)
-
-    # THEN the correct file is identified and patched
-    assert "--- a/src/app/main.py" in diff
-    assert "+++ b/src/app/main.py" in diff
-    assert "-import os" in diff
-    assert "+import sys" in diff
-
-
-def test_patch_failure_when_search_block_not_found() -> None:
+def test_patch_failure_when_search_block_not_found(tmp_path: Path) -> None:
     # GIVEN a SEARCH block that doesn't exist in the original content
     original_contents = {"file.py": "original content"}
     llm_response = "File: file.py\n<<<<<<< SEARCH\nnon-existent content\n=======\nnew content\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN a failed patch diff is returned with an error
     assert "a/file.py" in diff
@@ -124,13 +102,13 @@ def test_patch_failure_when_search_block_not_found() -> None:
     assert "--- END SEARCH BLOCK ---" in diff
 
 
-def test_error_when_file_not_found_in_context() -> None:
-    # GIVEN an LLM response for a file not in the context
+def test_error_when_file_not_found_in_context_or_on_disk(tmp_path: Path) -> None:
+    # GIVEN an LLM response for a file not in the context or on disk
     original_contents = {"real_file.py": "content"}
     llm_response = "File: unknown_file.py\n<<<<<<< SEARCH\na\n=======\nb\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN a 'not found' diff is generated
     assert "a/unknown_file.py (not found)" in diff
@@ -138,17 +116,17 @@ def test_error_when_file_not_found_in_context() -> None:
     assert "Error: The file path 'unknown_file.py' from the AI does not match any file in the context." in diff
 
 
-def test_handling_of_malformed_llm_responses() -> None:
+def test_handling_of_malformed_llm_responses(tmp_path: Path) -> None:
     # GIVEN a malformed LLM response
     malformed_response = "File: file.py\nSome malformed content without blocks."
     # WHEN the diff is generated
-    diff = generate_unified_diff({}, malformed_response)
+    diff = generate_unified_diff({}, malformed_response, tmp_path)
 
     # THEN an empty diff is produced, as there are no valid blocks to parse
     assert diff == ""
 
 
-def test_multi_block_llm_response_with_conversation() -> None:
+def test_multi_block_llm_response_with_conversation(tmp_path: Path) -> None:
     # GIVEN original contents for two files and a multi-block response with conversation
     original_contents = {
         "file_one.py": "one",
@@ -173,7 +151,7 @@ def test_multi_block_llm_response_with_conversation() -> None:
     )
 
     # WHEN the unified diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the output contains two complete, valid diffs and no conversation
     assert "Here is the first change" not in diff
@@ -188,7 +166,7 @@ def test_multi_block_llm_response_with_conversation() -> None:
     assert "+2" in diff
 
     # WHEN the display content is generated
-    display_content = generate_display_content(original_contents, llm_response)
+    display_content = generate_display_content(original_contents, llm_response, tmp_path)
 
     # THEN the output contains the conversation and markdown diffs
     assert "Here is the first change" in display_content
@@ -198,29 +176,13 @@ def test_multi_block_llm_response_with_conversation() -> None:
     assert "```diff\n--- a/file_two.py" in display_content
 
 
-def test_ambiguous_filepath_fails() -> None:
-    # GIVEN multiple files with the same basename
-    original_contents = {
-        "src/api/utils.py": "api stuff",
-        "src/core/utils.py": "core stuff",
-    }
-    llm_response = "File: utils.py\n<<<<<<< SEARCH\napi stuff\n=======\nnew api stuff\n>>>>>>> REPLACE"
-
-    # WHEN the diff is generated with the ambiguous basename
-    diff = generate_unified_diff(original_contents, llm_response)
-
-    # THEN an ambiguity error is reported
-    assert "a/utils.py (ambiguous match)" in diff
-    assert "is ambiguous and matches multiple files" in diff
-
-
-def test_ambiguous_patch_succeeds_on_first_match() -> None:
+def test_ambiguous_patch_succeeds_on_first_match(tmp_path: Path) -> None:
     # GIVEN a file where the target code block appears twice
     original_contents = {"file.py": "repeatable_line = 1\n\nsome_other_code = True\n\nrepeatable_line = 1\n"}
     llm_response = "File: file.py\n<<<<<<< SEARCH\nrepeatable_line = 1\n=======\nchanged_line = 2\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the patch is applied only to the first occurrence
     assert "patch failed" not in diff
@@ -239,12 +201,12 @@ def test_ambiguous_patch_succeeds_on_first_match() -> None:
     assert diff.count("+changed_line = 2") == 1
 
 
-def test_patching_with_blank_lines_in_search_block() -> None:
+def test_patching_with_blank_lines_in_search_block(tmp_path: Path) -> None:
     # GIVEN a search block containing blank lines
     original_contents = {"file.py": "line one\n\nline three"}
     llm_response = "File: file.py\n<<<<<<< SEARCH\nline one\n\nline three\n=======\nreplacement\n>>>>>>> REPLACE"
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the patch applies successfully
     assert "patch failed" not in diff
@@ -252,14 +214,14 @@ def test_patching_with_blank_lines_in_search_block() -> None:
     assert "+replacement" in diff
 
 
-def test_patching_with_trailing_blank_lines_in_search_block() -> None:
+def test_patching_with_trailing_blank_lines_in_search_block(tmp_path: Path) -> None:
     # GIVEN original content and a search block with trailing blank lines
     # This specifically tests that the diffing regex doesn't prematurely consume
     # the trailing newlines as part of the delimiter's whitespace.
     original_contents = {"file.py": "code block\n\n\nsome other code"}
     llm_response = "File: file.py\n<<<<<<< SEARCH\ncode block\n\n\n=======\nreplacement\n>>>>>>> REPLACE"
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the patch applies successfully, proving the SEARCH block was parsed correctly
     assert "patch failed" not in diff
@@ -268,28 +230,28 @@ def test_patching_with_trailing_blank_lines_in_search_block() -> None:
     assert "some other code" in diff  # check context is preserved
 
 
-def test_patch_that_changes_indentation() -> None:
+def test_patch_that_changes_indentation(tmp_path: Path) -> None:
     # GIVEN code that needs to be indented
     original_contents = {"file.py": "to_be_indented()"}
     llm_response = (
         "File: file.py\n<<<<<<< SEARCH\nto_be_indented()\n=======\nif True:\n    to_be_indented()\n>>>>>>> REPLACE"
     )
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the diff is generated correctly
     assert "patch failed" not in diff
     assert "+    to_be_indented()" in diff
 
 
-def test_patch_that_outdents_code() -> None:
+def test_patch_that_outdents_code(tmp_path: Path) -> None:
     # GIVEN a file with code inside an if block
     original_contents = {"file.py": "if True:\n    code_to_outdent()\n"}
     llm_response = (
         "File: file.py\n<<<<<<< SEARCH\nif True:\n    code_to_outdent()\n=======\ncode_to_outdent()\n>>>>>>> REPLACE"
     )
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the patch applies correctly, with the code now outdented
     assert "patch failed" not in diff
@@ -298,7 +260,7 @@ def test_patch_that_outdents_code() -> None:
     assert "+code_to_outdent()" in diff
 
 
-def test_patch_for_multi_line_indent() -> None:
+def test_patch_for_multi_line_indent(tmp_path: Path) -> None:
     # GIVEN a file with a multi-line block
     original_contents = {"file.py": "print('one')\nprint('two')\n"}
     llm_response = (
@@ -316,7 +278,7 @@ def test_patch_for_multi_line_indent() -> None:
     )
 
     # WHEN the diff is generated to wrap the block
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the entire block is correctly indented
     assert "patch failed" not in diff
@@ -332,13 +294,34 @@ def test_patch_for_multi_line_indent() -> None:
 # --- Hardening Tests from Plan ---
 
 
-def test_partial_deletion_inside_file() -> None:
+def test_predictability_no_fuzzy_matching_on_paths(tmp_path: Path) -> None:
+    # GIVEN a context containing one file
+    original_contents = {"src/models/ai.py": "class AI: pass"}
+
+    # AND an LLM response that targets a different but similarly named file
+    # that is NOT in context and NOT on disk.
+    llm_response = (
+        "File: src/models/dto/ai.py\n"
+        "<<<<<<< SEARCH\nclass DTO_AI: pass\n=======\nclass DTO_AI_MODIFIED: pass\n>>>>>>> REPLACE\n"
+    )
+
+    # WHEN the diff is generated
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
+
+    # THEN it fails with a "file not found" error for the correct path
+    assert "a/src/models/dto/ai.py (not found)" in diff
+
+    # AND it does NOT create a diff for the similarly named file that was in context
+    assert "--- a/src/models/ai.py" not in diff
+
+
+def test_partial_deletion_inside_file(tmp_path: Path) -> None:
     # GIVEN a file with a function and an AI patch to remove lines from it
     original_contents = {"file.py": "def my_func():\n    line_one = 1\n    line_two = 2\n    line_three = 3\n"}
     llm_response = "File: file.py\n<<<<<<< SEARCH\n    line_one = 1\n    line_two = 2\n=======\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the diff removes only those lines, leaving the surrounding context
     assert "patch failed" not in diff
@@ -349,20 +332,20 @@ def test_partial_deletion_inside_file() -> None:
     assert "+    " not in diff
 
 
-def test_empty_search_on_existing_file_fails() -> None:
+def test_empty_search_on_existing_file_fails(tmp_path: Path) -> None:
     # GIVEN an existing, non-empty file and an invalid AI patch with an empty search block
     original_contents = {"file.py": "some_content = True"}
     llm_response = "File: file.py\n<<<<<<< SEARCH\n=======\nnew_content = False\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN it fails with a patch failed error because this is invalid for an existing file
     assert "patch failed" in diff
     assert "The SEARCH block from the AI could not be found" in diff
 
 
-def test_patch_robust_to_delimiters_in_content() -> None:
+def test_patch_robust_to_delimiters_in_content(tmp_path: Path) -> None:
     # GIVEN a file containing a diff delimiter and an AI patch that also contains it
     original_contents = {"file.py": "line_one = 1\n<<<<<<< SEARCH\nline_three = 3\n"}
     llm_response = (
@@ -377,7 +360,7 @@ def test_patch_robust_to_delimiters_in_content() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the patch is applied successfully, proving the parser's robustness
     assert "patch failed" not in diff
@@ -385,13 +368,13 @@ def test_patch_robust_to_delimiters_in_content() -> None:
     assert "-<<<<<<< SEARCH" in diff
 
 
-def test_patch_with_inconsistent_trailing_newlines() -> None:
+def test_patch_with_inconsistent_trailing_newlines(tmp_path: Path) -> None:
     # GIVEN a source file with a trailing newline and an AI SEARCH block without one
     original_contents = {"file.py": "line1\nline2\n"}
     llm_response = "File: file.py\n<<<<<<< SEARCH\nline1\nline2\n=======\nline1\nline_two_changed\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the patch applies successfully due to flexible matching
     assert "patch failed" not in diff
@@ -399,7 +382,7 @@ def test_patch_with_inconsistent_trailing_newlines() -> None:
     assert "+line_two_changed" in diff
 
 
-def test_whitespace_only_change() -> None:
+def test_whitespace_only_change(tmp_path: Path) -> None:
     # GIVEN a file with code separated by one blank line and a patch to add another
     original_contents = {"file.py": "line_one\n\nline_three\n"}
     llm_response = (
@@ -407,7 +390,7 @@ def test_whitespace_only_change() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the diff correctly shows the addition of one blank line
     assert "patch failed" not in diff
@@ -418,7 +401,7 @@ def test_whitespace_only_change() -> None:
     assert added_lines[0] == "+"
 
 
-def test_whitespace_only_change_missing_newline_in_original() -> None:
+def test_whitespace_only_change_missing_newline_in_original(tmp_path: Path) -> None:
     # GIVEN a file with code separated by one blank line and a patch to add another
     original_contents = {"file.py": "line_one\n\nline_three"}
     llm_response = (
@@ -426,7 +409,7 @@ def test_whitespace_only_change_missing_newline_in_original() -> None:
     )
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the diff correctly shows the addition of one blank line and the fixing of the missing newline
     assert diff == (
@@ -442,13 +425,13 @@ def test_whitespace_only_change_missing_newline_in_original() -> None:
     )
 
 
-def test_mismatched_line_endings_patch_succeeds() -> None:
+def test_mismatched_line_endings_patch_succeeds(tmp_path: Path) -> None:
     # GIVEN a source file with CRLF endings and an AI patch with LF endings
     original_contents = {"file.py": "line1\r\nline2\r\n"}
     llm_response = "File: file.py\n<<<<<<< SEARCH\nline1\nline2\n=======\nnew_line1\nnew_line2\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the patch applies successfully because line endings are normalized for comparison
     assert "patch failed" not in diff
@@ -461,7 +444,7 @@ def test_mismatched_line_endings_patch_succeeds() -> None:
 # --- Tests for Dual-Format Diff Presentation ---
 
 
-def test_generate_pipeable_diff_with_conversation() -> None:
+def test_generate_pipeable_diff_with_conversation(tmp_path: Path) -> None:
     # GIVEN an LLM response with conversational text and a diff block
     original_contents = {"file.py": "old_line"}
     llm_response = (
@@ -476,7 +459,7 @@ def test_generate_pipeable_diff_with_conversation() -> None:
     )
 
     # WHEN the pipeable diff is generated
-    pipeable_diff = generate_unified_diff(original_contents, llm_response)
+    pipeable_diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the output is a clean diff with no conversational text
     assert "Hello!" not in pipeable_diff
@@ -487,19 +470,19 @@ def test_generate_pipeable_diff_with_conversation() -> None:
     assert "+new_line" in pipeable_diff
 
 
-def test_generate_pipeable_diff_from_conversation_only_returns_empty() -> None:
+def test_generate_pipeable_diff_from_conversation_only_returns_empty(tmp_path: Path) -> None:
     # GIVEN an LLM response with only conversational text
     original_contents = {"file.py": "old_line"}
     llm_response = "I'm not sure how to make that change. Could you clarify?"
 
     # WHEN the pipeable diff is generated
-    pipeable_diff = generate_unified_diff(original_contents, llm_response)
+    pipeable_diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the output is an empty string
     assert pipeable_diff == ""
 
 
-def test_generate_embedded_markdown_diff_with_conversation() -> None:
+def test_generate_embedded_markdown_diff_with_conversation(tmp_path: Path) -> None:
     # GIVEN an LLM response with conversational text and a diff block
     original_contents = {"file.py": "old_line"}
     llm_response = (
@@ -514,7 +497,7 @@ def test_generate_embedded_markdown_diff_with_conversation() -> None:
     )
 
     # WHEN the embedded markdown diff is generated
-    markdown_output = generate_display_content(original_contents, llm_response)
+    markdown_output = generate_display_content(original_contents, llm_response, tmp_path)
 
     # THEN the conversational text is preserved
     assert "Hello! I've made the change you requested." in markdown_output
@@ -529,19 +512,19 @@ def test_generate_embedded_markdown_diff_with_conversation() -> None:
     assert "```" in markdown_output
 
 
-def test_generate_embedded_markdown_diff_from_conversation_only_is_unchanged() -> None:
+def test_generate_embedded_markdown_diff_from_conversation_only_is_unchanged(tmp_path: Path) -> None:
     # GIVEN an LLM response with only conversational text
     original_contents = {"file.py": "old_line"}
     llm_response = "I'm not sure how to make that change. Could you clarify?"
 
     # WHEN the embedded markdown diff is generated
-    markdown_output = generate_display_content(original_contents, llm_response)
+    markdown_output = generate_display_content(original_contents, llm_response, tmp_path)
 
     # THEN the output is the original response, unchanged
     assert markdown_output == llm_response
 
 
-def test_generate_embedded_markdown_diff_malformed_block() -> None:
+def test_generate_embedded_markdown_diff_malformed_block(tmp_path: Path) -> None:
     # GIVEN an LLM response with conversational text and a malformed block
     original_contents = {}
     llm_response = (
@@ -551,7 +534,7 @@ def test_generate_embedded_markdown_diff_malformed_block() -> None:
     )
 
     # WHEN the embedded markdown diff is generated using the new robust parser
-    markdown_output = generate_display_content(original_contents, llm_response)
+    markdown_output = generate_display_content(original_contents, llm_response, tmp_path)
 
     # THEN the malformed block is treated as conversational text and is preserved as-is.
     # The entire original response should be returned untouched.
@@ -589,7 +572,7 @@ def test_generate_embedded_markdown_diff_malformed_block() -> None:
     ids=["unified_diff", "display_content"],
 )
 def test_parser_is_robust_to_formatting(
-    llm_response_template: str, func_to_test: Callable[[dict[str, str], str], str]
+    llm_response_template: str, func_to_test: Callable[[dict[str, str], str, Path], str], tmp_path: Path
 ) -> None:
     # GIVEN an LLM response with quirky but valid formatting
     search_block = "old_line"
@@ -598,7 +581,7 @@ def test_parser_is_robust_to_formatting(
     original_contents = {"file.py": "old_line"}
 
     # WHEN the diff/content is generated
-    result = func_to_test(original_contents, llm_response)
+    result = func_to_test(original_contents, llm_response, tmp_path)
 
     # THEN the content is generated successfully without a malformed block error
     assert "MALFORMED_BLOCK" not in result
@@ -613,6 +596,7 @@ def test_parser_is_robust_to_formatting(
 )
 def test_whitespace_only_search_block_fails_cleanly(
     whitespace_search_block: str,
+    tmp_path: Path,
 ) -> None:
     """
     Tests that a SEARCH block containing only whitespace doesn't cause an
@@ -625,7 +609,7 @@ def test_whitespace_only_search_block_fails_cleanly(
     llm_response = f"File: file.py\n<<<<<<< SEARCH\n{whitespace_search_block}\n=======\nsome_content\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the diff should report a standard "patch failed" error, not an "ambiguous" one
     # Note: The flexible patcher will fail, and so will the exact patcher, leading to this error.
@@ -634,14 +618,14 @@ def test_whitespace_only_search_block_fails_cleanly(
     assert "could not be found" in diff
 
 
-def test_no_newline_marker_added_for_existing_file_without_trailing_newline():
+def test_no_newline_marker_added_for_existing_file_without_trailing_newline(tmp_path: Path) -> None:
     """Verifies the '\\ No newline...' marker is added for an existing file missing a final newline."""
     # GIVEN an existing file without a trailing newline and an LLM patch
     original_contents = {"file.py": "print('old')"}
     llm_response = "File: file.py\n<<<<<<< SEARCH\nprint('old')\n=======\nprint('new')\n>>>>>>> REPLACE"
 
     # WHEN the unified diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the diff should contain the "No newline" marker for the original file content
     expected_diff = (
@@ -650,13 +634,13 @@ def test_no_newline_marker_added_for_existing_file_without_trailing_newline():
     assert diff == expected_diff
 
 
-def test_no_newline_marker_logic_is_correct_for_new_file_creation():
+def test_no_newline_marker_logic_is_correct_for_new_file_creation(tmp_path: Path) -> None:
     # GIVEN a patch to create a new file that itself has no trailing newline
     original_contents = {}
     llm_response = "File: new.py\n<<<<<<< SEARCH\n=======\nnew content\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the standard diff is produced. Our logic should not run for the `/dev/null` side.
     # The standard `difflib` will correctly add a marker for the new content, and only that one.
@@ -665,13 +649,13 @@ def test_no_newline_marker_logic_is_correct_for_new_file_creation():
     assert diff == expected_diff
 
 
-def test_no_newline_marker_logic_is_correct_for_empty_file_diff():
+def test_no_newline_marker_logic_is_correct_for_empty_file_diff(tmp_path: Path) -> None:
     # GIVEN a patch to update an enpty file that itself has no trailing newline
     original_contents = {"new.py": ""}
     llm_response = "File: new.py\n<<<<<<< SEARCH\n=======\nnew content\n>>>>>>> REPLACE"
 
     # WHEN the diff is generated
-    diff = generate_unified_diff(original_contents, llm_response)
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the standard diff is produced.
     expected_diff = "--- a/new.py\n+++ b/new.py\n@@ -0,0 +1 @@\n+new content\n"

@@ -4,7 +4,13 @@ from pathlib import Path
 
 import regex as re
 
-from aico.models import AIPatch, FileContents, ProcessedDiffBlock
+from aico.models import (
+    AIPatch,
+    FileContents,
+    ProcessedDiffBlock,
+    StreamYieldItem,
+    WarningMessage,
+)
 
 # This regex is the core of the parser. It finds a complete `File:` block.
 # It uses named capture groups and backreferences to be robust.
@@ -131,25 +137,43 @@ def _create_patched_content(original_content: str, search_block: str, replace_bl
     return None
 
 
-def _find_best_matching_filename(llm_path: str, available_paths: list[str]) -> str | None:
+def _resolve_file_path(
+    patch: AIPatch, file_contents: dict[str, str], session_root: Path
+) -> tuple[str | None, str | None]:
+    """
+    Resolves the file path from an AI patch using a hierarchical strategy.
+
+    1.  Exact match in context.
+    2.  New file intent (empty search block).
+    3.  Filesystem fallback (file exists on disk but not in context).
+    4.  Failure.
+
+    Returns a tuple of (resolved_path, warning_message).
+    If a file is found on disk, it's added to the `file_contents` dict.
+    """
     # 1. Exact Match
-    if llm_path in available_paths:
-        return llm_path
+    if patch.llm_file_path in file_contents:
+        return patch.llm_file_path, None
 
-    # 2. Basename Match
-    llm_basename = Path(llm_path).name
-    basename_matches = [path for path in available_paths if Path(path).name == llm_basename]
-    if len(basename_matches) == 1:
-        return basename_matches[0]
-    if len(basename_matches) > 1:
-        return "AMBIGUOUS_FILE"
+    # 2. New file intent (empty or whitespace-only search block)
+    if not patch.search_content.strip():
+        return patch.llm_file_path, None
 
-    # 3. Fuzzy match
-    close_matches = difflib.get_close_matches(llm_path, available_paths, n=1, cutoff=0.8)
-    if close_matches:
-        return close_matches[0]
+    # 3. Filesystem Fallback
+    disk_path = session_root / patch.llm_file_path
+    if disk_path.is_file():
+        # Read content and add to in-memory context for this session
+        content = disk_path.read_text()
+        file_contents[patch.llm_file_path] = content
 
-    return None
+        warning = (
+            f"Warning: '{patch.llm_file_path}' was not in the session context but was found on disk. "
+            "Consider adding it to the session."
+        )
+        return patch.llm_file_path, warning
+
+    # 4. Failure
+    return None, None
 
 
 def _create_aipatch_from_match(match: re.Match[str]) -> AIPatch:
@@ -158,16 +182,6 @@ def _create_aipatch_from_match(match: re.Match[str]) -> AIPatch:
         llm_file_path=match.group("file_path").strip(),
         search_content=match.group("search_content"),
         replace_content=match.group("replace_content"),
-    )
-
-
-def _create_ambiguous_file_error_diff(llm_path: str) -> str:
-    return (
-        f"--- a/{llm_path} (ambiguous match)\n"
-        f"+++ b/{llm_path} (ambiguous match)\n"
-        f"@@ -1 +2 @@\n"
-        f"-Error: The file path '{llm_path}' is ambiguous and matches multiple files in the context.\n"
-        f"+Please provide a more specific path and try again."
     )
 
 
@@ -235,9 +249,9 @@ def _create_patch_failed_error_diff(file_path: str, search_block: str, original_
     )
 
 
-def _process_llm_response_stream(
-    original_file_contents: FileContents, llm_response: str
-) -> Iterator[str | ProcessedDiffBlock]:
+def process_llm_response_stream(
+    original_file_contents: FileContents, llm_response: str, session_root: Path
+) -> Iterator[StreamYieldItem]:
     """
     Parses an LLM response, processes diff blocks sequentially, and yields results.
 
@@ -246,7 +260,7 @@ def _process_llm_response_stream(
     patch is applied against the result of the previous one for the same file.
 
     Yields:
-        Either a string (for conversational text) or a ProcessedDiffBlock.
+        Either a string (for conversational text), a ProcessedDiffBlock, or a WarningMessage.
     """
     current_file_contents = dict(original_file_contents)
     last_end = 0
@@ -265,38 +279,27 @@ def _process_llm_response_stream(
 
         # 2. Process the found `File:` block
         parsed_block = _create_aipatch_from_match(match)
-        search_content = parsed_block.search_content
         diff_string: str
 
-        # Find file path first. Handle file path errors immediately.
-        actual_file_path = _find_best_matching_filename(parsed_block.llm_file_path, list(current_file_contents.keys()))
+        actual_file_path, warning = _resolve_file_path(parsed_block, current_file_contents, session_root)
 
-        if actual_file_path == "AMBIGUOUS_FILE":
-            diff_string = _create_ambiguous_file_error_diff(parsed_block.llm_file_path)
+        if warning:
+            yield WarningMessage(text=warning)
+
+        if actual_file_path is None:
+            diff_string = _create_file_not_found_error_diff(parsed_block.llm_file_path)
             yield ProcessedDiffBlock(llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string)
             continue
 
-        # Determine if this is a new file vs. existing file vs. file not found.
-        content_before_patch: str
-        is_new_file = False
-        if actual_file_path:
-            content_before_patch = current_file_contents[actual_file_path]
-        elif search_content == "" and parsed_block.llm_file_path not in current_file_contents:
-            actual_file_path = parsed_block.llm_file_path
-            content_before_patch = ""
-            is_new_file = True
-        else:
-            # If the search content is not empty, but we couldn't find a file, it's an error.
-            if not actual_file_path:
-                diff_string = _create_file_not_found_error_diff(parsed_block.llm_file_path)
-                yield ProcessedDiffBlock(llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string)
-                continue
-            # This case should now be rare, but handles if an empty search block is
-            # provided for a file that already exists in the context. We treat it as
-            # a patch against the existing content.
-            content_before_patch = current_file_contents.get(actual_file_path, "")
+        # Determine if this is a new file vs. existing file.
+        # A file is "new" if it wasn't in the original context AND it wasn't
+        # found on disk via the filesystem fallback (which would generate a warning).
+        is_new_file = (actual_file_path not in original_file_contents) and (warning is None)
+        content_before_patch = current_file_contents.get(actual_file_path, "")
 
         # Now we have a valid file path and content. Apply the patch.
+        search_content = parsed_block.search_content
+
         new_content_full = _create_patched_content(
             content_before_patch,
             search_content,
@@ -352,10 +355,12 @@ def _process_llm_response_stream(
 def _generate_output_from_stream(
     original_file_contents: FileContents,
     llm_response: str,
-    formatter: Callable[[str | ProcessedDiffBlock], str],
+    session_root: Path,
+    formatter: Callable[[StreamYieldItem], str],
 ) -> str:
     output_parts: list[str] = []
-    stream = _process_llm_response_stream(original_file_contents, llm_response)
+    # Make a copy because the stream processor modifies it in-place
+    stream = process_llm_response_stream(dict(original_file_contents), llm_response, session_root)
 
     for item in stream:
         output_parts.append(formatter(item))
@@ -363,33 +368,37 @@ def _generate_output_from_stream(
     return "".join(output_parts)
 
 
-def generate_unified_diff(original_file_contents: FileContents, llm_response: str) -> str:
+def generate_unified_diff(original_file_contents: FileContents, llm_response: str, session_root: Path) -> str:
     """
     Generates a unified diff string by processing all `File:` blocks sequentially.
-    Conversational text is ignored.
+    Conversational text and warnings are ignored.
     """
 
-    def formatter(item: str | ProcessedDiffBlock) -> str:
+    def formatter(item: StreamYieldItem) -> str:
         match item:
             case ProcessedDiffBlock(unified_diff=diff_string):
                 return diff_string
+            case WarningMessage():
+                return ""
             case str():
                 return ""
 
-    return _generate_output_from_stream(original_file_contents, llm_response, formatter)
+    return _generate_output_from_stream(original_file_contents, llm_response, session_root, formatter)
 
 
-def generate_display_content(original_file_contents: FileContents, llm_response: str) -> str:
+def generate_display_content(original_file_contents: FileContents, llm_response: str, session_root: Path) -> str:
     """
     Generates a markdown-formatted string with diffs embedded in conversational text.
-    Processes all `File:` blocks sequentially.
+    Processes all `File:` blocks sequentially. Warnings are ignored.
     """
 
-    def formatter(item: str | ProcessedDiffBlock) -> str:
+    def formatter(item: StreamYieldItem) -> str:
         match item:
             case str() as text:
                 return text
             case ProcessedDiffBlock(llm_file_path=llm_file_path, unified_diff=diff_string):
                 return f"File: {llm_file_path}\n```diff\n{diff_string.strip()}\n```\n"
+            case WarningMessage():
+                return ""
 
-    return _generate_output_from_stream(original_file_contents, llm_response, formatter)
+    return _generate_output_from_stream(original_file_contents, llm_response, session_root, formatter)

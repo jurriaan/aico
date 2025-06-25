@@ -105,6 +105,14 @@ class ProcessedDiffBlock:
     unified_diff: str
 
 
+@dataclass(slots=True, frozen=True)
+class WarningMessage:
+    text: str
+
+
+type StreamYieldItem = str | ProcessedDiffBlock | WarningMessage
+
+
 class LLMChatMessage(TypedDict):
     role: Literal["user", "assistant", "system"]
     content: str
