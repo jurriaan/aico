@@ -300,7 +300,99 @@ def test_last_fails_when_no_assistant_response_exists(tmp_path: Path) -> None:
 
         # THEN the command fails with an error
         assert result.exit_code == 1
-        assert "Error: No assistant responses found in session history." in result.stderr
+        assert "Error: Assistant response at index 1 not found." in result.stderr
+
+
+def test_last_can_select_historical_message_with_n(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN a session with two assistant messages in history
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        assistant_message_1 = {  # This will be the second-to-last
+            "role": "assistant",
+            "content": "response one",
+            "mode": "conversation",
+            "model": "test",
+            "timestamp": "...",
+            "duration_ms": 1,
+            "derived": None,
+        }
+        assistant_message_2 = {  # This is the last
+            "role": "assistant",
+            "content": "response two",
+            "mode": "conversation",
+            "model": "test",
+            "timestamp": "...",
+            "duration_ms": 1,
+            "derived": None,
+        }
+        session_data = {
+            "model": "test-model",
+            "context_files": [],
+            "history_start_index": 0,
+            "chat_history": [
+                {"role": "user", "content": "p1", "mode": "conversation", "timestamp": "..."},
+                assistant_message_1,
+                {"role": "user", "content": "p2", "mode": "conversation", "timestamp": "..."},
+                assistant_message_2,
+            ],
+        }
+        (Path(td) / SESSION_FILE_NAME).write_text(json.dumps(session_data))
+
+        # WHEN `aico last 2` is run
+        result_2 = runner.invoke(app, ["last", "2"])
+
+        # THEN it shows the content from the first assistant response
+        assert result_2.exit_code == 0
+        assert "response one" in result_2.stdout
+        assert "response two" not in result_2.stdout
+
+        # WHEN `aico last` (defaulting to n=1) is run
+        result_1 = runner.invoke(app, ["last"])
+
+        # THEN it shows the content from the second (last) assistant response
+        assert result_1.exit_code == 0
+        assert "response two" in result_1.stdout
+        assert "response one" not in result_1.stdout
+
+
+def test_last_fails_with_out_of_bounds_n(tmp_path: Path) -> None:
+    # GIVEN a session with one assistant message
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        assistant_message = {
+            "role": "assistant",
+            "content": "only response",
+            "mode": "conversation",
+            "model": "test",
+            "timestamp": "...",
+            "duration_ms": 1,
+            "derived": None,
+        }
+        session_data = {
+            "model": "test-model",
+            "context_files": [],
+            "history_start_index": 0,
+            "chat_history": [assistant_message],
+        }
+        (Path(td) / SESSION_FILE_NAME).write_text(json.dumps(session_data))
+
+        # WHEN `aico last 2` is run
+        result = runner.invoke(app, ["last", "2"])
+
+        # THEN it fails with a clear error message
+        assert result.exit_code == 1
+        assert "Error: Assistant response at index 2 not found." in result.stderr
+
+
+def test_last_fails_with_invalid_n_cli_arg(tmp_path: Path) -> None:
+    # GIVEN a session file
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        runner.invoke(app, ["init"])
+
+        # WHEN `aico last` is run with an invalid N (less than 1)
+        result = runner.invoke(app, ["last", "0"])
+
+        # THEN typer's argument validation handles it
+        assert result.exit_code != 0
+        assert "Invalid value for '[N]': 0 is not in the range x>=1" in result.stderr
 
 
 def test_prompt_conversation_mode_injects_alignment(tmp_path: Path, mocker) -> None:

@@ -102,16 +102,32 @@ def _render_content(content: str, use_rich_markdown: bool) -> None:
         print(content, end="")
 
 
-def _get_last_assistant_message(session_data: SessionData) -> AssistantChatMessage | None:
-    """Finds the last assistant message in the chat history."""
-    for msg in reversed(session_data.chat_history):
+def _find_nth_last_assistant_message(history: list[ChatMessageHistoryItem], n: int) -> AssistantChatMessage | None:
+    """
+    Finds the Nth-to-last assistant message in the chat history.
+    n=1 is the most recent, n=2 is the second most recent, etc.
+    """
+    if n < 1:
+        return None
+
+    count = 0
+    for msg in reversed(history):
         if isinstance(msg, AssistantChatMessage):
-            return msg
+            count += 1
+            if count == n:
+                return msg
     return None
 
 
 @app.command()
 def last(
+    n: Annotated[
+        int,
+        typer.Argument(
+            help="The Nth-to-last assistant response to show (e.g., 1 for the last, 2 for the second-to-last).",
+            min=1,
+        ),
+    ] = 1,
     verbatim: Annotated[
         bool,
         typer.Option(
@@ -129,20 +145,21 @@ def last(
     ] = False,
 ) -> None:
     """
-    Prints the last processed response from the AI to standard output.
+    Prints a processed response from the AI to standard output.
 
-    By default, it shows the response as it was originally generated.
+    By default, it shows the last response as it was originally generated.
+    Use N to select a specific historical response.
     Use --recompute to re-apply the AI's instructions to the current file state.
     """
     session_file, session_data = load_session()
-    last_asst_msg = _get_last_assistant_message(session_data)
-    if not last_asst_msg:
-        print("Error: No assistant responses found in session history.", file=sys.stderr)
+    target_asst_msg = _find_nth_last_assistant_message(session_data.chat_history, n)
+    if not target_asst_msg:
+        print(f"Error: Assistant response at index {n} not found.", file=sys.stderr)
         raise typer.Exit(code=1)
 
     if verbatim:
-        if last_asst_msg.content:
-            _render_content(last_asst_msg.content, is_terminal())
+        if target_asst_msg.content:
+            _render_content(target_asst_msg.content, is_terminal())
         return
 
     final_unified_diff: str | None = None
@@ -153,17 +170,17 @@ def last(
         original_file_contents = _build_original_file_contents(
             context_files=session_data.context_files, session_root=session_root
         )
-        final_unified_diff = generate_unified_diff(original_file_contents, last_asst_msg.content)
-        final_display_content = generate_display_content(original_file_contents, last_asst_msg.content)
+        final_unified_diff = generate_unified_diff(original_file_contents, target_asst_msg.content)
+        final_display_content = generate_display_content(original_file_contents, target_asst_msg.content)
     else:
         # Use stored data
-        if last_asst_msg.derived:
-            final_unified_diff = last_asst_msg.derived.unified_diff
+        if target_asst_msg.derived:
+            final_unified_diff = target_asst_msg.derived.unified_diff
             # Fallback to raw content if display_content was optimized away
-            final_display_content = last_asst_msg.derived.display_content or last_asst_msg.content
+            final_display_content = target_asst_msg.derived.display_content or target_asst_msg.content
         else:
             # Purely conversational messages have no derived content
-            final_display_content = last_asst_msg.content
+            final_display_content = target_asst_msg.content
 
     content_to_show: str | None = None
     use_rich_markdown = False
