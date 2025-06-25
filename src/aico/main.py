@@ -19,6 +19,7 @@ from aico.diffing import (
 from aico.history import history_app
 from aico.models import (
     AssistantChatMessage,
+    ChatMessageHistoryItem,
     FileContents,
     LastResponse,
     LiteLLMChoiceContainer,
@@ -242,7 +243,8 @@ def _process_chunk(chunk: object) -> tuple[str | None, TokenUsage | None]:
 
 
 def _handle_unified_streaming(
-    session_data: SessionData,
+    model_name: str,
+    chat_history: list[ChatMessageHistoryItem],
     original_file_contents: FileContents,
     messages: list[LLMChatMessage],
 ) -> tuple[str, str | None, TokenUsage | None, float | None]:
@@ -256,7 +258,7 @@ def _handle_unified_streaming(
     token_usage: TokenUsage | None = None
 
     stream = litellm.completion(  # pyright: ignore[reportUnknownMemberType]
-        model=session_data.model,
+        model=model_name,
         messages=messages,
         stream=True,
         stream_options={"include_usage": True},
@@ -283,7 +285,7 @@ def _handle_unified_streaming(
 
     message_cost: float | None = None
     if token_usage:
-        message_cost = calculate_and_display_cost(token_usage, session_data)
+        message_cost = calculate_and_display_cost(token_usage, model_name, chat_history)
 
     return full_llm_response_buffer, final_display_content, token_usage, message_cost
 
@@ -363,6 +365,7 @@ def prompt(
             case_sensitive=False,
         ),
     ] = Mode.CONVERSATION,
+    model: Annotated[str | None, typer.Option(help="The model to use for this request")] = None,
 ) -> None:
     """
     Sends a prompt to the AI with the current context.
@@ -370,6 +373,7 @@ def prompt(
     session_file, session_data = load_session()
     session_root = session_file.parent
     timestamp = datetime.now(UTC).isoformat()
+    model_name = model or session_data.model  # The model argument is an override for the session's model
 
     piped_content: str | None = None
     if not is_input_terminal():
@@ -421,7 +425,7 @@ def prompt(
             display_content,
             token_usage,
             message_cost,
-        ) = _handle_unified_streaming(session_data, original_file_contents, messages)
+        ) = _handle_unified_streaming(model_name, session_data.chat_history, original_file_contents, messages)
         duration_ms = int((time.monotonic() - start_time) * 1000)
     except Exception as e:
         # Specific error handling can be improved in handlers if needed
@@ -454,7 +458,7 @@ def prompt(
             mode=mode,
             token_usage=token_usage,
             cost=message_cost,
-            model=session_data.model,
+            model=model_name,
             timestamp=assistant_response_timestamp,
             duration_ms=duration_ms,
         )
@@ -467,7 +471,7 @@ def prompt(
         display_content=display_content,
         token_usage=token_usage,
         cost=message_cost,
-        model=session_data.model,
+        model=model_name,
         timestamp=assistant_response_timestamp,
         duration_ms=duration_ms,
     )

@@ -966,3 +966,69 @@ def test_prompt_with_history_reconstructs_piped_content(tmp_path: Path, mocker: 
         assert current_user_msg["role"] == "user"
         # The current prompt has file context as well, so we check for `in`
         assert "<prompt>\nThanks\n</prompt>" in current_user_msg["content"]
+
+
+def test_prompt_uses_session_default_model_when_not_overridden(tmp_path: Path, mocker: MockerFixture) -> None:
+    """Verifies `aico prompt` uses the session's default model when no override is provided."""
+    # GIVEN an initialized session with a specific default model
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        # Use 'init' to create the session with a non-default model name
+        runner.invoke(app, ["init", "--model", "session/default-model"])
+
+        # AND the LLM API is mocked
+        mock_completion = mocker.patch("litellm.completion")
+        mock_chunk = _create_mock_stream_chunk("response", mocker=mocker)
+        mock_stream = mocker.MagicMock()
+        mock_stream.__iter__.return_value = iter([mock_chunk])
+        mock_completion.return_value = mock_stream
+        mocker.patch("litellm.completion_cost", return_value=None)
+
+        # WHEN `aico prompt` is run without the --model flag
+        result = runner.invoke(app, ["prompt", "A prompt"])
+
+        # THEN the command succeeds
+        assert result.exit_code == 0
+
+        # AND the API was called with the session's default model
+        mock_completion.assert_called_once()
+        call_kwargs = mock_completion.call_args.kwargs
+        assert call_kwargs["model"] == "session/default-model"
+
+        # AND the session file's records show the model used
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = json.loads(session_file.read_text())
+        assert session_data["last_response"]["model"] == "session/default-model"
+        assert session_data["chat_history"][1]["model"] == "session/default-model"
+
+
+def test_prompt_model_flag_overrides_session_default(tmp_path: Path, mocker: MockerFixture) -> None:
+    """Verifies the --model flag on `aico prompt` overrides the session default for one call."""
+    # GIVEN an initialized session with a specific default model
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init", "--model", "session/default-model"])
+
+        mock_completion = mocker.patch("litellm.completion")
+        mock_chunk = _create_mock_stream_chunk("response", mocker=mocker)
+        mock_stream = mocker.MagicMock()
+        mock_stream.__iter__.return_value = iter([mock_chunk])
+        mock_completion.return_value = mock_stream
+        mocker.patch("litellm.completion_cost", return_value=None)
+
+        # WHEN `aico prompt` is run with the --model flag
+        override_model = "override/specific-model"
+        result = runner.invoke(app, ["prompt", "--model", override_model, "A prompt"])
+
+        # THEN the command succeeds
+        assert result.exit_code == 0
+
+        # AND the API was called with the override model
+        mock_completion.assert_called_once()
+        call_kwargs = mock_completion.call_args.kwargs
+        assert call_kwargs["model"] == override_model
+
+        # AND the session file records the override model for the response, but not the session default
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = json.loads(session_file.read_text())
+        assert session_data["model"] == "session/default-model"  # Default is unchanged
+        assert session_data["last_response"]["model"] == override_model  # last_response reflects override
+        assert session_data["chat_history"][1]["model"] == override_model  # History reflects override

@@ -115,7 +115,9 @@ def reconstruct_historical_messages(
     return reconstructed
 
 
-def calculate_and_display_cost(token_usage: TokenUsage, session_data: SessionData) -> float | None:
+def calculate_and_display_cost(
+    token_usage: TokenUsage, model_name: str, chat_history: list[ChatMessageHistoryItem]
+) -> float | None:
     """Calculates the message cost and displays token/cost information."""
     import litellm
 
@@ -129,7 +131,7 @@ def calculate_and_display_cost(token_usage: TokenUsage, session_data: SessionDat
             "completion_tokens": token_usage.completion_tokens,
             "total_tokens": token_usage.total_tokens,
         },
-        "model": session_data.model,
+        "model": model_name,
     }
 
     with contextlib.suppress(Exception):
@@ -141,9 +143,7 @@ def calculate_and_display_cost(token_usage: TokenUsage, session_data: SessionDat
     cost_str: str = ""
     if message_cost is not None:
         history_cost = sum(
-            msg.cost
-            for msg in session_data.chat_history
-            if isinstance(msg, AssistantChatMessage) and msg.cost is not None
+            msg.cost for msg in chat_history if isinstance(msg, AssistantChatMessage) and msg.cost is not None
         )
         session_cost = history_cost + message_cost
         cost_str = f"Cost: ${message_cost:.2f} message, ${session_cost:.2f} session."
