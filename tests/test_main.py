@@ -1173,7 +1173,7 @@ def test_prompt_with_filesystem_fallback_and_warning(tmp_path: Path, mocker: Moc
             "+++ b/fallback1.py\n"
             "@@ -1 +1 @@\n"
             "-content 1\n"
-            "\ No newline at end of file\n"
+            "\\ No newline at end of file\n"
             "+new content 1\n"
             "--- a/sub/fallback2.py\n"
             "+++ b/sub/fallback2.py\n"
