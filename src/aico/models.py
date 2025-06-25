@@ -45,6 +45,12 @@ class UserChatMessage:
 
 
 @dataclass(slots=True, frozen=True)
+class DerivedContent:
+    unified_diff: str | None
+    display_content: str | None
+
+
+@dataclass(slots=True, frozen=True)
 class AssistantChatMessage:
     role: Literal["assistant"]
     content: str
@@ -52,31 +58,12 @@ class AssistantChatMessage:
     timestamp: str
     model: str
     duration_ms: int
+    derived: DerivedContent | None = None
     token_usage: TokenUsage | None = None
     cost: float | None = None
 
 
 type ChatMessageHistoryItem = UserChatMessage | AssistantChatMessage
-
-
-@dataclass(slots=True, frozen=True)
-class LastResponse:
-    model: str
-    mode_used: Mode
-    timestamp: str
-    duration_ms: int
-
-    # The verbatim, original response from the LLM. This is the source of truth.
-    raw_content: str
-
-    # Derived content, populated whenever diff blocks are found in the raw_content.
-    # A clean, standard unified diff for tools, redirection, or scripting.
-    unified_diff: str | None = None
-    # The full conversational response, with diffs embedded, for rich terminal display.
-    display_content: str | None = None
-
-    token_usage: TokenUsage | None = None
-    cost: float | None = None
 
 
 @dataclass(slots=True)
@@ -85,7 +72,6 @@ class SessionData:
     context_files: Annotated[list[str], Field(default_factory=list)]
     chat_history: Annotated[list[ChatMessageHistoryItem], Field(default_factory=list)]
     history_start_index: int = 0
-    last_response: LastResponse | None = None
 
 
 @dataclass(slots=True)

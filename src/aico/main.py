@@ -20,8 +20,8 @@ from aico.history import history_app
 from aico.models import (
     AssistantChatMessage,
     ChatMessageHistoryItem,
+    DerivedContent,
     FileContents,
-    LastResponse,
     LiteLLMChoiceContainer,
     LiteLLMUsage,
     LLMChatMessage,
@@ -102,6 +102,14 @@ def _render_content(content: str, use_rich_markdown: bool) -> None:
         print(content, end="")
 
 
+def _get_last_assistant_message(session_data: SessionData) -> AssistantChatMessage | None:
+    """Finds the last assistant message in the chat history."""
+    for msg in reversed(session_data.chat_history):
+        if isinstance(msg, AssistantChatMessage):
+            return msg
+    return None
+
+
 @app.command()
 def last(
     verbatim: Annotated[
@@ -127,30 +135,35 @@ def last(
     Use --recompute to re-apply the AI's instructions to the current file state.
     """
     session_file, session_data = load_session()
-    last_resp = session_data.last_response
-    if not last_resp:
-        print("Error: No last response found in session.", file=sys.stderr)
+    last_asst_msg = _get_last_assistant_message(session_data)
+    if not last_asst_msg:
+        print("Error: No assistant responses found in session history.", file=sys.stderr)
         raise typer.Exit(code=1)
 
     if verbatim:
-        if last_resp.raw_content:
-            _render_content(last_resp.raw_content, is_terminal())
+        if last_asst_msg.content:
+            _render_content(last_asst_msg.content, is_terminal())
         return
 
-    final_unified_diff: str | None
-    final_display_content: str | None
+    final_unified_diff: str | None = None
+    final_display_content: str | None = None
 
     if recompute:
         session_root = session_file.parent
         original_file_contents = _build_original_file_contents(
             context_files=session_data.context_files, session_root=session_root
         )
-        final_unified_diff = generate_unified_diff(original_file_contents, last_resp.raw_content)
-        final_display_content = generate_display_content(original_file_contents, last_resp.raw_content)
+        final_unified_diff = generate_unified_diff(original_file_contents, last_asst_msg.content)
+        final_display_content = generate_display_content(original_file_contents, last_asst_msg.content)
     else:
         # Use stored data
-        final_unified_diff = last_resp.unified_diff
-        final_display_content = last_resp.display_content or last_resp.raw_content
+        if last_asst_msg.derived:
+            final_unified_diff = last_asst_msg.derived.unified_diff
+            # Fallback to raw content if display_content was optimized away
+            final_display_content = last_asst_msg.derived.display_content or last_asst_msg.content
+        else:
+            # Purely conversational messages have no derived content
+            final_display_content = last_asst_msg.content
 
     content_to_show: str | None = None
     use_rich_markdown = False
@@ -461,8 +474,12 @@ def prompt(
 
     # 7. Update State & Save
     assistant_response_timestamp = datetime.now(UTC).isoformat()
+    derived_content: DerivedContent | None = None
 
-    # Determine what to save in history based on inputs
+    if unified_diff or (display_content and display_content != llm_response_content):
+        # To save space, only store display_content if it's different from the raw content
+        optimized_display_content = display_content if display_content != llm_response_content else None
+        derived_content = DerivedContent(unified_diff=unified_diff, display_content=optimized_display_content)
 
     session_data.chat_history.append(
         UserChatMessage(
@@ -483,19 +500,8 @@ def prompt(
             model=model_name,
             timestamp=assistant_response_timestamp,
             duration_ms=duration_ms,
+            derived=derived_content,
         )
-    )
-
-    session_data.last_response = LastResponse(
-        raw_content=llm_response_content,
-        mode_used=mode,
-        unified_diff=unified_diff,
-        display_content=display_content,
-        token_usage=token_usage,
-        cost=message_cost,
-        model=model_name,
-        timestamp=assistant_response_timestamp,
-        duration_ms=duration_ms,
     )
 
     save_session(session_file, session_data)

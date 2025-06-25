@@ -146,20 +146,19 @@ def test_add_file_outside_session_root_fails(tmp_path: Path) -> None:
 def test_last_for_conversational_response(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a session file with a conversational last_response
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        conversational_response = {
-            "raw_content": "Hello there!",
-            "mode_used": "conversation",
-            "unified_diff": "",
-            "display_content": "Hello there!",
+        assistant_message = {
+            "role": "assistant",
+            "content": "Hello there!",
+            "mode": "conversation",
             "model": "test-model",
             "timestamp": "...",
             "duration_ms": 123,
+            "derived": None,
         }
         session_data = {
             "model": "test-model",
             "context_files": [],
-            "chat_history": [],
-            "last_response": conversational_response,
+            "chat_history": [assistant_message],
             "history_start_index": 0,
         }
         (Path(td) / SESSION_FILE_NAME).write_text(json.dumps(session_data))
@@ -195,21 +194,24 @@ def test_last_for_diff_response_with_and_without_recompute(tmp_path: Path, mocke
     # GIVEN a session with a last_response, where the file on disk has changed since
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         # This stored response was generated when file.py contained "old line"
-        stored_last_response = {
-            "raw_content": "File: file.py\n<<<<<<< SEARCH\nold line\n=======\nnew line\n>>>>>>> REPLACE",
-            "mode_used": "diff",
-            "unified_diff": "--- a/file.py\n+++ b/file.py\n@@ -1 +1 @@\n-old line\n+new line\n",
-            "display_content": "File: file.py\n```diff\n--- a/file.py\n"
-            + "+++ b/file.py\n@@ -1 +1 @@\n-old line\n+new line\n```\n",
+        assistant_message = {
+            "role": "assistant",
+            "content": "File: file.py\n<<<<<<< SEARCH\nold line\n=======\nnew line\n>>>>>>> REPLACE",
+            "mode": "diff",
             "model": "test-model",
             "timestamp": "2024-05-18T12:00:00Z",
             "duration_ms": 100,
+            "derived": {
+                "unified_diff": "--- a/file.py\n+++ b/file.py\n@@ -1 +1 @@\n-old line\n+new line\n",
+                "display_content": "File: file.py\n```diff\n--- a/file.py\n"
+                + "+++ b/file.py\n@@ -1 +1 @@\n-old line\n+new line\n```\n",
+            },
         }
+
         session_data = {
             "model": "test-model",
             "context_files": ["file.py"],
-            "chat_history": [],
-            "last_response": stored_last_response,
+            "chat_history": [assistant_message],
             "history_start_index": 0,
         }
         session_file = Path(td) / SESSION_FILE_NAME
@@ -226,7 +228,7 @@ def test_last_for_diff_response_with_and_without_recompute(tmp_path: Path, mocke
         result_stored_piped = runner.invoke(app, ["last"])
         # THEN it shows the original, stored unified diff, ignoring disk changes
         assert result_stored_piped.exit_code == 0
-        assert result_stored_piped.stdout == stored_last_response["unified_diff"]
+        assert result_stored_piped.stdout == assistant_message["derived"]["unified_diff"]
 
         # WHEN piped with recompute
         result_recomputed_piped = runner.invoke(app, ["last", "--recompute"])
@@ -256,21 +258,19 @@ def test_last_for_diff_response_with_and_without_recompute(tmp_path: Path, mocke
 def test_last_verbatim_flag(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a session with a diff-containing response
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        last_response_data = {
-            "raw_content": "File: file.py\n<<<<<<< SEARCH\nold line\n=======\nnew line\n>>>>>>> REPLACE",
-            "mode_used": "diff",
-            "unified_diff": "--- a/file.py\n+++ b/file.py\n@@ -1 +1 @@\n-old line\n+new line\n",
-            "display_content": "File: file.py\n```diff\n--- a/file.py\n"
-            + "+++ b/file.py\n@@ -1 +1 @@\n-old line\n+new line\n```\n",
+        assistant_message = {
+            "role": "assistant",
+            "content": "File: file.py\n<<<<<<< SEARCH\nold line\n=======\nnew line\n>>>>>>> REPLACE",
+            "mode": "diff",
             "model": "test-model",
             "timestamp": "2024-05-18T12:00:00Z",
             "duration_ms": 100,
+            "derived": {"unified_diff": "...", "display_content": "..."},
         }
         session_data = {
             "model": "test-model",
             "context_files": [],
-            "chat_history": [],
-            "last_response": last_response_data,
+            "chat_history": [assistant_message],
             "history_start_index": 0,
         }
         (Path(td) / SESSION_FILE_NAME).write_text(json.dumps(session_data))
@@ -287,11 +287,11 @@ def test_last_verbatim_flag(tmp_path: Path, mocker: MockerFixture) -> None:
         result_piped = runner.invoke(app, ["last", "--verbatim"])
         # THEN the raw content is printed without modification
         assert result_piped.exit_code == 0
-        assert result_piped.stdout == last_response_data["raw_content"]
+        assert result_piped.stdout == assistant_message["content"]
 
 
-def test_last_fails_when_no_last_response_exists(tmp_path: Path) -> None:
-    # GIVEN a session file with no last_response
+def test_last_fails_when_no_assistant_response_exists(tmp_path: Path) -> None:
+    # GIVEN a session file with no assistant messages in history
     with runner.isolated_filesystem(temp_dir=tmp_path):
         runner.invoke(app, ["init"])
 
@@ -300,7 +300,7 @@ def test_last_fails_when_no_last_response_exists(tmp_path: Path) -> None:
 
         # THEN the command fails with an error
         assert result.exit_code == 1
-        assert "Error: No last response found in session." in result.stderr
+        assert "Error: No assistant responses found in session history." in result.stderr
 
 
 def test_prompt_conversation_mode_injects_alignment(tmp_path: Path, mocker) -> None:
@@ -385,18 +385,18 @@ def test_prompt_conversation_mode_injects_alignment(tmp_path: Path, mocker) -> N
         assert assistant_msg["token_usage"]["prompt_tokens"] == 100
         assert assistant_msg["cost"] is not None
 
-        last_response = session_data["last_response"]
-        assert last_response["raw_content"] == "This is a raw response."
-        # For a truly conversational response, derived fields will be calculated but empty/same.
-        assert last_response["unified_diff"] == ""
-        assert last_response["display_content"] == "This is a raw response."
+        # last_response is gone, we check the last history item
+        last_asst_msg = session_data["chat_history"][-1]
+        assert last_asst_msg["content"] == "This is a raw response."
+        # For a purely conversational response, derived content should be None
+        assert last_asst_msg["derived"] is None
 
-        # AND the new metadata is present
-        assert last_response["model"] == "openrouter/google/gemini-2.5-pro"
-        assert last_response["timestamp"] is not None
-        assert last_response["duration_ms"] > -1
-        assert last_response["token_usage"]["prompt_tokens"] == 100
-        assert last_response["cost"] is not None
+        # AND the new metadata is present on the message itself
+        assert last_asst_msg["model"] == "openrouter/google/gemini-2.5-pro"
+        assert last_asst_msg["timestamp"] is not None
+        assert last_asst_msg["duration_ms"] > -1
+        assert last_asst_msg["token_usage"]["prompt_tokens"] == 100
+        assert last_asst_msg["cost"] is not None
 
 
 def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
@@ -473,19 +473,19 @@ def test_prompt_diff_mode(tmp_path: Path, mocker) -> None:
         assert assistant_msg["cost"] is not None
         assert "timestamp" in assistant_msg
 
-        last_response = session_data["last_response"]
-        assert last_response["raw_content"] == llm_diff_response
-        assert last_response["unified_diff"] == result.stdout
-        # Also check that display_content was generated and stored
-        assert last_response["display_content"] is not None
-        assert "```diff" in last_response["display_content"]
+        last_asst_msg = session_data["chat_history"][-1]
+        assert last_asst_msg["content"] == llm_diff_response
+        assert last_asst_msg["derived"]["unified_diff"] == result.stdout
+        # Also check that display_content was generated and stored in the derived object
+        assert last_asst_msg["derived"]["display_content"] is not None
+        assert "```diff" in last_asst_msg["derived"]["display_content"]
 
         # AND the new metadata is present
-        assert last_response["model"] == "openrouter/google/gemini-2.5-pro"
-        assert last_response["timestamp"] is not None
-        assert last_response["duration_ms"] > -1
-        assert last_response["token_usage"]["completion_tokens"] == 50
-        assert last_response["cost"] is not None
+        assert last_asst_msg["model"] == "openrouter/google/gemini-2.5-pro"
+        assert last_asst_msg["timestamp"] is not None
+        assert last_asst_msg["duration_ms"] > -1
+        assert last_asst_msg["token_usage"]["completion_tokens"] == 50
+        assert last_asst_msg["cost"] is not None
 
 
 def test_add_multiple_files_successfully(tmp_path: Path) -> None:
@@ -711,8 +711,8 @@ def test_prompt_conversation_mode_with_diff_response_renders_live_diff(tmp_path:
         # AND the session file still correctly records that mode was `conversation`
         session_file = Path(td) / SESSION_FILE_NAME
         session_data = json.loads(session_file.read_text())
-        last_response = session_data["last_response"]
-        assert last_response["mode_used"] == "conversation"
+        last_asst_msg = session_data["chat_history"][-1]
+        assert last_asst_msg["mode"] == "conversation"
 
 
 def test_drop_multiple_with_one_not_in_context_partially_fails(tmp_path: Path) -> None:
@@ -741,7 +741,7 @@ def test_drop_multiple_with_one_not_in_context_partially_fails(tmp_path: Path) -
         assert sorted(session_data["context_files"]) == ["file2.py"]
 
 
-def test_prompt_conversation_mode_with_diff_response_saves_parsed_diff(tmp_path: Path, mocker) -> None:
+def test_prompt_conversation_mode_with_diff_response_saves_derived_content(tmp_path: Path, mocker) -> None:
     # GIVEN an initialized session
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         runner.invoke(app, ["init"])
@@ -775,12 +775,13 @@ def test_prompt_conversation_mode_with_diff_response_saves_parsed_diff(tmp_path:
         assert user_msg["content"] == "make a change"
         assert user_msg["piped_content"] is None
 
-        last_response = session_data["last_response"]
+        last_asst_msg = session_data["chat_history"][-1]
 
-        assert last_response["raw_content"] == llm_diff_response
-        assert last_response["mode_used"] == "conversation"
-        assert "--- a/file.py" in last_response["unified_diff"]
-        assert "```diff" in last_response["display_content"]
+        assert last_asst_msg["content"] == llm_diff_response
+        assert last_asst_msg["mode"] == "conversation"
+        assert last_asst_msg["derived"] is not None
+        assert "--- a/file.py" in last_asst_msg["derived"]["unified_diff"]
+        assert "```diff" in last_asst_msg["derived"]["display_content"]
 
 
 def test_drop_autocompletion(tmp_path: Path) -> None:
@@ -999,7 +1000,6 @@ def test_prompt_uses_session_default_model_when_not_overridden(tmp_path: Path, m
         # AND the session file's records show the model used
         session_file = Path(td) / SESSION_FILE_NAME
         session_data = json.loads(session_file.read_text())
-        assert session_data["last_response"]["model"] == "session/default-model"
         assert session_data["chat_history"][1]["model"] == "session/default-model"
 
 
@@ -1032,5 +1032,4 @@ def test_prompt_model_flag_overrides_session_default(tmp_path: Path, mocker: Moc
         session_file = Path(td) / SESSION_FILE_NAME
         session_data = json.loads(session_file.read_text())
         assert session_data["model"] == "session/default-model"  # Default is unchanged
-        assert session_data["last_response"]["model"] == override_model  # last_response reflects override
         assert session_data["chat_history"][1]["model"] == override_model  # History reflects override
