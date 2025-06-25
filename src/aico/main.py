@@ -6,10 +6,12 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from regex import regex
 from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.prompt import Prompt
+from rich.spinner import Spinner
 
 from aico.addons import register_addon_commands
 from aico.diffing import (
@@ -285,13 +287,13 @@ def _build_token_usage(usage: LiteLLMUsage) -> TokenUsage | None:
     )
 
 
-def _process_chunk(chunk: object) -> tuple[str | None, TokenUsage | None]:
+def _process_chunk(chunk: object) -> tuple[str | None, TokenUsage | None, str | None]:
     token_usage: TokenUsage | None = None
     if (usage := getattr(chunk, "usage", None)) and isinstance(usage, LiteLLMUsage):
         token_usage = _build_token_usage(usage)
-    if isinstance(chunk, LiteLLMChoiceContainer) and chunk.choices and (delta := chunk.choices[0].delta.content):
-        return delta, token_usage
-    return None, token_usage
+    if isinstance(chunk, LiteLLMChoiceContainer) and chunk.choices and (delta := chunk.choices[0].delta):
+        return delta.content, token_usage, getattr(delta, "reasoning_content", None)
+    return None, token_usage, None
 
 
 def _handle_unified_streaming(
@@ -308,6 +310,13 @@ def _handle_unified_streaming(
 
     full_llm_response_buffer: str = ""
     token_usage: TokenUsage | None = None
+    live: Live | None = None
+
+    rich_spinner: Spinner = Spinner("dots", "Generating response...")
+    if is_terminal():
+        live = Live(console=Console(), auto_refresh=True)
+        live.start()
+        live.update(rich_spinner, refresh=True)
 
     stream = litellm.completion(  # pyright: ignore[reportUnknownMemberType]
         model=model_name,
@@ -316,17 +325,22 @@ def _handle_unified_streaming(
         stream_options={"include_usage": True},
     )
 
-    if is_terminal():
-        with Live(console=Console(), auto_refresh=False) as live:
-            for chunk in stream:
-                delta, token_usage = _process_chunk(chunk)
-                if delta:
-                    full_llm_response_buffer += delta
-                    display_content = generate_display_content(original_file_contents, full_llm_response_buffer)
-                    live.update(Markdown(display_content), refresh=True)
+    if live:
+        for chunk in stream:
+            delta, token_usage, reasoning_content = _process_chunk(chunk)
+            if delta:
+                full_llm_response_buffer += delta
+                display_content = generate_display_content(original_file_contents, full_llm_response_buffer)
+                live.update(Markdown(display_content), refresh=True)
+            elif not full_llm_response_buffer and reasoning_content:
+                # If no delta but reasoning content, display the header (bold words) of the reasoning
+                header = regex.search(r"^\*\*(.*?)\*\*", reasoning_content, regex.MULTILINE)
+                if header and header.group(1):
+                    rich_spinner.update(text=header.group(1))
+        live.stop()
     else:
         for chunk in stream:
-            delta, token_usage = _process_chunk(chunk)
+            delta, token_usage, _ = _process_chunk(chunk)
             if delta:
                 full_llm_response_buffer += delta
 
