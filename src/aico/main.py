@@ -91,6 +91,17 @@ def init(
     print(f"Initialized session file: {session_file}")
 
 
+def _render_content(content: str, use_rich_markdown: bool) -> None:
+    """Helper to render content to the console."""
+    if use_rich_markdown:
+        console = Console()
+        console.print(Markdown(content))
+    else:
+        # Use an empty end='' to prevent adding an extra newline if the content
+        # already has one, which is common for diffs.
+        print(content, end="")
+
+
 @app.command()
 def last(
     verbatim: Annotated[
@@ -100,47 +111,58 @@ def last(
             help="Show the verbatim response from the AI with no processing.",
         ),
     ] = False,
+    recompute: Annotated[
+        bool,
+        typer.Option(
+            "--recompute",
+            "-r",
+            help="Recalculate the response against the current state of files.",
+        ),
+    ] = False,
 ) -> None:
     """
     Prints the last processed response from the AI to standard output.
+
+    By default, it shows the response as it was originally generated.
+    Use --recompute to re-apply the AI's instructions to the current file state.
     """
-    _, session_data = load_session()
+    session_file, session_data = load_session()
     last_resp = session_data.last_response
     if not last_resp:
         print("Error: No last response found in session.", file=sys.stderr)
         raise typer.Exit(code=1)
 
-    # Determine what content to show based on the verbatim flag and TTY status
+    if verbatim:
+        if last_resp.raw_content:
+            _render_content(last_resp.raw_content, is_terminal())
+        return
+
+    final_unified_diff: str | None
+    final_display_content: str | None
+
+    if recompute:
+        session_root = session_file.parent
+        original_file_contents = _build_original_file_contents(
+            context_files=session_data.context_files, session_root=session_root
+        )
+        final_unified_diff = generate_unified_diff(original_file_contents, last_resp.raw_content)
+        final_display_content = generate_display_content(original_file_contents, last_resp.raw_content)
+    else:
+        # Use stored data
+        final_unified_diff = last_resp.unified_diff
+        final_display_content = last_resp.display_content or last_resp.raw_content
+
     content_to_show: str | None = None
     use_rich_markdown = False
 
-    if verbatim:
-        content_to_show = last_resp.raw_content
-        use_rich_markdown = is_terminal()
+    if is_terminal():
+        content_to_show = final_display_content
+        use_rich_markdown = True
     else:
-        # Smart default
-        if is_terminal():
-            # In a TTY, prefer the pretty display_content; if it's empty (e.g. no diffs found),
-            # fall back to the raw_content. This covers conversational responses.
-            content_to_show = last_resp.display_content or last_resp.raw_content
-            use_rich_markdown = True
-        else:
-            # When piped, output depends on the mode that was used.
-            if last_resp.mode_used == Mode.DIFF:
-                # For diff mode, output the clean unified_diff for piping to `git apply`.
-                content_to_show = last_resp.unified_diff
-            else:
-                # For conversation/raw, output the display_content, which contains formatted
-                # markdown suitable for piping to tools like `less` or for review.
-                content_to_show = last_resp.display_content or last_resp.raw_content
+        content_to_show = final_unified_diff or final_display_content
 
-    # Render the content
     if content_to_show:
-        if use_rich_markdown:
-            console = Console()
-            console.print(Markdown(content_to_show))
-        else:
-            print(content_to_show)
+        _render_content(content_to_show, use_rich_markdown)
 
 
 @app.command()

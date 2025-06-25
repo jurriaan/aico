@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 
-import pytest
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
@@ -144,148 +143,151 @@ def test_add_file_outside_session_root_fails(tmp_path: Path) -> None:
 
 
 # --- Tests for the `last` command ---
-# Test data for a response that was `conversation` but contained a diff
-DIFF_IN_CONVERSATION_RESPONSE = {
-    "raw_content": "File: a.py\n<<<<<<< SEARCH\nold\n=======\nnew\n>>>>>>> REPLACE",
-    "mode_used": "conversation",
-    "unified_diff": "--- a/a.py\n+++ b/a.py\n-old\n+new",
-    "display_content": "File: a.py\n```diff\n--- a/a.py\n+++ b/a.py\n-old\n+new\n```\n",
-    "model": "test-model",
-    "timestamp": "2024-01-01T00:00:00Z",
-    "duration_ms": 123,
-}
+def test_last_for_conversational_response(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN a session file with a conversational last_response
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        conversational_response = {
+            "raw_content": "Hello there!",
+            "mode_used": "conversation",
+            "unified_diff": "",
+            "display_content": "Hello there!",
+            "model": "test-model",
+            "timestamp": "...",
+            "duration_ms": 123,
+        }
+        session_data = {
+            "model": "test-model",
+            "context_files": [],
+            "chat_history": [],
+            "last_response": conversational_response,
+            "history_start_index": 0,
+        }
+        (Path(td) / SESSION_FILE_NAME).write_text(json.dumps(session_data))
 
-# Test data for a response that was just conversational
-CONVERSATIONAL_RESPONSE = {
-    "raw_content": "Hello there!",
-    "mode_used": "conversation",
-    "unified_diff": "",
-    "display_content": "Hello there!",
-    "model": "test-model",
-    "timestamp": "2024-01-01T00:00:00Z",
-    "duration_ms": 123,
-}
+        # WHEN run in a TTY (default)
+        mocker.patch("aico.main.is_terminal", return_value=True)
+        result_tty = runner.invoke(app, ["last"])
+        # THEN it shows the rich display content
+        assert result_tty.exit_code == 0
+        assert "Hello there!" in result_tty.stdout
 
+        # WHEN run in a TTY with --recompute
+        result_recompute_tty = runner.invoke(app, ["last", "--recompute"])
+        # THEN it shows the same (recomputed) content
+        assert result_recompute_tty.exit_code == 0
+        assert "Hello there!" in result_recompute_tty.stdout
 
-def _create_session_with_last_response(tmp_path: Path, last_response_data: dict) -> None:
-    """Helper to create a session file in a temp directory."""
-    session_file = tmp_path / SESSION_FILE_NAME
-    session_data = {
-        "model": "test-model",
-        "history_start_index": 0,
-        "context_files": [],
-        "chat_history": [],
-        "last_response": last_response_data,
-    }
-    session_file.write_text(json.dumps(session_data))
+        # WHEN piped (default)
+        mocker.patch("aico.main.is_terminal", return_value=False)
+        result_piped = runner.invoke(app, ["last"])
+        # THEN it shows the display_content (since there's no diff)
+        assert result_piped.exit_code == 0
+        assert result_piped.stdout == "Hello there!"
 
-
-def test_last_smart_default_shows_parsed_diff_in_tty(tmp_path: Path, mocker) -> None:
-    # GIVEN a session where the last response contained a diff
-    _create_session_with_last_response(tmp_path, DIFF_IN_CONVERSATION_RESPONSE)
-    mocker.patch("aico.main.is_terminal", return_value=True)
-
-    # WHEN `aico last` is run in a TTY
-    with runner.isolated_filesystem(temp_dir=tmp_path):
-        result = runner.invoke(app, ["last"])
-
-    # THEN the pretty diff (`display_content`) is shown
-    assert result.exit_code == 0
-    # Check for the content inside the rendered diff, not the markdown syntax
-    assert "--- a/a.py" in result.stdout
-    assert "-old" in result.stdout
-    assert "+new" in result.stdout
-    assert DIFF_IN_CONVERSATION_RESPONSE["raw_content"] not in result.stdout
+        # WHEN piped with --recompute
+        result_recompute_piped = runner.invoke(app, ["last", "--recompute"])
+        # THEN it shows the same (recomputed) content
+        assert result_recompute_piped.exit_code == 0
+        assert result_recompute_piped.stdout == "Hello there!"
 
 
-def test_last_smart_default_falls_back_to_raw_in_tty(tmp_path: Path, mocker) -> None:
-    # GIVEN a session where the last response was purely conversational
-    _create_session_with_last_response(tmp_path, CONVERSATIONAL_RESPONSE)
-    mocker.patch("aico.main.is_terminal", return_value=True)
+def test_last_for_diff_response_with_and_without_recompute(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN a session with a last_response, where the file on disk has changed since
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        # This stored response was generated when file.py contained "old line"
+        stored_last_response = {
+            "raw_content": "File: file.py\n<<<<<<< SEARCH\nold line\n=======\nnew line\n>>>>>>> REPLACE",
+            "mode_used": "diff",
+            "unified_diff": "--- a/file.py\n+++ b/file.py\n@@ -1 +1 @@\n-old line\n+new line\n",
+            "display_content": "File: file.py\n```diff\n--- a/file.py\n"
+            + "+++ b/file.py\n@@ -1 +1 @@\n-old line\n+new line\n```\n",
+            "model": "test-model",
+            "timestamp": "2024-05-18T12:00:00Z",
+            "duration_ms": 100,
+        }
+        session_data = {
+            "model": "test-model",
+            "context_files": ["file.py"],
+            "chat_history": [],
+            "last_response": stored_last_response,
+            "history_start_index": 0,
+        }
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_file.write_text(json.dumps(session_data))
 
-    # WHEN `aico last` is run in a TTY
-    with runner.isolated_filesystem(temp_dir=tmp_path):
-        result = runner.invoke(app, ["last"])
+        # AND the file on disk has different content now
+        file_on_disk = Path(td) / "file.py"
+        file_on_disk.write_text("the content has now changed")
 
-    # THEN the raw content is shown (as it's the best available)
-    assert result.exit_code == 0
-    assert "Hello there!" in result.stdout
-    assert "```diff" not in result.stdout
+        # --- Test 1: Piped output ---
+        mocker.patch("aico.main.is_terminal", return_value=False)
 
+        # WHEN piped without recompute
+        result_stored_piped = runner.invoke(app, ["last"])
+        # THEN it shows the original, stored unified diff, ignoring disk changes
+        assert result_stored_piped.exit_code == 0
+        assert result_stored_piped.stdout == stored_last_response["unified_diff"]
 
-def test_last_diff_mode_when_piped_shows_unified_diff(tmp_path: Path, mocker) -> None:
-    # GIVEN a session where the last response was from `diff` mode
-    diff_mode_response = {
-        "raw_content": "File: a.py\n<<<<<<< SEARCH\nold\n=======\nnew\n>>>>>>> REPLACE",
-        "mode_used": "diff",
-        "unified_diff": "--- a/a.py\n+++ b/a.py\n-old\n+new",
-        "display_content": "File: a.py\n```diff\n--- a/a.py\n+++ b/a.py\n-old\n+new\n```\n",
-        "model": "test-model",
-        "timestamp": "2024-01-01T00:00:00Z",
-        "duration_ms": 123,
-    }
-    _create_session_with_last_response(tmp_path, diff_mode_response)
-    mocker.patch("aico.main.is_terminal", return_value=False)
+        # WHEN piped with recompute
+        result_recomputed_piped = runner.invoke(app, ["last", "--recompute"])
+        # THEN it recalculates the diff, which should now fail to apply
+        assert result_recomputed_piped.exit_code == 0
+        assert "patch failed" in result_recomputed_piped.stdout
+        assert "could not be found" in result_recomputed_piped.stdout
 
-    # WHEN `aico last` is piped
-    with runner.isolated_filesystem(temp_dir=tmp_path):
-        result = runner.invoke(app, ["last"])
+        # --- Test 2: TTY output ---
+        mocker.patch("aico.main.is_terminal", return_value=True)
 
-    # THEN the clean `unified_diff` is printed for use with tools like `git apply`
-    assert result.exit_code == 0
-    assert result.stdout.strip() == diff_mode_response["unified_diff"]
+        # WHEN TTY without recompute
+        result_stored_tty = runner.invoke(app, ["last"])
+        # THEN it shows the stored, pretty display_content
+        assert result_stored_tty.exit_code == 0
+        assert "new line" in result_stored_tty.stdout
+        assert "patch failed" not in result_stored_tty.stdout
 
-
-@pytest.mark.parametrize(
-    "last_response_data",
-    [
-        (DIFF_IN_CONVERSATION_RESPONSE),
-        (CONVERSATIONAL_RESPONSE),
-    ],
-    ids=["conversation_with_diff", "pure_conversation"],
-)
-def test_last_conversation_mode_when_piped_shows_display_content(
-    tmp_path: Path, mocker, last_response_data: dict
-) -> None:
-    # GIVEN a session where the last response was in 'conversation' mode
-    _create_session_with_last_response(tmp_path, last_response_data)
-    mocker.patch("aico.main.is_terminal", return_value=False)
-
-    # WHEN `aico last` is piped
-    with runner.isolated_filesystem(temp_dir=tmp_path):
-        result = runner.invoke(app, ["last"])
-
-    # THEN the full display_content (with markdown) is shown
-    assert result.exit_code == 0
-    assert result.stdout.strip() == last_response_data["display_content"].strip()
+        # WHEN TTY with recompute
+        result_recomputed_tty = runner.invoke(app, ["last", "--recompute"])
+        # THEN it recalculates and shows a pretty "patch failed" error
+        assert result_recomputed_tty.exit_code == 0
+        assert "patch failed" in result_recomputed_tty.stdout
+        assert "SEARCH block from the AI could not be found" in result_recomputed_tty.stdout
 
 
-def test_last_verbatim_shows_raw_content_in_tty(tmp_path: Path, mocker) -> None:
+def test_last_verbatim_flag(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a session with a diff-containing response
-    _create_session_with_last_response(tmp_path, DIFF_IN_CONVERSATION_RESPONSE)
-    mocker.patch("aico.main.is_terminal", return_value=True)
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        last_response_data = {
+            "raw_content": "File: file.py\n<<<<<<< SEARCH\nold line\n=======\nnew line\n>>>>>>> REPLACE",
+            "mode_used": "diff",
+            "unified_diff": "--- a/file.py\n+++ b/file.py\n@@ -1 +1 @@\n-old line\n+new line\n",
+            "display_content": "File: file.py\n```diff\n--- a/file.py\n"
+            + "+++ b/file.py\n@@ -1 +1 @@\n-old line\n+new line\n```\n",
+            "model": "test-model",
+            "timestamp": "2024-05-18T12:00:00Z",
+            "duration_ms": 100,
+        }
+        session_data = {
+            "model": "test-model",
+            "context_files": [],
+            "chat_history": [],
+            "last_response": last_response_data,
+            "history_start_index": 0,
+        }
+        (Path(td) / SESSION_FILE_NAME).write_text(json.dumps(session_data))
 
-    # WHEN `aico last --verbatim` is run in a TTY
-    with runner.isolated_filesystem(temp_dir=tmp_path):
-        result = runner.invoke(app, ["last", "--verbatim"])
+        # WHEN running with --verbatim in a TTY
+        mocker.patch("aico.main.is_terminal", return_value=True)
+        result_tty = runner.invoke(app, ["last", "--verbatim"])
+        # THEN the raw response is shown, rendered as markdown
+        assert result_tty.exit_code == 0
+        assert "<<<<<<< SEARCH" in result_tty.stdout
 
-    # THEN the original raw response is shown
-    assert result.exit_code == 0
-    assert "<<<<<<< SEARCH" in result.stdout
-
-
-def test_last_verbatim_shows_raw_content_when_piped(tmp_path: Path, mocker) -> None:
-    # GIVEN a session with a diff-containing response
-    _create_session_with_last_response(tmp_path, DIFF_IN_CONVERSATION_RESPONSE)
-    mocker.patch("aico.main.is_terminal", return_value=False)
-
-    # WHEN `aico last --verbatim` is piped
-    with runner.isolated_filesystem(temp_dir=tmp_path):
-        result = runner.invoke(app, ["last", "--verbatim"])
-
-    # THEN the raw content is printed without modification
-    assert result.exit_code == 0
-    assert result.stdout.strip() == DIFF_IN_CONVERSATION_RESPONSE["raw_content"]
+        # WHEN running with --verbatim and piped
+        mocker.patch("aico.main.is_terminal", return_value=False)
+        result_piped = runner.invoke(app, ["last", "--verbatim"])
+        # THEN the raw content is printed without modification
+        assert result_piped.exit_code == 0
+        assert result_piped.stdout == last_response_data["raw_content"]
 
 
 def test_last_fails_when_no_last_response_exists(tmp_path: Path) -> None:
