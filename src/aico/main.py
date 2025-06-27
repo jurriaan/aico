@@ -380,7 +380,7 @@ def _handle_unified_streaming(
 def _build_messages(
     session_data: SessionData,
     system_prompt: str,
-    prompt_text: str | None,
+    prompt_text: str,
     piped_content: str | None,
     mode: Mode,
     original_file_contents: FileContents,
@@ -394,16 +394,10 @@ def _build_messages(
     context_str += "</context>\n"
 
     user_prompt_parts = [context_str]
-    if piped_content and prompt_text:
-        # Scenario A: piped content is subject, argument is instruction
+    if piped_content:
         user_prompt_parts.append(f"<stdin_content>\n{piped_content}\n</stdin_content>\n")
-        user_prompt_parts.append(f"<prompt>\n{prompt_text}\n</prompt>")
-    elif piped_content:
-        # Scenario B: piped content is the prompt
-        user_prompt_parts.append(f"<prompt>\n{piped_content}\n</prompt>")
-    elif prompt_text:
-        # Scenario C: argument is the prompt
-        user_prompt_parts.append(f"<prompt>\n{prompt_text}\n</prompt>")
+
+    user_prompt_parts.append(f"<prompt>\n{prompt_text}\n</prompt>")
     user_prompt_xml = "".join(user_prompt_parts)
 
     messages: list[LLMChatMessage] = []
@@ -440,7 +434,7 @@ def _build_original_file_contents(context_files: list[str], session_root: Path) 
 
 @app.command()
 def prompt(
-    prompt_text: Annotated[str | None, typer.Argument()] = None,
+    cli_prompt_text: Annotated[str | None, typer.Argument(help="The user's instruction for the AI.")] = None,
     system_prompt: Annotated[
         str, typer.Option(help="The system prompt to guide the AI.")
     ] = "You are an expert pair programmer.",
@@ -460,31 +454,29 @@ def prompt(
     session_file, session_data = load_session()
     session_root = session_file.parent
     timestamp = datetime.now(UTC).isoformat()
-    model_name = model or session_data.model  # The model argument is an override for the session's model
+    model_name = model or session_data.model
 
-    piped_content: str | None = None
+    primary_prompt: str
+    secondary_piped_content: str | None = None
+    piped_input: str | None = None
     if not is_input_terminal():
         content = sys.stdin.read()
         if content:
-            piped_content = content
+            piped_input = content
 
-    # Validate that we have some form of prompt
-    final_content: str
-    final_piped_content: str | None = None
-    match (piped_content, prompt_text):
-        case (str(), str()):
-            final_content = prompt_text
-            final_piped_content = piped_content
-        case (str(), None):
-            final_content = piped_content
-        case (None, str()):
-            final_content = prompt_text
-        case _:
-            prompt_text = Prompt.ask("Prompt")
-            if not prompt_text.strip():
-                print("Error: Prompt is required.", file=sys.stderr)
-                raise typer.Exit(code=1)
-            final_content = prompt_text
+    if cli_prompt_text and piped_input:
+        primary_prompt = cli_prompt_text
+        secondary_piped_content = piped_input
+    elif piped_input:
+        primary_prompt = piped_input
+    elif cli_prompt_text:
+        primary_prompt = cli_prompt_text
+    else:
+        # No input from CLI or pipe, prompt interactively
+        primary_prompt = Prompt.ask("Prompt")
+        if not primary_prompt.strip():
+            print("Error: Prompt is required.", file=sys.stderr)
+            raise typer.Exit(code=1)
 
     original_file_contents = _build_original_file_contents(
         context_files=session_data.context_files, session_root=session_root
@@ -493,8 +485,8 @@ def prompt(
     messages = _build_messages(
         session_data,
         system_prompt,
-        prompt_text=prompt_text,
-        piped_content=piped_content,
+        prompt_text=primary_prompt,
+        piped_content=secondary_piped_content,
         mode=mode,
         original_file_contents=original_file_contents,
     )
@@ -538,8 +530,8 @@ def prompt(
     session_data.chat_history.append(
         UserChatMessage(
             role="user",
-            content=final_content,
-            piped_content=final_piped_content,
+            content=primary_prompt,
+            piped_content=secondary_piped_content,
             mode=mode,
             timestamp=timestamp,
         )
