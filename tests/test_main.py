@@ -165,7 +165,7 @@ def test_last_for_conversational_response(tmp_path: Path, mocker: MockerFixture)
         (Path(td) / SESSION_FILE_NAME).write_text(json.dumps(session_data))
 
         # WHEN run in a TTY (default)
-        mocker.patch("aico.main.is_terminal", return_value=True)
+        mocker.patch("aico.commands.last.is_terminal", return_value=True)
         result_tty = runner.invoke(app, ["last"])
         # THEN it shows the rich display content
         assert result_tty.exit_code == 0
@@ -178,7 +178,7 @@ def test_last_for_conversational_response(tmp_path: Path, mocker: MockerFixture)
         assert "Hello there!" in result_recompute_tty.stdout
 
         # WHEN piped (default)
-        mocker.patch("aico.main.is_terminal", return_value=False)
+        mocker.patch("aico.commands.last.is_terminal", return_value=False)
         result_piped = runner.invoke(app, ["last"])
         # THEN it shows the display_content (since there's no diff)
         assert result_piped.exit_code == 0
@@ -225,7 +225,7 @@ def test_last_for_diff_response_with_and_without_recompute(tmp_path: Path, mocke
         file_on_disk.write_text("the content has now changed")
 
         # --- Test 1: Piped output ---
-        mocker.patch("aico.main.is_terminal", return_value=False)
+        mocker.patch("aico.commands.last.is_terminal", return_value=False)
 
         # WHEN piped without recompute
         result_stored_piped = runner.invoke(app, ["last"])
@@ -241,7 +241,7 @@ def test_last_for_diff_response_with_and_without_recompute(tmp_path: Path, mocke
         assert "patch failed" in result_recomputed_piped.stdout
 
         # --- Test 2: TTY output ---
-        mocker.patch("aico.main.is_terminal", return_value=True)
+        mocker.patch("aico.commands.last.is_terminal", return_value=True)
 
         # WHEN TTY without recompute
         result_stored_tty = runner.invoke(app, ["last"])
@@ -278,14 +278,14 @@ def test_last_verbatim_flag(tmp_path: Path, mocker: MockerFixture) -> None:
         (Path(td) / SESSION_FILE_NAME).write_text(json.dumps(session_data))
 
         # WHEN running with --verbatim in a TTY
-        mocker.patch("aico.main.is_terminal", return_value=True)
+        mocker.patch("aico.commands.last.is_terminal", return_value=True)
         result_tty = runner.invoke(app, ["last", "--verbatim"])
         # THEN the raw response is shown, rendered as markdown
         assert result_tty.exit_code == 0
         assert "<<<<<<< SEARCH" in result_tty.stdout
 
         # WHEN running with --verbatim and piped
-        mocker.patch("aico.main.is_terminal", return_value=False)
+        mocker.patch("aico.commands.last.is_terminal", return_value=False)
         result_piped = runner.invoke(app, ["last", "--verbatim"])
         # THEN the raw content is printed without modification
         assert result_piped.exit_code == 0
