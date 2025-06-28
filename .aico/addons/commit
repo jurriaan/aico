@@ -1,0 +1,116 @@
+#!/bin/bash
+set -e
+set -o pipefail
+
+# --- Configuration ---
+# The model to use for generating the commit message.
+MODEL_NAME="openrouter/google/gemini-2.5-flash-lite-preview-06-17"
+
+# A list of authors.
+# If populated, the first entry will be used as the primary commit author.
+# All subsequent entries will be added as "Co-authored-by:" trailers.
+# If empty, the default Git author will be used.
+#
+# Example:
+# AUTHORS=(
+#   "Jane Doe <jane.doe@example.com>"
+#   "Sam Smith <sam.smith@example.com>"
+# )
+AUTHORS=()
+# --- End Configuration ---
+
+# Check if --usage flag is passed and show help text
+if [[ "$1" == "--usage" ]]; then
+  echo "Generates a Conventional Commit message for staged changes."
+  exit 0
+fi
+
+# 1. Check for staged changes
+if git diff --staged --quiet; then
+  echo "No staged changes to commit."
+  exit 0
+fi
+
+# 2. Gather Git context
+GIT_DIFF_OUTPUT="$(git diff --staged --unified=0 --color=never)"
+GIT_LOG_OUTPUT="$(git log --pretty=format:'%s' -n 20)"
+
+# 3. Build the prompt
+SYSTEM_PROMPT="You are an expert AI assistant named \`commit-bot\`. Your sole purpose is to generate a high-quality Git commit message in the Conventional Commit format. You are a tool, not a conversationalist. The conversation provided is solely for context and should not be included in your response. Focus on the task at hand: creating a clear, concise commit message based on the provided git diff and recent log."
+
+PROMPT=$(
+  cat <<EOF
+<instructions>
+Your task is to create a commit message based on the provided git diff and recent log. The message can be a single line, or include a brief body if the changes require more explanation.
+
+<thinking_process>
+1.  **Analyze the Diff**: Scrutinize the <git_diff> to identify the primary intent. Is it a new feature, a bug fix, a refactor, or something else?
+2.  **Determine Type**: Based on your analysis, select the most appropriate type.
+    - \`feat\`: A new feature.
+    - \`fix\`: A bug fix.
+    - Other allowed types: \`docs\`, \`style\`, \`refactor\`, \`perf\`, \`test\`, \`ci\`, \`chore\`.
+3.  **Determine Scope**: Identify the primary module or component affected (e.g., \`api\`, \`auth\`, \`script\`). The scope MUST be a noun surrounded by parenthesis. If multiple areas are impacted, omit it.
+4.  **Craft Message**: Write a short description of the code changes in the imperative mood (e.g., "add feature" not "added feature"). The description MUST immediately follow the colon and space.
+5.  **Assemble Subject**: Combine these parts into the final \`<type>(<scope>): <message>\` format. The scope is optional.
+6.  **Write Body (Optional)**: If the change is complex and the subject line is insufficient, add a concise body (1-2 sentences) explaining the 'why' behind the change. Separate the body from the subject with a single blank line.
+</thinking_process>
+
+<output_format>
+- Produce a commit message that may include a subject and an optional body, separated by a blank line.
+- The entire response must be ONLY the commit message text without xml tags.
+</output_format>
+
+<positive_examples>
+- feat(routes): add list, import, and overview endpoints for v3 books
+- fix(auth): correct password reset token validation
+- fix(parser): handle multi-byte characters correctly
+
+  The previous implementation failed when parsing UTF-8 encoded text containing multi-byte characters.
+- refactor(services): simplify user creation logic
+- docs(readme): update installation instructions
+- chore(deps): update react to version 17.0.2
+</positive_examples>
+
+<negative_constraints>
+- DO NOT use any other format than Conventional Commit.
+- DO NOT add a period at the end of the subject line.
+- DO NOT include any explanations, apologies, or extra text in your response.
+- DO NOT wrap the output in backticks, quotes, or any other characters.
+- DO NOT write a body unless the change is complex enough to warrant it.
+- KEEP the body brief (1-2 sentences).
+- DO NOT return the thinking process or any other xml tags in the output.
+</negative_constraints>
+</instructions>
+
+<git_diff>
+$GIT_DIFF_OUTPUT
+</git_diff>
+
+<git_log>
+$GIT_LOG_OUTPUT
+</git_log>
+EOF
+)
+
+# 4. Invoke aico to get the commit message
+AI_COMMIT_MSG=$(echo "$PROMPT" | aico prompt --passthrough --system-prompt "$SYSTEM_PROMPT" --model "$MODEL_NAME" 2>/dev/null)
+
+# 5. Assemble the final commit message and execute git commit
+COMMIT_ARGS=("--file" "-" "--edit")
+if [ ${#AUTHORS[@]} -gt 0 ]; then
+  COMMIT_ARGS+=("--author=${AUTHORS[0]}")
+fi
+
+{
+  echo "$AI_COMMIT_MSG"
+
+  if [ ${#AUTHORS[@]} -gt 1 ]; then
+    echo "" # Blank line before trailers
+    # Loop over co-authors (all except the first one)
+    for i in "${!AUTHORS[@]}"; do
+      if [ $i -ne 0 ]; then
+        echo "Co-authored-by: ${AUTHORS[$i]}"
+      fi
+    done
+  fi
+} | git commit "${COMMIT_ARGS[@]}"

@@ -108,4 +108,14 @@ Repeat steps 5 and 6 for each increment of the plan.
   - `aico history view`: See the current status of the history.
   - `aico history set <index>`: Set which message the active history starts from.
   - `aico history reset`: Reset the history to include all messages.
-- **Addons**: `aico` can be extended with custom scripts. Any executable script in `./.aico/addons` or `~/.config/aico/addons` will be available as a subcommand. Addons are automatically listed in the `aico --help` output.
+
+## Addons: Extending `aico`
+
+You can extend `aico` with your own custom commands using a simple addon system. Any executable script placed in one of the addon directories will automatically become available as a subcommand. `aico` searches for addons in the following order:
+
+1.  **Project-level addons**: `./.aico/addons/`
+2.  **User-level addons**: `~/.config/aico/addons/`
+
+Addons are discovered at runtime and listed in the `aico --help` output. Project-level addons take precedence over user-level addons with the same name.
+
+An addon can provide its own help text, which will be shown in the main help output. For a powerful example of how to create an addon, see the `commit` script included in this repository. It uses `aico` to generate Conventional Commit messages from your staged changes.
