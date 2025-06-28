@@ -6,13 +6,13 @@ from typing import Annotated
 import typer
 
 from aico.addons import register_addon_commands
+from aico.commands.history import history_app
 from aico.commands.last import last
 from aico.commands.prompt import prompt
-from aico.history import history_app
+from aico.commands.tokens import tokens_app
 from aico.models import (
     SessionData,
 )
-from aico.tokens import tokens_app
 from aico.utils import (
     SESSION_FILE_NAME,
     complete_files_in_context,
