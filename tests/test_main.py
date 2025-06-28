@@ -714,7 +714,7 @@ def test_prompt_raw_mode_does_not_inject_alignment(tmp_path: Path, mocker) -> No
 
 def test_prompt_conversation_mode_with_diff_response_renders_live_diff(tmp_path: Path, mocker) -> None:
     # GIVEN a TTY-enabled environment and a session with a context file
-    mocker.patch("aico.main.is_terminal", return_value=True)
+    mocker.patch("aico.commands.prompt.is_terminal", return_value=True)
 
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         runner.invoke(app, ["init"])
@@ -892,11 +892,11 @@ def test_no_command_shows_help() -> None:
 def test_prompt_fails_with_no_input(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN an initialized session
     with runner.isolated_filesystem(temp_dir=tmp_path):
-        mocker.patch("aico.main.is_input_terminal", return_value=True)
+        mocker.patch("aico.commands.prompt.is_input_terminal", return_value=True)
         runner.invoke(app, ["init"])
 
         # AND the interactive prompt is mocked to return an empty string (user pressing Enter)
-        mocker.patch("aico.main.Prompt.ask", return_value="")
+        mocker.patch("aico.commands.prompt.Prompt.ask", return_value="")
 
         # WHEN `aico prompt` is run with no argument and no piped input
         result = runner.invoke(app, ["prompt"])
@@ -1142,7 +1142,7 @@ def test_prompt_passthrough_mode_bypasses_context_and_formatting(tmp_path: Path,
         )
 
         # AND a mock for the function that loads file contents
-        mock_build_contents = mocker.patch("aico.main._build_original_file_contents", return_value=context_files)
+        mock_build_contents = mocker.patch("aico.utils.build_original_file_contents", return_value=context_files)
 
         # WHEN `aico prompt --passthrough` is invoked
         prompt_text = "some raw prompt"

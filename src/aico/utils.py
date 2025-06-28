@@ -12,6 +12,7 @@ from rich.console import Console
 from aico.models import (
     AssistantChatMessage,
     ChatMessageHistoryItem,
+    FileContents,
     LLMChatMessage,
     SessionData,
     TokenUsage,
@@ -185,3 +186,20 @@ def save_session(session_file: Path, session_data: SessionData) -> None:
         os.replace(session_file_tmp, session_file)
     finally:
         session_file_tmp.unlink(missing_ok=True)
+
+
+def build_original_file_contents(context_files: list[str], session_root: Path) -> FileContents:
+    original_file_contents: FileContents = {
+        relative_path_str: abs_path.read_text()
+        for relative_path_str in context_files
+        if (abs_path := session_root / relative_path_str).exists()
+    }
+
+    missing_files = original_file_contents.keys() - set(context_files)
+    for relative_path_str in missing_files:
+        print(
+            f"Warning: Context file not found, skipping: {relative_path_str}",
+            file=sys.stderr,
+        )
+
+    return original_file_contents
