@@ -7,17 +7,19 @@ from typing import Annotated
 
 import typer
 from regex import regex
-from rich.console import Console
+from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.prompt import Prompt
 from rich.spinner import Spinner
+from rich.text import Text
 
 from aico.addons import register_addon_commands
 from aico.aico_live_render import AicoLiveRender
 from aico.diffing import (
     generate_display_content,
     generate_unified_diff,
+    parse_live_render_segments,
     process_llm_response_stream,
 )
 from aico.history import history_app
@@ -336,10 +338,21 @@ def _handle_unified_streaming(
             delta, token_usage, reasoning_content = _process_chunk(chunk)
             if delta:
                 full_llm_response_buffer += delta
-                display_content = generate_display_content(
-                    original_file_contents, full_llm_response_buffer, session_root
-                )
-                live.update(Markdown(display_content), refresh=True)
+
+                segments = parse_live_render_segments(full_llm_response_buffer)
+                renderables: list[Markdown | Text] = []
+
+                for segment_type, content in segments:
+                    if segment_type == "conversation":
+                        renderables.append(Markdown(content))
+                    elif segment_type == "complete_diff":
+                        display_version = generate_display_content(original_file_contents, content, session_root)
+                        renderables.append(Markdown(display_version))
+                    elif segment_type == "in_progress_diff":
+                        renderables.append(Text(content, no_wrap=True))
+
+                live.update(Group(*renderables), refresh=True)
+
             elif not full_llm_response_buffer and reasoning_content:
                 # If no delta but reasoning content, display the header (bold words) of the reasoning
                 header = regex.search(r"^\*\*(.*?)\*\*", reasoning_content, regex.MULTILINE)

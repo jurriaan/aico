@@ -34,6 +34,13 @@ _FILE_BLOCK_REGEX = re.compile(
     re.MULTILINE | re.DOTALL | re.UNICODE,
 )
 
+# This regex checks for a File: line followed by a SEARCH delimiter at the end of the text.
+# It's more robust than simple string checking.
+_IN_PROGRESS_BLOCK_REGEX = re.compile(
+    r"File: .*?^(\p{H}*)<<<<<<< SEARCH.*$",
+    re.MULTILINE | re.DOTALL | re.UNICODE,
+)
+
 
 def _try_exact_string_patch(original_content: str, search_block: str, replace_block: str) -> str | None:
     # Handle file creation
@@ -249,6 +256,96 @@ def _create_patch_failed_error_diff(file_path: str, search_block: str, original_
     )
 
 
+def parse_live_render_segments(llm_response: str) -> Iterator[tuple[str, str]]:
+    """
+    Parses the full LLM response buffer and yields tuples of (type, content).
+    Types can be 'conversation', 'complete_diff', or 'in_progress_diff'.
+    """
+    last_end = 0
+    # Use the existing _FILE_BLOCK_REGEX to find all *complete* blocks first.
+    complete_matches = list(_FILE_BLOCK_REGEX.finditer(llm_response))
+
+    for match in complete_matches:
+        # Yield conversational text that appears before a complete block.
+        if match.start() > last_end:
+            yield ("conversation", llm_response[last_end : match.start()])
+
+        # Yield the complete, parseable block.
+        yield ("complete_diff", match.group(0))
+        last_end = match.end()
+
+    # Get any text remaining after the last complete block.
+    remaining_text = llm_response[last_end:]
+
+    # Use the new, more precise regex to check if the remaining text looks like the beginning of a diff block.
+    if remaining_text and _IN_PROGRESS_BLOCK_REGEX.search(remaining_text):
+        yield ("in_progress_diff", remaining_text)
+    elif remaining_text:
+        yield ("conversation", remaining_text)
+
+
+def _process_single_diff_block(
+    parsed_block: AIPatch,
+    current_file_contents: dict[str, str],
+    original_file_contents: FileContents,
+    session_root: Path,
+) -> tuple[ProcessedDiffBlock, WarningMessage | None]:
+    """Processes a single parsed AIPatch block and returns the resulting diff and any warnings."""
+    diff_string: str
+    actual_file_path, warning_text = _resolve_file_path(parsed_block, current_file_contents, session_root)
+    warning_message = WarningMessage(text=warning_text) if warning_text else None
+
+    if actual_file_path is None:
+        # The 'warning' from resolve_file_path is None when path is not found. So `warning_message` here is also None.
+        diff_string = _create_file_not_found_error_diff(parsed_block.llm_file_path)
+        return ProcessedDiffBlock(llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string), warning_message
+
+    is_new_file = (actual_file_path not in original_file_contents) and (warning_message is None)
+    content_before_patch = current_file_contents.get(actual_file_path, "")
+
+    search_content = parsed_block.search_content
+    new_content_full = _create_patched_content(
+        content_before_patch,
+        search_content,
+        parsed_block.replace_content,
+    )
+
+    if new_content_full is None:
+        diff_string = _create_patch_failed_error_diff(actual_file_path, search_content, content_before_patch)
+    else:
+        from_file = f"a/{actual_file_path}"
+        to_file = f"b/{actual_file_path}"
+        if is_new_file:
+            from_file = "/dev/null"
+        elif not new_content_full:
+            to_file = "/dev/null"
+
+        diff_lines = list(
+            difflib.unified_diff(
+                content_before_patch.splitlines(keepends=True),
+                new_content_full.splitlines(keepends=True),
+                fromfile=from_file,
+                tofile=to_file,
+            )
+        )
+
+        if diff_lines and not content_before_patch.endswith("\n") and content_before_patch:
+            for i, line in reversed(list(enumerate(diff_lines))):
+                if line.startswith(("-", " ")) and i > 2:
+                    diff_lines.insert(i + 1, "\n\\ No newline at end of file\n")
+                    break
+
+        diff_string = "".join(diff_lines)
+
+        # This function mutates the state of `current_file_contents` for the main processor loop.
+        if not new_content_full and actual_file_path in current_file_contents:
+            del current_file_contents[actual_file_path]
+        else:
+            current_file_contents[actual_file_path] = new_content_full
+
+    return ProcessedDiffBlock(llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string), warning_message
+
+
 def process_llm_response_stream(
     original_file_contents: FileContents, llm_response: str, session_root: Path
 ) -> Iterator[StreamYieldItem]:
@@ -257,6 +354,7 @@ def process_llm_response_stream(
 
     This generator is the core stateful engine. It maintains the "current" state
     of file contents as it iterates through diff blocks, ensuring that each
+
     patch is applied against the result of the previous one for the same file.
 
     Yields:
@@ -279,75 +377,16 @@ def process_llm_response_stream(
 
         # 2. Process the found `File:` block
         parsed_block = _create_aipatch_from_match(match)
-        diff_string: str
-
-        actual_file_path, warning = _resolve_file_path(parsed_block, current_file_contents, session_root)
-
-        if warning:
-            yield WarningMessage(text=warning)
-
-        if actual_file_path is None:
-            diff_string = _create_file_not_found_error_diff(parsed_block.llm_file_path)
-            yield ProcessedDiffBlock(llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string)
-            continue
-
-        # Determine if this is a new file vs. existing file.
-        # A file is "new" if it wasn't in the original context AND it wasn't
-        # found on disk via the filesystem fallback (which would generate a warning).
-        is_new_file = (actual_file_path not in original_file_contents) and (warning is None)
-        content_before_patch = current_file_contents.get(actual_file_path, "")
-
-        # Now we have a valid file path and content. Apply the patch.
-        search_content = parsed_block.search_content
-
-        new_content_full = _create_patched_content(
-            content_before_patch,
-            search_content,
-            parsed_block.replace_content,
+        processed_block, warning = _process_single_diff_block(
+            parsed_block, current_file_contents, original_file_contents, session_root
         )
 
-        if new_content_full is None:
-            diff_string = _create_patch_failed_error_diff(actual_file_path, search_content, content_before_patch)
+        if warning:
+            yield warning
 
-        else:
-            # --- Success Path ---
-            from_file = f"a/{actual_file_path}"
-            to_file = f"b/{actual_file_path}"
-            if is_new_file:
-                from_file = "/dev/null"
-            elif not new_content_full:  # File deletion
-                to_file = "/dev/null"
+        yield processed_block
 
-            diff_lines = list(
-                difflib.unified_diff(
-                    content_before_patch.splitlines(keepends=True),
-                    new_content_full.splitlines(keepends=True),
-                    fromfile=from_file,
-                    tofile=to_file,
-                )
-            )
-
-            if diff_lines and not content_before_patch.endswith("\n") and content_before_patch:
-                # Find the last line that came from the original file (context or deleted)
-                # and insert the marker after it.
-                for i, line in reversed(list(enumerate(diff_lines))):
-                    # ignore the first three lines (header)
-                    if line.startswith(("-", " ")) and i > 2:
-                        diff_lines.insert(i + 1, "\n\\ No newline at end of file\n")
-                        break
-
-            diff_string = "".join(diff_lines)
-
-            # Update state for the next iteration
-            if not new_content_full and actual_file_path in current_file_contents:
-                del current_file_contents[actual_file_path]
-            else:
-                current_file_contents[actual_file_path] = new_content_full
-
-        # 3. Yield the processed block result
-        yield ProcessedDiffBlock(llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string)
-
-    # 4. Yield any remaining conversational text after the last block
+    # 3. Yield any remaining conversational text after the last block
     if last_end < len(llm_response):
         yield llm_response[last_end:]
 
