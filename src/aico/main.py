@@ -14,6 +14,7 @@ from rich.prompt import Prompt
 from rich.spinner import Spinner
 
 from aico.addons import register_addon_commands
+from aico.aico_live_render import AicoLiveRender
 from aico.diffing import (
     generate_display_content,
     generate_unified_diff,
@@ -318,6 +319,8 @@ def _handle_unified_streaming(
     rich_spinner: Spinner = Spinner("dots", "Generating response...")
     if is_terminal():
         live = Live(console=Console(), auto_refresh=True)
+        # Scrolling to the end automatically by using a custom LiveRender
+        live._live_render = AicoLiveRender(live.get_renderable())  # pyright: ignore[reportPrivateUsage]
         live.start()
         live.update(rich_spinner, refresh=True)
 
