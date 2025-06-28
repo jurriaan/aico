@@ -42,6 +42,7 @@ class UserChatMessage:
     mode: Mode
     timestamp: str
     piped_content: str | None = None
+    passthrough: bool = False
 
 
 @dataclass(slots=True, frozen=True)

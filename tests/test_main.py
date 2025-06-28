@@ -1130,3 +1130,41 @@ def test_prompt_with_filesystem_fallback_and_warning(tmp_path: Path, mocker: Moc
         assert "Warning: 'fallback1.py' was not in the session context but was found on disk." in stderr
         assert "Warning: 'sub/fallback2.py' was not in the session context but was found on disk." in stderr
         assert "Consider adding it to the session." in stderr
+
+
+def test_prompt_passthrough_mode_bypasses_context_and_formatting(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN an initialized session with files in context and a mocked LLM
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        # Use the helper to set up a session with a context file
+        context_files = {"file.py": "some content"}
+        _, mock_completion = _setup_session_with_mocked_prompt(
+            Path(td), mocker, "raw response", context_files=context_files
+        )
+
+        # AND a mock for the function that loads file contents
+        mock_build_contents = mocker.patch("aico.main._build_original_file_contents", return_value=context_files)
+
+        # WHEN `aico prompt --passthrough` is invoked
+        prompt_text = "some raw prompt"
+        result = runner.invoke(app, ["prompt", "--passthrough", prompt_text])
+
+        # THEN the command succeeds
+        assert result.exit_code == 0
+        assert result.stdout == "raw response\n"
+
+        # AND the function to load file contents was never called, proving context was skipped
+        mock_build_contents.assert_not_called()
+
+        # AND the LLM was called with a minimal, unformatted message list
+        mock_completion.assert_called_once()
+        messages = mock_completion.call_args.kwargs["messages"]
+        assert len(messages) == 2  # System prompt + User prompt
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+        assert messages[1]["content"] == prompt_text  # Content is raw, no XML
+
+        # AND the session history correctly records the passthrough state
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_data = json.loads(session_file.read_text())
+        user_msg = session_data["chat_history"][0]
+        assert user_msg["passthrough"] is True

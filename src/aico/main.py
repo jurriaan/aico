@@ -384,7 +384,20 @@ def _build_messages(
     piped_content: str | None,
     mode: Mode,
     original_file_contents: FileContents,
+    passthrough: bool,
 ) -> list[LLMChatMessage]:
+    messages: list[LLMChatMessage] = []
+
+    if passthrough:
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        active_history = session_data.chat_history[session_data.history_start_index :]
+        messages.extend(reconstruct_historical_messages(active_history))
+        messages.append({"role": "user", "content": prompt_text})
+        return messages
+
+    # --- Standard (non-passthrough) logic ---
     if mode == Mode.DIFF:
         system_prompt += DIFF_MODE_INSTRUCTIONS
 
@@ -400,7 +413,6 @@ def _build_messages(
     user_prompt_parts.append(f"<prompt>\n{prompt_text}\n</prompt>")
     user_prompt_xml = "".join(user_prompt_parts)
 
-    messages: list[LLMChatMessage] = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
 
@@ -446,6 +458,12 @@ def prompt(
             case_sensitive=False,
         ),
     ] = Mode.CONVERSATION,
+    passthrough: Annotated[
+        bool,
+        typer.Option(
+            help="Send a raw prompt, bypassing all context and formatting.",
+        ),
+    ] = False,
     model: Annotated[str | None, typer.Option(help="The model to use for this request")] = None,
 ) -> None:
     """
@@ -478,17 +496,22 @@ def prompt(
             print("Error: Prompt is required.", file=sys.stderr)
             raise typer.Exit(code=1)
 
-    original_file_contents = _build_original_file_contents(
-        context_files=session_data.context_files, session_root=session_root
-    )
+    original_file_contents: FileContents
+    if passthrough:
+        original_file_contents = {}
+    else:
+        original_file_contents = _build_original_file_contents(
+            context_files=session_data.context_files, session_root=session_root
+        )
 
     messages = _build_messages(
-        session_data,
-        system_prompt,
+        session_data=session_data,
+        system_prompt=system_prompt,
         prompt_text=primary_prompt,
         piped_content=secondary_piped_content,
         mode=mode,
         original_file_contents=original_file_contents,
+        passthrough=passthrough,
     )
 
     llm_response_content: str = ""
@@ -534,6 +557,7 @@ def prompt(
             piped_content=secondary_piped_content,
             mode=mode,
             timestamp=timestamp,
+            passthrough=passthrough,
         )
     )
     session_data.chat_history.append(
@@ -556,13 +580,16 @@ def prompt(
     # This phase handles non-interactive output. All interactive output is handled
     # by the streaming functions.
     if not is_terminal():
-        match mode:
-            case Mode.DIFF:
-                if unified_diff:
-                    print(unified_diff, end="")
-            case Mode.CONVERSATION | Mode.RAW:
-                # For these modes, the handler is silent in non-TTY, so we print the final result.
-                print(llm_response_content)
+        if passthrough:
+            print(llm_response_content)
+        else:
+            match mode:
+                case Mode.DIFF:
+                    if unified_diff:
+                        print(unified_diff, end="")
+                case Mode.CONVERSATION | Mode.RAW:
+                    # For these modes, the handler is silent in non-TTY, so we print the final result.
+                    print(llm_response_content)
 
 
 if __name__ == "__main__":
