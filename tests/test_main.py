@@ -7,8 +7,8 @@ import pytest
 from pytest_mock import MockerFixture, MockType
 from typer.testing import CliRunner
 
-from aico.main import app, complete_files_in_context
-from aico.utils import SESSION_FILE_NAME
+from aico.main import app
+from aico.utils import SESSION_FILE_NAME, complete_files_in_context
 
 runner = CliRunner()
 
