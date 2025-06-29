@@ -65,7 +65,7 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
 1. **Plan the work. Start a conversation with the AI to create a plan.**
 
    ```bash
-   aico prompt "Propose a multi-increment, test-driven plan to refactor the 'hello' function in main.py. It should accept a 'name' argument and print a greeting."
+   aico ask "Propose a multi-increment, test-driven plan to refactor the 'hello' function in main.py. It should accept a 'name' argument and print a greeting."
    ```
 
    The AI will respond with a numbered plan. This starts a conversation that becomes part of the session history.
@@ -73,7 +73,7 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
 1. **Execute one step. Ask the AI to write the code for the first increment.**
 
    ```bash
-   aico prompt --mode diff "Implement Increment 1 of the plan."
+   aico edit "Implement Increment 1 of the plan."
    ```
 
    `aico` will stream a response, ending with a proposed diff.
@@ -99,8 +99,9 @@ Repeat steps 5 and 6 for each increment of the plan.
 - `aico add <files...>`: Adds one or more files to the session context.
 - `aico drop <files...>`: Removes one or more files from the context.
 - `aico tokens`: Shows a breakdown of token usage and estimated cost for the current context.
-- `aico prompt "<instruction>"`: Sends the context and prompt to the AI. By default, this starts a conversation for planning and discussion.
-  - `--mode diff`: The AI responds with code edits; output is a unified diff.
+- `aico ask "<instruction>"`: Have a conversation with the AI for planning and discussion.
+- `aico edit "<instruction>"`: Generate code modifications as a unified diff.
+- `aico prompt "<instruction>"`: Send a raw prompt directly to the AI with minimal formatting.
 - `aico last [N]`: Shows the N-th to last response from the AI (defaults to 1).
   - `--recompute`: Recalculates the response against the current state of files.
   - `--verbatim`: Prints the original, unprocessed response from the AI.
