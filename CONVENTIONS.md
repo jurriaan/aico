@@ -4,91 +4,35 @@
 Do NOT add comments within the code that merely describe the diff, such as `# Added this line` or `# Changed X to Y`. Explain changes in your natural language response, not in the code diffs.
 Adhere strictly to the user's request. If a request is ambiguous or critical information is missing, **always clarify by asking focused questions** before proceeding. Do not generate code until the necessary information is provided.
 
-## Architecture
+## Architecture and Design Principles
 
-When writing code, you MUST follow these principles:
+When writing code, you MUST follow these project-specific principles:
 
-- Follow repository pattern for data access
-- Use service layer for business logic
-- Factory pattern for object creation
-- Keep controllers (API endpoints) thin
-- Keep the code as simple as possible. Avoid unnecessary complexity.
-- Use self-explanatory identifier names rather than comments
-- When comments are used, they should add useful information that is not readily apparent from the code itself.
-- Do not add docstrings to methods/functions, they should be clear in and of themselves.
-- Assume that the absolute latest version of Python is used.
+### High-Level Architecture
 
-### Modern Python and Type Safety:
+- **Intent-Driven Commands:** Command names must be verbs that clearly express user intent (e.g., `ask`, `edit`). This is a core design principle of the `aico` CLI.
+- **Composable Output:** Primary outputs should be standard formats (like unified diffs) that integrate cleanly with other Unix tools.
+- **Shared Logic:** Extract common functionality into reusable components or helper functions rather than duplicating logic across commands.
+- **Atomic Operations:** Critical file operations, especially session writing, must be atomic to prevent data corruption. Use a temporary file + rename pattern.
+- **Streaming Interfaces:** For long-running operations like LLM calls, use streaming to provide immediate feedback to the user.
+- **Simplicity and Readability:** Keep the code as simple as possible. Use self-explanatory identifier names over comments. Do not add docstrings to simple methods/functions.
 
-- Comprehensive type hinting is MANDATORY for all function signatures (parameters and return types) and significant variable declarations.
-- All code MUST pass `basedpyright` type checking without errors or warnings.
-  - While processing data prefer using Pydantic models over untyped dictionary modifications
-- Write code using the latest stable Python version and its modern features, such as:
-  - PEP604: use `int | None` over `typing.Optional[int]`
-  - PEP636: pattern matching using `match/case`
-  - PEP695: use the new generics syntax `ClassA[T: str]` and `func[T](a: T, b: T) -> T`
+### Modern Python and Type Safety
 
-Example code:
-
-```python
-class UnitQuantity(BaseModel):
-    value: int
-
-class KilogramQuantity(BaseModel):
-    value: float
-
-OrderQuantity = UnitQuantity | KilogramQuantity
-
-an_order_qty_in_units = UnitQuantity(value=10)
-an_order_qty_in_kg = KilogramQuantity(value=2.5)
-
-def quantity_label(oq: OrderQuantity) -> str:
-    match (oq):
-        case UnitQuantity(value=n):
-            return f'{n} units'
-        case KilogramQuantity(value=n):
-            return f'{n} kg'
-
-label = quantity_label(an_order_qty_in_kg)
-print(label)
-```
+- **Comprehensive Type Hinting:** This is MANDATORY for all function signatures (parameters and return types) and significant variable declarations.
+- **Static Type Checking:** All code MUST pass `basedpyright` type-checking without any errors or warnings.
+- **Pydantic for Data Contracts:** Use Pydantic models for all data structures that are serialized/deserialized (e.g., `.ai_session.json`) or received from external APIs. This is our primary mechanism for ensuring data integrity and preventing runtime errors from corrupt files or unexpected API changes.
+- **Contracts for Untyped Libraries:** Use `typing.Protocol` with `@runtime_checkable` to create a defensive boundary around external library objects that lack precise types (e.g., `litellm` response objects). This insulates our code from upstream changes and makes our internal logic more predictable.
+- **Specific Collection Types:** Use specific collection types from `collections.abc` (like `Mapping`, `Sequence`) in type hints over generic `dict` or `list` where appropriate.
+- **Enums for Finite Sets:** Use `enum.Enum` for fixed sets of values (like `Mode`) to ensure type safety and prevent magic strings.
+- **Latest Python Features:** Write code using the latest stable Python version and its modern features, such as:
+  - PEP 604 Union Types: `int | None`
+  - PEP 636 Pattern Matching: `match/case`
+  - PEP 695 New Generics Syntax: `type MyList[T] = list[T]`
 
 ## Testing
 
-Use `GIVEN`, `WHEN`, `THEN` (or `AND`) comments for the different parts of a test.
-When an endpoint is tested that has a JSON response always use `expected_structure` (no matter how deep and verbose) in tests so that the response structure becomes clear:
-
-```python
-def test_get_step(self):
-    # GIVEN a step exists in the database
-    step = create_test_step(self.session)
-
-    # WHEN we request the step
-    response = self.client.get(f"/steps/{step.id}")
-
-    # THEN the successful response matches the expected structure
-    expected_structure = {
-        "id": step.id,
-        "header": None,
-        "content": None,
-        "notes": {
-            "id": step.notes_id,
-            "type": "notes",
-            "document": {
-                "type": "doc",
-                "content": [],
-            },
-        },
-        "settings": {
-            "theme": "default",
-            "template": "document",
-            "background": None,
-            "layout": "cover",
-            "content": True,
-            "header": False,
-            "questions": False,
-        },
-    }
-    assert response.status_code == 200
-    assert response.json() == expected_structure
-```
+- **GIVEN/WHEN/THEN Structure:** Use `GIVEN`, `WHEN`, `THEN` (or `AND`) comments for the different parts of a test to ensure clarity.
+- **Isolated Filesystems:** CLI tests that interact with the filesystem MUST use `typer.testing.CliRunner.isolated_filesystem` to ensure tests are hermetic and do not interfere with each other.
+- **Mock External Services:** All external API calls, particularly to LLMs, MUST be mocked using `pytest-mock`.
+- **Prefer Helper Functions:** For repetitive test setup (like initializing sessions and mocking API calls), prefer creating a dedicated helper function over complex `pytest.mark.parametrize` fixtures to keep individual tests readable and self-contained.
