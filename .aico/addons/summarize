@@ -1,0 +1,19 @@
+#!/bin/bash
+set -e
+set -o pipefail
+
+if [[ "$1" == "--usage" ]]; then
+  echo "Generate a comprehensive project summary and reset history to that summary"
+  exit 0
+fi
+
+# Generate the summary using aico itself
+SUMMARY_PROMPT="Generate a comprehensive project summary that can serve as a complete replacement for our conversation history for a new developer or an AI without any previous context. This summary does not need to include any diffs you generated, but may include the things you changed, the reason behind it (i.e. the why), and architectural considerations / discussion outcomes, keep in mind that the latest state of all files is given in this message. The goal of this summary is to be a full replacement of our conversation history. This should be a more comprehensive summary than the previous project summaries (i.e. make sure you do not leave out any details of the previous summaries and the current context)."
+
+echo "Generating comprehensive project summary..."
+aico ask "$SUMMARY_PROMPT"
+
+echo "Resetting history to summary..."
+aico history set -2
+
+echo "Done. History now starts with the comprehensive summary."

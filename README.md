@@ -121,4 +121,7 @@ You can extend `aico` with custom commands using a simple addon system. An addon
 
 Addons are discovered at runtime and listed in `aico --help`. To provide a description for your addon, make sure it prints a single line of help text when executed with a `--usage` flag.
 
-For a powerful example of how to create an addon, see the [`commit` script](.aico/addons/commit) included in this repository. It uses `aico` to generate Conventional Commit messages from your staged git changes.
+The repository includes two addons that serve as practical examples:
+
+- [`commit`](.aico/addons/commit): Uses `aico` to generate a Conventional Commit message based on your staged git changes.
+- [`summarize`](.aico/addons/summarize): Uses `aico` to first generate a comprehensive project summary, and then resets the session history to that summary. This is a useful technique for managing context length and cost.
