@@ -3,6 +3,8 @@ set -e
 
 cd "$(dirname "$0")/.."
 
+export LITELLM_LOCAL_MODEL_COST_MAP=True
+
 if [[ "$1" == co* ]]; then
     echo "Running tests for coverage (pytest --cov=app)..."
     uv run pytest --cov=app
