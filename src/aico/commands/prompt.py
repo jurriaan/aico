@@ -384,14 +384,6 @@ def prompt(
     system_prompt: Annotated[
         str, typer.Option(help="The system prompt to guide the AI.")
     ] = "You are an expert pair programmer.",
-    mode: Annotated[
-        Mode,
-        typer.Option(
-            help="Output mode: 'diff' for git diffs, 'conversation' for discussion"
-            + ", or 'raw' for no prompt additions (default).",
-            case_sensitive=False,
-        ),
-    ] = Mode.RAW,
     passthrough: Annotated[
         bool,
         typer.Option(
@@ -403,4 +395,4 @@ def prompt(
     """
     Send a raw prompt directly to the AI with minimal formatting.
     """
-    _invoke_llm_logic(cli_prompt_text, system_prompt, mode, passthrough, model)
+    _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.RAW, passthrough, model)
