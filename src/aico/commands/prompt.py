@@ -208,29 +208,15 @@ def _build_messages(
     return messages
 
 
-def prompt(
-    cli_prompt_text: Annotated[str | None, typer.Argument(help="The user's instruction for the AI.")] = None,
-    system_prompt: Annotated[
-        str, typer.Option(help="The system prompt to guide the AI.")
-    ] = "You are an expert pair programmer.",
-    mode: Annotated[
-        Mode,
-        typer.Option(
-            help="Output mode: 'diff' for git diffs, 'conversation' for discussion (default)"
-            + ", or 'raw' for no prompt additions.",
-            case_sensitive=False,
-        ),
-    ] = Mode.CONVERSATION,
-    passthrough: Annotated[
-        bool,
-        typer.Option(
-            help="Send a raw prompt, bypassing all context and formatting.",
-        ),
-    ] = False,
-    model: Annotated[str | None, typer.Option(help="The model to use for this request")] = None,
+def _invoke_llm_logic(
+    cli_prompt_text: str | None,
+    system_prompt: str,
+    mode: Mode,
+    passthrough: bool,
+    model: str | None,
 ) -> None:
     """
-    Sends a prompt to the AI with the current context.
+    Core logic for invoking the LLM that can be shared by all command wrappers.
     """
     session_file, session_data = load_session()
     session_root = session_file.parent
@@ -353,3 +339,30 @@ def prompt(
                 case Mode.CONVERSATION | Mode.RAW:
                     # For these modes, the handler is silent in non-TTY, so we print the final result.
                     print(llm_response_content)
+
+
+def prompt(
+    cli_prompt_text: Annotated[str | None, typer.Argument(help="The user's instruction for the AI.")] = None,
+    system_prompt: Annotated[
+        str, typer.Option(help="The system prompt to guide the AI.")
+    ] = "You are an expert pair programmer.",
+    mode: Annotated[
+        Mode,
+        typer.Option(
+            help="Output mode: 'diff' for git diffs, 'conversation' for discussion (default)"
+            + ", or 'raw' for no prompt additions.",
+            case_sensitive=False,
+        ),
+    ] = Mode.CONVERSATION,
+    passthrough: Annotated[
+        bool,
+        typer.Option(
+            help="Send a raw prompt, bypassing all context and formatting.",
+        ),
+    ] = False,
+    model: Annotated[str | None, typer.Option(help="The model to use for this request")] = None,
+) -> None:
+    """
+    Sends a prompt to the AI with the current context.
+    """
+    _invoke_llm_logic(cli_prompt_text, system_prompt, mode, passthrough, model)
