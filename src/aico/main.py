@@ -7,12 +7,14 @@ from aico.commands.context import add, drop
 from aico.commands.history import history_app
 from aico.commands.init import init
 from aico.commands.last import last
-from aico.commands.prompt import prompt
+from aico.commands.prompt import ask, edit, prompt
 from aico.commands.tokens import tokens_app
 
 app = typer.Typer()
 app.add_typer(history_app, name="history")
 app.add_typer(tokens_app, name="tokens")
+_ = app.command("ask")(ask)
+_ = app.command("edit")(edit)
 _ = app.command("prompt")(prompt)
 _ = app.command("last")(last)
 _ = app.command("add")(add)

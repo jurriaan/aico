@@ -341,19 +341,11 @@ def _invoke_llm_logic(
                     print(llm_response_content)
 
 
-def prompt(
+def ask(
     cli_prompt_text: Annotated[str | None, typer.Argument(help="The user's instruction for the AI.")] = None,
     system_prompt: Annotated[
         str, typer.Option(help="The system prompt to guide the AI.")
     ] = "You are an expert pair programmer.",
-    mode: Annotated[
-        Mode,
-        typer.Option(
-            help="Output mode: 'diff' for git diffs, 'conversation' for discussion (default)"
-            + ", or 'raw' for no prompt additions.",
-            case_sensitive=False,
-        ),
-    ] = Mode.CONVERSATION,
     passthrough: Annotated[
         bool,
         typer.Option(
@@ -363,6 +355,52 @@ def prompt(
     model: Annotated[str | None, typer.Option(help="The model to use for this request")] = None,
 ) -> None:
     """
-    Sends a prompt to the AI with the current context.
+    Have a conversation with the AI for planning and discussion.
+    """
+    _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.CONVERSATION, passthrough, model)
+
+
+def edit(
+    cli_prompt_text: Annotated[str | None, typer.Argument(help="The user's instruction for the AI.")] = None,
+    system_prompt: Annotated[
+        str, typer.Option(help="The system prompt to guide the AI.")
+    ] = "You are an expert pair programmer.",
+    passthrough: Annotated[
+        bool,
+        typer.Option(
+            help="Send a raw prompt, bypassing all context and formatting.",
+        ),
+    ] = False,
+    model: Annotated[str | None, typer.Option(help="The model to use for this request")] = None,
+) -> None:
+    """
+    Generate code modifications as a unified diff.
+    """
+    _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.DIFF, passthrough, model)
+
+
+def prompt(
+    cli_prompt_text: Annotated[str | None, typer.Argument(help="The user's instruction for the AI.")] = None,
+    system_prompt: Annotated[
+        str, typer.Option(help="The system prompt to guide the AI.")
+    ] = "You are an expert pair programmer.",
+    mode: Annotated[
+        Mode,
+        typer.Option(
+            help="Output mode: 'diff' for git diffs, 'conversation' for discussion"
+            + ", or 'raw' for no prompt additions (default).",
+            case_sensitive=False,
+        ),
+    ] = Mode.RAW,
+    passthrough: Annotated[
+        bool,
+        typer.Option(
+            help="Send a raw prompt, bypassing all context and formatting.",
+        ),
+    ] = False,
+    model: Annotated[str | None, typer.Option(help="The model to use for this request")] = None,
+) -> None:
+    """
+    Send a raw prompt directly to the AI with minimal formatting.
     """
     _invoke_llm_logic(cli_prompt_text, system_prompt, mode, passthrough, model)

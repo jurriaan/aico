@@ -7,7 +7,7 @@ from pytest_mock import MockerFixture, MockType
 from typer.testing import CliRunner
 
 from aico.main import app
-from aico.models import AssistantChatMessage, SessionData, UserChatMessage
+from aico.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
 from aico.utils import SESSION_FILE_NAME, SessionDataAdapter
 
 runner = CliRunner()
@@ -74,7 +74,7 @@ def test_prompt_conversation_mode_injects_alignment(tmp_path: Path, mocker: Mock
         )
 
         # WHEN `aico prompt` is run (defaulting to conversation mode)
-        result = runner.invoke(app, ["prompt", prompt_text])
+        result = runner.invoke(app, ["prompt", "--mode", "conversation", prompt_text])
 
         # THEN the command succeeds and prints the raw response
         assert result.exit_code == 0
@@ -184,7 +184,7 @@ def test_prompt_conversation_mode_with_diff_response_renders_live_diff(tmp_path:
         setup_prompt_test(mocker, Path(td), llm_diff_response, context_files={"code.py": "def hello(): pass"})
 
         # WHEN `aico prompt` is run (defaulting to conversation mode)
-        result = runner.invoke(app, ["prompt", "Add a name parameter and print it"])
+        result = runner.invoke(app, ["prompt", "--mode", "conversation", "Add a name parameter and print it"])
 
         # THEN the command succeeds
         assert result.exit_code == 0
@@ -206,7 +206,7 @@ def test_prompt_conversation_mode_with_diff_response_saves_derived_content(tmp_p
         setup_prompt_test(mocker, Path(td), llm_diff_response, context_files={"file.py": "old content"})
 
         # WHEN `aico prompt` is run (defaulting to conversation)
-        result = runner.invoke(app, ["prompt", "make a change"])
+        result = runner.invoke(app, ["prompt", "--mode", "conversation", "make a change"])
 
         # THEN the command succeeds and prints the diff response for a non-TTY runner
         assert result.exit_code == 0
@@ -316,6 +316,48 @@ def test_prompt_with_history_reconstructs_piped_content(tmp_path: Path, mocker: 
         )
         assert historical_user_msg["content"] == expected_reconstructed
         assert historical_asst_msg["content"] == "response 1"
+
+
+def test_ask_command_invokes_correct_mode(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN an initialized session
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        mock_invoke_logic = mocker.patch("aico.commands.prompt._invoke_llm_logic")
+
+        # WHEN `aico ask` is run
+        result = runner.invoke(app, ["ask", "What does this code do?"])
+
+        # THEN the command succeeds and calls the core logic with conversation mode
+        assert result.exit_code == 0
+        mock_invoke_logic.assert_called_once()
+        assert mock_invoke_logic.call_args[0][2] == Mode.CONVERSATION
+
+
+def test_edit_command_invokes_correct_mode(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN an initialized session
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        mock_invoke_logic = mocker.patch("aico.commands.prompt._invoke_llm_logic")
+
+        # WHEN `aico edit` is run
+        result = runner.invoke(app, ["edit", "Add error handling"])
+
+        # THEN the command succeeds and calls the core logic with diff mode
+        assert result.exit_code == 0
+        mock_invoke_logic.assert_called_once()
+        assert mock_invoke_logic.call_args[0][2] == Mode.DIFF
+
+
+def test_prompt_defaults_to_raw_mode(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN an initialized session
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        mock_invoke_logic = mocker.patch("aico.commands.prompt._invoke_llm_logic")
+
+        # WHEN `aico prompt` is run without a --mode flag
+        result = runner.invoke(app, ["prompt", "Generate a haiku"])
+
+        # THEN the command succeeds and calls the core logic with raw mode
+        assert result.exit_code == 0
+        mock_invoke_logic.assert_called_once()
+        assert mock_invoke_logic.call_args[0][2] == Mode.RAW
 
 
 def test_prompt_uses_session_default_model_when_not_overridden(tmp_path: Path, mocker: MockerFixture) -> None:
