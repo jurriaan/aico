@@ -22,7 +22,7 @@ uv tool install --from git+https://github.com/jurriaan/aico/ aico
 
   ```bash
   # Generate a diff and pipe it directly to git to apply it
-  aico prompt --mode diff "Implement Increment 1 of the plan" | git apply
+  aico edit "Implement Increment 1 of the plan" | git apply
 
   # Or review the last generated diff with a modern diffing tool like delta
   aico last | delta
@@ -30,11 +30,11 @@ uv tool install --from git+https://github.com/jurriaan/aico/ aico
 
 - **Transparent State.** There is no hidden state or magic. The entire session—context files, chat history, and model configuration—is stored in a single, human-readable `.ai_session.json` file in your project's root. You can inspect it, edit it, or even version-control it.
 
-- **Focused on Code Modification.** The tool is optimized for its `diff` mode, which produces structured `SEARCH/REPLACE` patches. This makes it ideal for refactoring, adding features, or fixing bugs directly from your terminal.
+- **Focused on Code Modification.** The `aico edit` command is optimized to produce standard unified diffs, making it ideal for refactoring, adding features, or fixing bugs directly from your terminal.
 
 ## Features
 
-- **Streaming Output:** See the AI's response in real-time. In `diff` mode, watch as diffs are generated and rendered in-place.
+- **Streaming Output:** See the AI's response in real-time. With the `edit` command, watch as diffs are generated and rendered in-place.
 - **Context Management:** Explicitly `add` and `drop` files to control exactly what the AI sees.
 - **History Control:** Easily manage how much of the conversation history is included in the next prompt to balance context-awareness with cost.
 - **Cost and Token Tracking:** See token usage and estimated cost for each interaction.
