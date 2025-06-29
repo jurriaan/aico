@@ -24,8 +24,21 @@ SESSION_FILE_NAME = ".ai_session.json"
 
 def find_session_file() -> Path | None:
     """
-    Finds the .ai_session.json file by searching upward from the current directory.
+    Finds the .ai_session.json file by checking the AICO_SESSION_FILE environment variable first,
+    then searching upward from the current directory.
     """
+    # Check environment variable first
+    if session_path := os.getenv("AICO_SESSION_FILE"):
+        session_file = Path(session_path)
+        if not session_file.is_absolute():
+            print(f"Error: AICO_SESSION_FILE must be an absolute path, got: {session_path}", file=sys.stderr)
+            raise typer.Exit(code=1)
+        if not session_file.is_file():
+            print(f"Error: Session file specified in AICO_SESSION_FILE does not exist: {session_path}", file=sys.stderr)
+            raise typer.Exit(code=1)
+        return session_file
+
+    # Fall back to upward search from current directory
     current_dir = Path.cwd().resolve()
     while True:
         session_file = current_dir / SESSION_FILE_NAME
