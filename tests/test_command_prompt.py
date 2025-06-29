@@ -58,7 +58,7 @@ def load_final_session(tmp_path: Path) -> SessionData:
     return SessionDataAdapter.validate_json(session_file.read_text())
 
 
-def test_prompt_conversation_mode_injects_alignment(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a session with a context file and a mocked LLM
     prompt_text = "Explain this code"
     llm_response = "This is a raw response."
@@ -73,8 +73,8 @@ def test_prompt_conversation_mode_injects_alignment(tmp_path: Path, mocker: Mock
             mocker, Path(td), llm_response, context_files=context_files, usage=mock_usage
         )
 
-        # WHEN `aico prompt` is run (defaulting to conversation mode)
-        result = runner.invoke(app, ["prompt", "--mode", "conversation", prompt_text])
+        # WHEN `aico ask` is run
+        result = runner.invoke(app, ["ask", prompt_text])
 
         # THEN the command succeeds and prints the raw response
         assert result.exit_code == 0
@@ -108,7 +108,7 @@ def test_prompt_conversation_mode_injects_alignment(tmp_path: Path, mocker: Mock
         assert assistant_msg.token_usage.prompt_tokens == 100
 
 
-def test_prompt_diff_mode(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_edit_command_generates_diff(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a session with a context file and a mocked LLM returning a diff
     llm_diff_response = (
         "File: code.py\n"
@@ -123,8 +123,8 @@ def test_prompt_diff_mode(tmp_path: Path, mocker: MockerFixture) -> None:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         setup_prompt_test(mocker, Path(td), llm_diff_response, context_files={"code.py": "def hello():\n    pass"})
 
-        # WHEN `aico prompt --mode diff` is run
-        result = runner.invoke(app, ["prompt", "--mode", "diff", "a prompt"])
+        # WHEN `aico edit` is run
+        result = runner.invoke(app, ["edit", "a prompt"])
 
         # THEN the command succeeds and prints a valid unified diff
         assert result.exit_code == 0
@@ -151,13 +151,13 @@ def test_prompt_diff_mode(tmp_path: Path, mocker: MockerFixture) -> None:
         assert assistant_msg.derived.unified_diff == expected_diff
 
 
-def test_prompt_raw_mode_does_not_inject_alignment(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_prompt_command_raw_mode_no_alignment(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN an initialized session and mocked LLM
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         mock_completion = setup_prompt_test(mocker, Path(td), "raw output")
 
-        # WHEN `aico prompt --mode raw` is run
-        result = runner.invoke(app, ["prompt", "--mode", "raw", "some prompt"])
+        # WHEN `aico prompt` is run (defaults to raw mode)
+        result = runner.invoke(app, ["prompt", "some prompt"])
 
         # THEN the command succeeds
         assert result.exit_code == 0
@@ -169,7 +169,7 @@ def test_prompt_raw_mode_does_not_inject_alignment(tmp_path: Path, mocker: Mocke
         assert not any("conversational assistant" in c for c in message_contents)
 
 
-def test_prompt_conversation_mode_with_diff_response_renders_live_diff(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_ask_command_with_diff_response_renders_live_diff(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a TTY-enabled environment and a session with a context file
     mocker.patch("aico.commands.prompt.is_terminal", return_value=True)
     llm_diff_response = (
@@ -183,8 +183,8 @@ def test_prompt_conversation_mode_with_diff_response_renders_live_diff(tmp_path:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         setup_prompt_test(mocker, Path(td), llm_diff_response, context_files={"code.py": "def hello(): pass"})
 
-        # WHEN `aico prompt` is run (defaulting to conversation mode)
-        result = runner.invoke(app, ["prompt", "--mode", "conversation", "Add a name parameter and print it"])
+        # WHEN `aico ask` is run
+        result = runner.invoke(app, ["ask", "Add a name parameter and print it"])
 
         # THEN the command succeeds
         assert result.exit_code == 0
@@ -199,14 +199,14 @@ def test_prompt_conversation_mode_with_diff_response_renders_live_diff(tmp_path:
         assert final_session.chat_history[-1].mode == "conversation"
 
 
-def test_prompt_conversation_mode_with_diff_response_saves_derived_content(tmp_path: Path, mocker) -> None:
+def test_ask_command_with_diff_response_saves_derived_content(tmp_path: Path, mocker) -> None:
     # GIVEN a session and a mocked LLM returning a diff
     llm_diff_response = "File: file.py\n<<<<<<< SEARCH\nold content\n=======\nnew content\n>>>>>>> REPLACE"
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         setup_prompt_test(mocker, Path(td), llm_diff_response, context_files={"file.py": "old content"})
 
-        # WHEN `aico prompt` is run (defaulting to conversation)
-        result = runner.invoke(app, ["prompt", "--mode", "conversation", "make a change"])
+        # WHEN `aico ask` is run
+        result = runner.invoke(app, ["ask", "make a change"])
 
         # THEN the command succeeds and prints the diff response for a non-TTY runner
         assert result.exit_code == 0
@@ -404,7 +404,7 @@ def test_prompt_model_flag_overrides_session_default(tmp_path: Path, mocker: Moc
         assert assistant_msg.model == override_model
 
 
-def test_prompt_with_filesystem_fallback_and_warning(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_edit_command_with_filesystem_fallback_and_warning(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a session and files on disk that are NOT in context
     llm_response = (
         "File: fallback1.py\n<<<<<<< SEARCH\ncontent 1\n=======\nnew content 1\n>>>>>>> REPLACE\n"
@@ -417,8 +417,8 @@ def test_prompt_with_filesystem_fallback_and_warning(tmp_path: Path, mocker: Moc
         (Path(td) / "sub").mkdir()
         (Path(td) / "sub/fallback2.py").write_text("content 2\n")
 
-        # WHEN the prompt command is run
-        result = runner.invoke(app, ["prompt", "--mode", "diff", "patch the files"])
+        # WHEN the edit command is run
+        result = runner.invoke(app, ["edit", "patch the files"])
 
         # THEN the command succeeds and the diff is printed to stdout
         assert result.exit_code == 0
