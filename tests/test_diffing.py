@@ -660,3 +660,33 @@ def test_no_newline_marker_logic_is_correct_for_empty_file_diff(tmp_path: Path) 
     # THEN the standard diff is produced.
     expected_diff = "--- a/new.py\n+++ b/new.py\n@@ -0,0 +1 @@\n+new content\n"
     assert diff == expected_diff
+
+
+def test_generate_diff_for_new_empty_file_followed_by_another_file(tmp_path: Path) -> None:
+    # GIVEN no original content and an LLM response to create an empty file, then another file
+    original_contents = {}
+    llm_response = (
+        "File: app/__init__.py\n"
+        "<<<<<<< SEARCH\n"
+        "=======\n"
+        ">>>>>>> REPLACE\n"
+        "File: app/renderer.py\n"
+        "<<<<<<< SEARCH\n"
+        "=======\n"
+        "import html\n"
+        ">>>>>>> REPLACE\n"
+    )
+
+    # WHEN the diff is generated
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
+
+    # THEN it should contain a valid diff for BOTH files
+    expected_diff = (
+        "--- /dev/null\n"
+        "+++ b/app/__init__.py\n"
+        "--- /dev/null\n"
+        "+++ b/app/renderer.py\n"
+        "@@ -0,0 +1 @@\n"
+        "+import html\n"
+    )
+    assert diff == expected_diff

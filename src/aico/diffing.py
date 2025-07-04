@@ -312,6 +312,11 @@ def _process_single_diff_block(
 
     if new_content_full is None:
         diff_string = _create_patch_failed_error_diff(actual_file_path, search_content, content_before_patch)
+    elif is_new_file and not new_content_full:
+        # Handle the edge case where a new file is created empty.
+        # difflib.unified_diff returns an empty string for this case, so we must construct the diff header manually.
+        diff_string = f"--- /dev/null\n+++ b/{actual_file_path}\n"
+        current_file_contents[actual_file_path] = new_content_full
     else:
         from_file = f"a/{actual_file_path}"
         to_file = f"b/{actual_file_path}"
