@@ -7,6 +7,7 @@ import regex as re
 from aico.models import (
     AIPatch,
     FileContents,
+    FileHeader,
     PatchApplicationResult,
     ProcessedDiffBlock,
     ProcessedPatchResult,
@@ -327,136 +328,63 @@ def _process_single_diff_block(
     )
 
 
-def _apply_patches(
-    original_file_contents: FileContents, llm_response: str, session_root: Path
-) -> PatchApplicationResult:
-    """
-    Applies all patches from an LLM response to calculate the final state of files.
-
-    This function does not generate diffs. Its only purpose is to compute the
-    "after" state of all files by sequentially applying every valid patch.
-    It handles filesystem fallbacks and updates the original content mapping
-    to ensure final diffs are generated correctly.
-
-    Returns:
-        A PatchApplicationResult containing:
-        - The final contents of all files after patches.
-        - The baseline "before" contents, updated with any filesystem fallbacks.
-        - A list of any warnings that were generated.
-    """
-    post_patch_contents = dict(original_file_contents)
-    warnings: list[WarningMessage] = []
-
-    # This is a bit tricky: `original_file_contents` is a Mapping (immutable view),
-    # but when a file is found via fallback, we need to add it to the "original"
-    # set to generate the correct final diff. We use a mutable copy for this.
-    baseline_contents_for_diff = dict(original_file_contents)
-
-    chunks = _FILE_HEADER_REGEX.split(llm_response)
-    _ = chunks.pop(0)  # Discard initial conversational text
-
-    for i in range(0, len(chunks), 2):
-        header_line = chunks[i]
-        content = chunks[i + 1] if (i + 1) < len(chunks) else ""
-        llm_file_path = header_line.strip().removeprefix("File:").strip()
-
-        for match in _FILE_BLOCK_REGEX.finditer(content):
-            parsed_block = _create_aipatch_from_match(match, llm_file_path)
-
-            resolution = _resolve_file_path(parsed_block, post_patch_contents, session_root)
-            if resolution.warning:
-                warnings.append(WarningMessage(text=resolution.warning))
-
-            if resolution.path is None:
-                error_text = _create_file_not_found_error(parsed_block.llm_file_path)
-                warnings.append(WarningMessage(text=error_text))
-                continue
-
-            actual_file_path = resolution.path
-            if resolution.fallback_content is not None:
-                post_patch_contents[actual_file_path] = resolution.fallback_content
-                baseline_contents_for_diff[actual_file_path] = resolution.fallback_content
-
-            is_new_file = actual_file_path not in baseline_contents_for_diff
-            content_before_patch = post_patch_contents.get(actual_file_path, "")
-
-            result = _process_single_diff_block(parsed_block, content_before_patch, is_new_file, actual_file_path)
-
-            if result.new_content is not None:
-                if not result.new_content and actual_file_path in post_patch_contents:
-                    del post_patch_contents[actual_file_path]
-                else:
-                    post_patch_contents[actual_file_path] = result.new_content
-            else:
-                # Patch failed, so `new_content` is None. Treat as a warning.
-                error_text = _create_patch_failed_error(actual_file_path)
-                warnings.append(WarningMessage(text=error_text))
-
-    return PatchApplicationResult(
-        post_patch_contents=post_patch_contents,
-        baseline_contents_for_diff=baseline_contents_for_diff,
-        warnings=warnings,
-    )
-
-
-def process_llm_response_stream(
+def _process_patches_sequentially(
     original_file_contents: FileContents,
     llm_response: str,
     session_root: Path,
-) -> Iterator[StreamYieldItem]:
+) -> tuple[dict[str, str], dict[str, str], list[WarningMessage]]:
     """
-    Parses an LLM response, processes diff blocks sequentially, and yields results.
+    The single, robust parsing engine that drives all diffing operations.
 
-    This generator is the core stateful engine for generating display content.
-    It encapsulates its own state, creating a temporary copy of file contents
-    to ensure that each patch for a given file is applied against the result
-    of the previous one.
+    This function uses a "scan" approach with `finditer` to preserve
+    all text from the LLM response. It encapsulates its own state, creating a
+    temporary copy of file contents to ensure that each patch for a given file
+    is applied against the result of the previous one.
+
+    This function calculates the final state and is used by `_apply_patches`.
+    `process_llm_response_stream` is the generator version for live display.
 
     Args:
         original_file_contents: An immutable mapping of the original file contents.
         llm_response: The raw response from the language model.
         session_root: The root path of the session.
 
-    Yields:
-        Either a string (for conversational text), a ProcessedDiffBlock, or a WarningMessage.
+    Returns:
+        A tuple containing:
+        - The final contents of all files after patches.
+        - The baseline "before" contents, updated with any filesystem fallbacks.
+        - A list of any warnings that were generated.
     """
     current_file_contents = dict(original_file_contents)
     original_contents_for_diffing = dict(original_file_contents)
+    warnings: list[WarningMessage] = []
 
-    chunks = _FILE_HEADER_REGEX.split(llm_response)
-    initial_convo = chunks.pop(0)
-    if initial_convo:
-        yield initial_convo
-
-    for i in range(0, len(chunks), 2):
-        header_line = chunks[i]
-        content = chunks[i + 1] if (i + 1) < len(chunks) else ""
+    for file_header_match in _FILE_HEADER_REGEX.finditer(llm_response):
+        header_line = file_header_match.group(1)
         llm_file_path = header_line.strip().removeprefix("File:").strip()
-        last_end = 0
-        matches = list(_FILE_BLOCK_REGEX.finditer(content))
+
+        block_content_start = file_header_match.end()
+        next_match_start = len(llm_response)
+        next_header_iter = _FILE_HEADER_REGEX.finditer(llm_response, pos=block_content_start)
+        next_header_match = next(next_header_iter, None)
+        if next_header_match:
+            next_match_start = next_header_match.start()
+
+        block_content = llm_response[block_content_start:next_match_start]
+        matches = list(_FILE_BLOCK_REGEX.finditer(block_content))
 
         if not matches:
-            yield header_line + content
             continue
 
         for match in matches:
-            if match.start() > last_end:
-                yield content[last_end : match.start()]
-            last_end = match.end()
-
             parsed_block = _create_aipatch_from_match(match, llm_file_path)
             resolution = _resolve_file_path(parsed_block, current_file_contents, session_root)
 
             if resolution.warning:
-                yield WarningMessage(text=resolution.warning)
+                warnings.append(WarningMessage(text=resolution.warning))
 
             if resolution.path is None:
-                # The warning is just text, but for the display, we show a minimal diff header.
-                diff_string = (
-                    f"--- a/{parsed_block.llm_file_path} (not found)\n+++ b/{parsed_block.llm_file_path} (not found)\n"
-                )
-                yield WarningMessage(text=_create_file_not_found_error(parsed_block.llm_file_path))
-                yield ProcessedDiffBlock(llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string)
+                warnings.append(WarningMessage(text=_create_file_not_found_error(parsed_block.llm_file_path)))
                 continue
 
             actual_file_path = resolution.path
@@ -474,14 +402,143 @@ def process_llm_response_stream(
                 else:
                     current_file_contents[actual_file_path] = result.new_content
             else:
-                # Patch failed, so new_content is None. Yield a warning.
-                error_text = _create_patch_failed_error(actual_file_path)
-                yield WarningMessage(text=error_text)
+                warnings.append(WarningMessage(text=_create_patch_failed_error(actual_file_path)))
 
-            yield result.diff_block
+    return current_file_contents, original_contents_for_diffing, warnings
 
-        if last_end < len(content):
-            yield content[last_end:]
+
+def _apply_patches(
+    original_file_contents: FileContents, llm_response: str, session_root: Path
+) -> PatchApplicationResult:
+    """
+    Applies all patches from an LLM response to calculate the final state of files.
+
+    This function is a consumer of the `_process_patches_sequentially` generator.
+    Its only purpose is to compute the "after" state of all files by sequentially
+    applying every valid patch.
+
+    Returns:
+        A PatchApplicationResult containing:
+        - The final contents of all files after patches.
+        - The baseline "before" contents, updated with any filesystem fallbacks.
+        - A list of any warnings that were generated.
+    """
+    final_state, final_baseline, warnings = _process_patches_sequentially(
+        original_file_contents, llm_response, session_root
+    )
+
+    return PatchApplicationResult(
+        post_patch_contents=final_state,
+        baseline_contents_for_diff=final_baseline,
+        warnings=warnings,
+    )
+
+
+def process_llm_response_stream(
+    original_file_contents: FileContents,
+    llm_response: str,
+    session_root: Path,
+) -> Iterator[StreamYieldItem]:
+    """
+    The single, robust parsing engine that drives all diffing operations.
+
+    This generator uses a "scan-and-yield" approach with `finditer` to preserve
+    all text from the LLM response, including interstitial conversational text
+    and newlines that would be lost by a `split()`-based approach. It encapsulates
+    its own state, creating a temporary copy of file contents to ensure that each
+    patch for a given file is applied against the result of the previous one.
+
+    It yields items representing the entire parsed sequence: conversational text,
+    processed diff blocks, and warnings.
+
+    Args:
+        original_file_contents: An immutable mapping of the original file contents.
+        llm_response: The raw response from the language model.
+        session_root: The root path of the session.
+
+    Yields:
+        Either a string (for conversational text), a ProcessedDiffBlock, or a WarningMessage.
+    """
+    current_file_contents = dict(original_file_contents)
+    original_contents_for_diffing = dict(original_file_contents)
+    last_end = 0
+
+    for file_header_match in _FILE_HEADER_REGEX.finditer(llm_response):
+        # Yield any conversational text that appeared before this file block
+        if file_header_match.start() > last_end:
+            yield llm_response[last_end : file_header_match.start()]
+
+        header_line = file_header_match.group(1)
+        llm_file_path = header_line.strip().removeprefix("File:").strip()
+
+        # The content for this file block is from the end of its header to the start of the next one
+        # or to the end of the string.
+        block_content_start = file_header_match.end()
+        next_match_start = len(llm_response)
+        # Peek ahead to find the start of the next file block
+        next_header_iter = _FILE_HEADER_REGEX.finditer(llm_response, pos=block_content_start)
+        next_header_match = next(next_header_iter, None)
+        if next_header_match:
+            next_match_start = next_header_match.start()
+
+        block_content = llm_response[block_content_start:next_match_start]
+        block_last_end = 0
+        matches = list(_FILE_BLOCK_REGEX.finditer(block_content))
+
+        if not matches:
+            # If no SEARCH/REPLACE blocks found, treat the whole block as conversational
+            yield header_line + block_content
+        else:
+            yield FileHeader(llm_file_path=llm_file_path)
+            for match in matches:
+                # Yield conversational text inside a file block (between patches)
+                if match.start() > block_last_end:
+                    yield block_content[block_last_end : match.start()]
+                block_last_end = match.end()
+
+                parsed_block = _create_aipatch_from_match(match, llm_file_path)
+                resolution = _resolve_file_path(parsed_block, current_file_contents, session_root)
+
+                if resolution.warning:
+                    yield WarningMessage(text=resolution.warning)
+
+                if resolution.path is None:
+                    diff_string = (
+                        f"--- a/{parsed_block.llm_file_path} (not found)\n"
+                        + f"+++ b/{parsed_block.llm_file_path} (not found)\n"
+                    )
+                    yield WarningMessage(text=_create_file_not_found_error(parsed_block.llm_file_path))
+                    yield ProcessedDiffBlock(llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string)
+                    continue
+
+                actual_file_path = resolution.path
+                if resolution.fallback_content is not None:
+                    current_file_contents[actual_file_path] = resolution.fallback_content
+                    original_contents_for_diffing[actual_file_path] = resolution.fallback_content
+
+                is_new_file = actual_file_path not in original_contents_for_diffing
+                content_before_patch = current_file_contents.get(actual_file_path, "")
+                result = _process_single_diff_block(parsed_block, content_before_patch, is_new_file, actual_file_path)
+
+                if result.new_content is not None:
+                    if not result.new_content and actual_file_path in current_file_contents:
+                        del current_file_contents[actual_file_path]
+                    else:
+                        current_file_contents[actual_file_path] = result.new_content
+                else:
+                    error_text = _create_patch_failed_error(actual_file_path)
+                    yield WarningMessage(text=error_text)
+
+                yield result.diff_block
+
+            if block_last_end < len(block_content):
+                yield block_content[block_last_end:]
+
+        last_end = file_header_match.end() + len(block_content)
+
+    # Yield any final conversational text after the last file block
+    if last_end < len(llm_response):
+        yield llm_response[last_end:]
 
 
 def generate_unified_diff(original_file_contents: FileContents, llm_response: str, session_root: Path) -> str:
@@ -541,8 +598,10 @@ def generate_display_content(original_file_contents: FileContents, llm_response:
         match item:
             case str() as text:
                 output_parts.append(text)
-            case ProcessedDiffBlock(llm_file_path=llm_file_path, unified_diff=diff_string):
-                output_parts.append(f"File: `{llm_file_path}`\n```diff\n{diff_string.strip()}\n```\n")
+            case FileHeader(llm_file_path=llm_file_path):
+                output_parts.append(f"File: `{llm_file_path}`\n")
+            case ProcessedDiffBlock(unified_diff=diff_string):
+                output_parts.append(f"```diff\n{diff_string}```\n")
             case WarningMessage():
                 pass  # Warnings are ignored for display content
 

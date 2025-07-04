@@ -11,7 +11,7 @@ from aico.diffing import (
     generate_unified_diff,
     process_llm_response_stream,
 )
-from aico.models import PatchApplicationResult, ProcessedDiffBlock, WarningMessage
+from aico.models import FileHeader, PatchApplicationResult, ProcessedDiffBlock, WarningMessage
 
 
 def test_apply_patches_single_change(tmp_path: Path) -> None:
@@ -87,15 +87,17 @@ def test_process_llm_response_stream_handles_fallback(tmp_path: Path) -> None:
     # WHEN the stream is processed
     stream_results = list(process_llm_response_stream(original_contents, llm_response, tmp_path))
 
-    # THEN a warning and a valid diff block are yielded
-    assert len(stream_results) == 2
-    assert isinstance(stream_results[0], WarningMessage)
-    assert "WarningMessage" in str(stream_results[0])
-    assert "File 'file.py' was not in the session context" in stream_results[0].text
-    assert "ProcessedDiffBlock" in str(stream_results[1])
+    # THEN the header, a warning, and a valid diff block are yielded in order
+    assert len(stream_results) == 3
+    assert isinstance(stream_results[0], FileHeader)
+    assert stream_results[0].llm_file_path == "file.py"
+
+    assert isinstance(stream_results[1], WarningMessage)
+    assert "File 'file.py' was not in the session context" in stream_results[1].text
+
+    assert isinstance(stream_results[2], ProcessedDiffBlock)
     # And the diff is correct, showing a modification not a creation
-    assert isinstance(stream_results[1], ProcessedDiffBlock)
-    assert "--- a/file.py" in stream_results[1].unified_diff
+    assert "--- a/file.py" in stream_results[2].unified_diff
 
 
 def test_generate_diff_for_standard_change(tmp_path: Path) -> None:
@@ -798,7 +800,7 @@ def test_complex_multi_file_and_multi_patch_scenario(tmp_path: Path) -> None:
         "=======\n"
         "f1 line1 changed\n"
         ">>>>>>> REPLACE\n"
-        "Now for the more complex file.\n"
+        "\n\nNow for the more complex file.\n\n"
         "File: file2.py\n"
         "<<<<<<< SEARCH\n"
         "f2 line1\n"
@@ -841,7 +843,7 @@ def test_complex_multi_file_and_multi_patch_scenario(tmp_path: Path) -> None:
 
     # THEN it contains all conversational text and all rendered diffs
     assert "First, a simple change." in display_content
-    assert "Now for the more complex file." in display_content
+    assert "\n\nNow for the more complex file.\n\n" in display_content
     assert "And the second line in that same file." in display_content
     assert "All done." in display_content
 
@@ -909,6 +911,7 @@ def test_generate_diff_for_new_empty_file_followed_by_another_file(tmp_path: Pat
         "<<<<<<< SEARCH\n"
         "=======\n"
         ">>>>>>> REPLACE\n"
+        "\n\n"
         "File: app/renderer.py\n"
         "<<<<<<< SEARCH\n"
         "=======\n"
@@ -924,3 +927,29 @@ def test_generate_diff_for_new_empty_file_followed_by_another_file(tmp_path: Pat
         "--- /dev/null\n+++ b/app/__init__.py\n--- /dev/null\n+++ b/app/renderer.py\n@@ -0,0 +1 @@\n+import html\n"
     )
     assert diff == expected_diff
+
+
+def test_parser_preserves_interstitial_conversation_and_newlines(tmp_path: Path) -> None:
+    # GIVEN an LLM response with multiple files and conversational text with newlines between them
+    original_contents = {"file1.py": "content1", "file2.py": "content2"}
+    llm_response = (
+        "File: file1.py\n"
+        "<<<<<<< SEARCH\ncontent1\n=======\nnew content 1\n>>>>>>> REPLACE\n"
+        "\n\nAnd now for the second file.\n\n"
+        "File: file2.py\n"
+        "<<<<<<< SEARCH\ncontent2\n=======\nnew content 2\n>>>>>>> REPLACE\n"
+    )
+
+    # WHEN the display content is generated
+    display_content = generate_display_content(original_contents, llm_response, tmp_path)
+
+    # THEN the interstitial conversation and its newlines are preserved exactly
+    assert "\n\nAnd now for the second file.\n\n" in display_content
+
+    # WHEN the unified diff is generated
+    unified_diff = generate_unified_diff(original_contents, llm_response, tmp_path)
+
+    # THEN the diff is clean and contains no conversational text
+    assert "And now for the second file" not in unified_diff
+    assert "--- a/file1.py" in unified_diff
+    assert "--- a/file2.py" in unified_diff

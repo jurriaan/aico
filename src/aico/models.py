@@ -135,7 +135,12 @@ class WarningMessage:
     text: str
 
 
-type StreamYieldItem = str | ProcessedDiffBlock | WarningMessage
+@dataclass(slots=True, frozen=True)
+class FileHeader:
+    llm_file_path: str
+
+
+type StreamYieldItem = str | FileHeader | ProcessedDiffBlock | WarningMessage
 
 
 class LLMChatMessage(TypedDict):
