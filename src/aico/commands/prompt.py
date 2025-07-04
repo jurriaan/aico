@@ -146,7 +146,7 @@ def _handle_unified_streaming(
             console = Console(stderr=True)
             console.print("[yellow]Warnings:[/yellow]")
             for warning in warnings_to_display:
-                console.print(f"[yellow]- {warning}[/yellow]")
+                console.print(f"[yellow]{warning}[/yellow]")
 
     final_display_content = generate_display_content(original_file_contents, full_llm_response_buffer, session_root)
 

@@ -11,7 +11,7 @@ from aico.diffing import (
     generate_unified_diff,
     process_llm_response_stream,
 )
-from aico.models import PatchApplicationResult, ProcessedDiffBlock
+from aico.models import PatchApplicationResult, ProcessedDiffBlock, WarningMessage
 
 
 def test_apply_patches_single_change(tmp_path: Path) -> None:
@@ -57,10 +57,10 @@ def test_apply_patches_failed_patch_is_captured_as_warning(tmp_path: Path) -> No
     # THEN the final content is unchanged because the patch was not applied
     assert result.post_patch_contents == original_contents
 
-    # AND a warning message is returned containing the failed diff
+    # AND a warning message is returned containing a simple text error
     assert len(result.warnings) == 1
-    assert "patch failed" in result.warnings[0].text
-    assert "non-existent" in result.warnings[0].text
+    assert "could not be found in 'file.py'" in result.warnings[0].text
+    assert "Patch skipped" in result.warnings[0].text
 
 
 def test_apply_patches_filesystem_fallback(tmp_path: Path) -> None:
@@ -75,7 +75,7 @@ def test_apply_patches_filesystem_fallback(tmp_path: Path) -> None:
     # THEN the final content is correct and a warning is returned
     assert result.post_patch_contents == {"file.py": "new content\n"}
     assert len(result.warnings) == 1
-    assert "was not in the session context but was found on disk" in result.warnings[0].text
+    assert "File 'file.py' was not in the session context but was found on disk" in result.warnings[0].text
 
 
 def test_process_llm_response_stream_handles_fallback(tmp_path: Path) -> None:
@@ -89,7 +89,9 @@ def test_process_llm_response_stream_handles_fallback(tmp_path: Path) -> None:
 
     # THEN a warning and a valid diff block are yielded
     assert len(stream_results) == 2
+    assert isinstance(stream_results[0], WarningMessage)
     assert "WarningMessage" in str(stream_results[0])
+    assert "File 'file.py' was not in the session context" in stream_results[0].text
     assert "ProcessedDiffBlock" in str(stream_results[1])
     # And the diff is correct, showing a modification not a creation
     assert isinstance(stream_results[1], ProcessedDiffBlock)

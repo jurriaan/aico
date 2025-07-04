@@ -184,9 +184,10 @@ def _resolve_file_path(
     session_root: Path,
 ) -> ResolvedFilePath:
     """
-    Resolves the file path from an AI patch, returning the content if found via fallback.
+    Resolves the canonical file path for an AI-generated patch.
 
-    This function is now side-effect free. It no longer mutates dictionaries.
+    This pure function determines the correct path for a file and checks if a
+    fallback to the filesystem is necessary. It follows a clear resolution order:
 
     1.  Exact match in the current set of files being processed.
     2.  New file intent (empty search block).
@@ -206,7 +207,7 @@ def _resolve_file_path(
     if disk_path.is_file():
         content = disk_path.read_text()
         warning = (
-            f"Warning: '{patch.llm_file_path}' was not in the session context but was found on disk. "
+            f"File '{patch.llm_file_path}' was not in the session context but was found on disk. "
             "Consider adding it to the session."
         )
         return ResolvedFilePath(path=patch.llm_file_path, warning=warning, fallback_content=content)
@@ -224,68 +225,16 @@ def _create_aipatch_from_match(match: re.Match[str], llm_file_path: str) -> AIPa
     )
 
 
-def _create_file_not_found_error_diff(llm_path: str) -> str:
-    return (
-        f"--- a/{llm_path} (not found)\n"
-        f"+++ b/{llm_path} (not found)\n"
-        f"@@ -1 +2 @@\n"
-        f"-Error: The file path '{llm_path}' from the AI does not match any file in the context.\n"
-        f"+Skipping this block."
+def _create_file_not_found_error(llm_path: str) -> str:
+    return f"File '{llm_path}' from the AI does not match any file in context. Patch skipped."
+
+
+def _create_patch_failed_error(file_path: str) -> str:
+    error_message = (
+        f"The SEARCH block from the AI could not be found in '{file_path}'. "
+        f"This can happen if the file has changed or the AI made a mistake. Patch skipped."
     )
-
-
-def _create_patch_failed_error_diff(file_path: str, search_block: str, original_content: str) -> str:
-    error_message_lines: list[str] = [
-        f"Error: The SEARCH block from the AI could not be found in '{file_path}'.\n",
-        "This can happen if the file has changed, or if the AI made a mistake.\n",
-    ]
-
-    # Find best match for context to show the user
-    original_lines = original_content.splitlines()
-    search_lines = search_block.splitlines()
-
-    if search_lines:
-        matcher = difflib.SequenceMatcher(None, original_lines, search_lines, autojunk=False)
-        match = matcher.find_longest_match(0, len(original_lines), 0, len(search_lines))
-
-        # Only show context if a reasonable portion of the search block was matched.
-        is_significant_match = match.size > 0 and (match.size / len(search_lines)) > 0.5
-        if is_significant_match:
-            error_message_lines.extend(
-                [
-                    f"\nThe AI may have been targeting the code found near line {match.a + 1}:\n",
-                    "--- CONTEXT FROM ORIGINAL FILE ---\n",
-                ]
-            )
-
-            context_radius = 2
-            start = max(0, match.a - context_radius)
-            end = min(len(original_lines), match.a + match.size + context_radius)
-
-            for i, line in enumerate(original_lines[start:end], start=start):
-                prefix = "  "
-                if match.a <= i < match.a + match.size:
-                    prefix = "> "
-                error_message_lines.append(f"{i + 1:4d}{prefix}{line}\n")
-            error_message_lines.append("--- END CONTEXT ---\n")
-
-    error_message_lines.extend(
-        [
-            "\nThe AI provided the following SEARCH block:\n",
-            "--- SEARCH BLOCK ---\n",
-        ]
-        + [line + "\n" for line in search_block.splitlines()]
-        + ["--- END SEARCH BLOCK ---\n"]
-    )
-
-    return "".join(
-        difflib.unified_diff(
-            [],
-            error_message_lines,
-            fromfile=f"a/{file_path}",
-            tofile=f"b/{file_path} (patch failed)",
-        )
-    )
+    return error_message
 
 
 def parse_live_render_segments(llm_response: str) -> Iterator[tuple[str, str]]:
@@ -329,7 +278,8 @@ def _process_single_diff_block(
     """
     Processes a single parsed AIPatch block and returns the resulting content and diff block.
 
-    This is now a PURE function. It does not perform I/O or mutate external state.
+    This is a pure function that does not perform I/O or mutate external state. It
+    takes the "before" state and a patch, and returns the "after" state and a diff.
     """
     diff_string: str
     search_content = parsed_block.search_content
@@ -340,7 +290,8 @@ def _process_single_diff_block(
     )
 
     if new_content_full is None:
-        diff_string = _create_patch_failed_error_diff(actual_file_path, search_content, content_before_patch)
+        # Create a user-friendly error diff, but the warning will be a simple string
+        diff_string = f"--- a/{actual_file_path} (patch failed)\n+++ b/{actual_file_path} (patch failed)\n"
         return ProcessedPatchResult(
             new_content=None,
             diff_block=ProcessedDiffBlock(llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string),
@@ -417,9 +368,8 @@ def _apply_patches(
                 warnings.append(WarningMessage(text=resolution.warning))
 
             if resolution.path is None:
-                error_diff = _create_file_not_found_error_diff(parsed_block.llm_file_path)
-                # Treat file not found as a warning for the user
-                warnings.append(WarningMessage(text=error_diff))
+                error_text = _create_file_not_found_error(parsed_block.llm_file_path)
+                warnings.append(WarningMessage(text=error_text))
                 continue
 
             actual_file_path = resolution.path
@@ -439,7 +389,8 @@ def _apply_patches(
                     post_patch_contents[actual_file_path] = result.new_content
             else:
                 # Patch failed, so `new_content` is None. Treat as a warning.
-                warnings.append(WarningMessage(text=result.diff_block.unified_diff))
+                error_text = _create_patch_failed_error(actual_file_path)
+                warnings.append(WarningMessage(text=error_text))
 
     return PatchApplicationResult(
         post_patch_contents=post_patch_contents,
@@ -500,7 +451,11 @@ def process_llm_response_stream(
                 yield WarningMessage(text=resolution.warning)
 
             if resolution.path is None:
-                diff_string = _create_file_not_found_error_diff(parsed_block.llm_file_path)
+                # The warning is just text, but for the display, we show a minimal diff header.
+                diff_string = (
+                    f"--- a/{parsed_block.llm_file_path} (not found)\n+++ b/{parsed_block.llm_file_path} (not found)\n"
+                )
+                yield WarningMessage(text=_create_file_not_found_error(parsed_block.llm_file_path))
                 yield ProcessedDiffBlock(llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string)
                 continue
 
@@ -518,6 +473,10 @@ def process_llm_response_stream(
                     del current_file_contents[actual_file_path]
                 else:
                     current_file_contents[actual_file_path] = result.new_content
+            else:
+                # Patch failed, so new_content is None. Yield a warning.
+                error_text = _create_patch_failed_error(actual_file_path)
+                yield WarningMessage(text=error_text)
 
             yield result.diff_block
 

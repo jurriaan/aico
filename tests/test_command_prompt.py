@@ -428,8 +428,8 @@ def test_edit_command_with_filesystem_fallback_and_warning(tmp_path: Path, mocke
         # AND two distinct warnings about the fallbacks are printed to stderr
         stderr = result.stderr.replace("\n", "")
         assert "Warnings:" in stderr
-        assert "Warning: 'fallback1.py' was not in the session context but was found on disk." in stderr
-        assert "Warning: 'sub/fallback2.py' was not in the session context but was found on disk." in stderr
+        assert "File 'fallback1.py' was not in the session context but was found on disk." in stderr
+        assert "File 'sub/fallback2.py' was not in the session context but was found on disk." in stderr
 
         # AND the session file now includes the fallback files in its original content record
         final_session = load_final_session(Path(td))
