@@ -9,6 +9,7 @@ from aico.commands.init import init
 from aico.commands.last import last
 from aico.commands.prompt import ask, edit, prompt
 from aico.commands.tokens import tokens_app
+from aico.commands.undo import undo
 
 app = typer.Typer()
 app.add_typer(history_app, name="history")
@@ -20,6 +21,7 @@ _ = app.command("last")(last)
 _ = app.command("add")(add)
 _ = app.command("drop")(drop)
 _ = app.command("init")(init)
+_ = app.command("undo")(undo)
 register_addon_commands(app)
 
 

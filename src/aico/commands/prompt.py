@@ -180,12 +180,14 @@ def _build_messages(
     if mode == Mode.DIFF:
         system_prompt += DIFF_MODE_INSTRUCTIONS
 
-    context_str = "<context>\n"
-    for relative_path_str, content in original_file_contents.items():
-        context_str += f'  <file path="{relative_path_str}">\n{content}\n</file>\n'
-    context_str += "</context>\n"
+    user_prompt_parts: list[str] = []
+    if original_file_contents:
+        context_str = "<context>\n"
+        for relative_path_str, content in original_file_contents.items():
+            context_str += f'  <file path="{relative_path_str}">\n{content}\n</file>\n'
+        context_str += "</context>\n"
+        user_prompt_parts.append(context_str)
 
-    user_prompt_parts = [context_str]
     if piped_content:
         user_prompt_parts.append(f"<stdin_content>\n{piped_content}\n</stdin_content>\n")
 

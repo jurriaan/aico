@@ -109,6 +109,7 @@ Repeat steps 5 and 6 for each increment of the plan.
   - `aico history view`: See the current status of the history.
   - `aico history set <index>`: Set which message the active history starts from.
   - `aico history reset`: Reset the history to include all messages.
+- `aico undo [N]`: Marks the last N message pairs as excluded from future context (defaults to 1). This is a "soft delete" that lets you undo recent conversational steps without losing the history, which is useful if an instruction produced an undesirable result.
 
 ## Addons: Extending `aico`
 

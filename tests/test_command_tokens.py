@@ -7,7 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from aico.main import app
-from aico.models import Mode, SessionData, UserChatMessage
+from aico.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
 from aico.utils import SESSION_FILE_NAME, save_session
 
 runner = CliRunner()
@@ -182,3 +182,55 @@ def test_tokens_command_hides_zero_remaining_tokens(tmp_path: Path, mocker) -> N
         assert "200" in result.stdout and "max tokens" in result.stdout
         # AND 'remaining tokens' is NOT displayed
         assert "remaining tokens" not in result.stdout
+
+
+def test_tokens_command_omits_excluded_messages(tmp_path: Path, mocker) -> None:
+    """
+    Tests that `aico tokens` correctly excludes messages marked with is_excluded=True
+    from its calculation.
+    """
+    # GIVEN a session with a mix of active and excluded history
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        session_dir = Path(td)
+        history = [
+            UserChatMessage(role="user", content="active message", mode=Mode.CONVERSATION, timestamp="t1"),
+            AssistantChatMessage(
+                role="assistant",
+                content="active resp",
+                mode=Mode.CONVERSATION,
+                timestamp="t2",
+                model="m",
+                duration_ms=1,
+            ),
+            UserChatMessage(
+                role="user", content="excluded message", mode=Mode.CONVERSATION, timestamp="t3", is_excluded=True
+            ),
+        ]
+        session_data = SessionData(model="test-model", context_files=[], chat_history=history)
+        save_session(session_dir / SESSION_FILE_NAME, session_data)
+
+        # AND the token counter is mocked
+        mock_token_counter = mocker.patch("litellm.token_counter")
+        # System prompt, alignment-convo, alignment-diff, chat history
+        mock_token_counter.side_effect = [100, 50, 40, 20]
+        mocker.patch("litellm.completion_cost", return_value=None)
+        mocker.patch("litellm.get_model_info", return_value={"max_input_tokens": 1000})
+
+        # WHEN `aico tokens` is run
+        result = runner.invoke(app, ["tokens"])
+
+        # THEN the command succeeds
+        assert result.exit_code == 0
+
+        # AND the "chat history" component should have a count of 20
+        assert "20" in result.stdout and "chat history" in result.stdout
+        # AND the total should reflect only the active messages (100 + 50 + 20 = 170)
+        # The max alignment prompt tokens will be 50. Total = 100(sys) + 50(align) + 20(hist) = 170.
+        assert "170" in result.stdout and "total" in result.stdout
+
+        # AND the reconstructed messages passed to the token counter should not contain the excluded message
+        reconstructed_call = mock_token_counter.call_args_list[3]  # The fourth call is for history
+        messages_arg = reconstructed_call.kwargs["messages"]
+        assert len(messages_arg) == 2
+        assert "active message" in messages_arg[0]["content"]
+        assert "active resp" in messages_arg[1]["content"]

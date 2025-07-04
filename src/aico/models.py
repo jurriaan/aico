@@ -43,6 +43,7 @@ class UserChatMessage:
     timestamp: str
     piped_content: str | None = None
     passthrough: bool = False
+    is_excluded: bool = False
 
 
 @dataclass(slots=True, frozen=True)
@@ -62,6 +63,7 @@ class AssistantChatMessage:
     derived: DerivedContent | None = None
     token_usage: TokenUsage | None = None
     cost: float | None = None
+    is_excluded: bool = False
 
 
 type ChatMessageHistoryItem = UserChatMessage | AssistantChatMessage

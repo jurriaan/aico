@@ -8,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from aico.main import app
-from aico.models import Mode, SessionData, UserChatMessage
+from aico.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
 from aico.utils import SESSION_FILE_NAME, save_session
 
 runner = CliRunner()
@@ -46,32 +46,77 @@ def test_history_set_with_negative_index_argument(tmp_path: Path) -> None:
         assert updated_session_data["history_start_index"] == 8
 
 
-def test_history_view_shows_correct_status(tmp_path: Path) -> None:
-    # GIVEN a session with 10 messages and the index at 4
+def test_history_view_shows_summary_with_excluded_and_start_index(tmp_path: Path) -> None:
+    # GIVEN a session with 6 messages, start index at 2, and one pair excluded after the start index
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        session_data = SessionData(
-            model="test-model",
-            chat_history=[
-                UserChatMessage(
-                    role="user",
-                    content=f"msg {i}",
-                    mode=Mode.CONVERSATION,
-                    timestamp=datetime.now(UTC).isoformat(),
-                )
-                for i in range(10)
-            ],
-            context_files=[],
-            history_start_index=4,
-        )
+        history = [
+            UserChatMessage(
+                role="user", content="msg 0", mode=Mode.CONVERSATION, timestamp="t0"
+            ),  # Active, but before start_index
+            AssistantChatMessage(
+                role="assistant", content="resp 0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=1
+            ),
+            UserChatMessage(role="user", content="msg 1", mode=Mode.CONVERSATION, timestamp="t1"),  # Included
+            AssistantChatMessage(
+                role="assistant", content="resp 1", mode=Mode.CONVERSATION, timestamp="t1", model="m", duration_ms=1
+            ),
+            UserChatMessage(
+                role="user", content="msg 2", mode=Mode.CONVERSATION, timestamp="t2", is_excluded=True
+            ),  # Excluded
+            AssistantChatMessage(
+                role="assistant",
+                content="resp 2",
+                mode=Mode.CONVERSATION,
+                timestamp="t2",
+                model="m",
+                duration_ms=1,
+                is_excluded=True,
+            ),
+        ]
+        session_data = SessionData(model="test-model", chat_history=history, context_files=[], history_start_index=2)
         save_session(Path(td) / SESSION_FILE_NAME, session_data)
 
         # WHEN `aico history view` is run
         result = runner.invoke(app, ["history", "view"])
 
-        # THEN the command succeeds and shows the correct status
+        # THEN the command succeeds and shows the correct summary
         assert result.exit_code == 0
-        assert "Active history starts at index 4 of 10 total messages." in result.stdout
-        assert "(6 messages will be sent as context in the next prompt.)" in result.stdout
+        output = result.stdout
+        expected_output = (
+            "History contains 6 total messages. "
+            "The next prompt will use 2 of these, starting from message 2. "
+            "2 messages are excluded in total (use 'aico undo' to exclude more)."
+        )
+        assert expected_output in output
+
+
+def test_history_view_shows_summary_with_no_excluded_messages(tmp_path: Path) -> None:
+    # GIVEN a session with 4 messages, none excluded, start index at 0
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        history = [
+            UserChatMessage(role="user", content="msg 0", mode=Mode.CONVERSATION, timestamp="t0"),
+            AssistantChatMessage(
+                role="assistant", content="resp 0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=1
+            ),
+            UserChatMessage(role="user", content="msg 1", mode=Mode.CONVERSATION, timestamp="t1"),
+            AssistantChatMessage(
+                role="assistant", content="resp 1", mode=Mode.CONVERSATION, timestamp="t1", model="m", duration_ms=1
+            ),
+        ]
+        session_data = SessionData(model="test-model", chat_history=history, context_files=[], history_start_index=0)
+        save_session(Path(td) / SESSION_FILE_NAME, session_data)
+
+        # WHEN `aico history view` is run
+        result = runner.invoke(app, ["history", "view"])
+
+        # THEN the command succeeds and shows the correct summary without mentioning excluded messages
+        assert result.exit_code == 0
+        output = result.stdout
+        expected_output = (
+            "History contains 4 total messages. The next prompt will use 4 of these, starting from message 0."
+        )
+        assert expected_output in output
+        assert "excluded" not in output
 
 
 def test_history_reset_sets_index_to_zero(tmp_path: Path) -> None:

@@ -469,3 +469,40 @@ def test_prompt_passthrough_mode_bypasses_context_and_formatting(tmp_path: Path,
         user_msg = final_session.chat_history[0]
         assert isinstance(user_msg, UserChatMessage)
         assert user_msg.passthrough is True
+
+
+def test_prompt_with_excluded_history_omits_messages(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN a session with a mix of active and excluded messages
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+        # Run a sequence of prompts to create history
+        mock_completion = setup_prompt_test(mocker, Path(td), "response 1")
+        runner.invoke(app, ["ask", "prompt 1"])
+        mock_completion.return_value.__iter__.return_value = iter([_create_mock_stream_chunk("response 2", mocker)])
+        runner.invoke(app, ["ask", "prompt 2"])
+        mock_completion.return_value.__iter__.return_value = iter([_create_mock_stream_chunk("response 3", mocker)])
+        runner.invoke(app, ["ask", "prompt 3"])
+
+        from dataclasses import replace
+
+        # Exclude the second pair (messages at index 2 and 3)
+        session_data = load_final_session(Path(td))
+        from aico.utils import save_session
+
+        session_data.chat_history[2] = replace(session_data.chat_history[2], is_excluded=True)
+        session_data.chat_history[3] = replace(session_data.chat_history[3], is_excluded=True)
+        save_session(Path(td) / SESSION_FILE_NAME, session_data)
+
+        # WHEN another prompt is run
+        mock_completion.return_value.__iter__.return_value = iter([_create_mock_stream_chunk("response 4", mocker)])
+        runner.invoke(app, ["ask", "prompt 4"])
+
+        # THEN the call to the LLM should only contain the non-excluded history
+        # History sent: (system), prompt 1 + resp 1, prompt 3 + resp 3, (alignment), prompt 4
+        messages = mock_completion.call_args.kwargs["messages"]
+        assert len(messages) == 8  # sys, user1, asst1, user3, asst3, align_user, align_asst, user4
+        user_prompts = [m["content"] for m in messages if m["role"] == "user"]
+        assert "<prompt>\nprompt 1\n</prompt>" in user_prompts
+        assert "<prompt>\nprompt 2\n</prompt>" not in user_prompts
+        assert "<prompt>\nprompt 3\n</prompt>" in user_prompts
+        assert "<prompt>\nprompt 4\n</prompt>" in user_prompts

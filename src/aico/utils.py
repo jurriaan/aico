@@ -108,7 +108,9 @@ def reconstruct_historical_messages(
     history: list[ChatMessageHistoryItem],
 ) -> list[LLMChatMessage]:
     reconstructed: list[LLMChatMessage] = []
-    for msg in history:
+    active_history = [msg for msg in history if not msg.is_excluded]
+
+    for msg in active_history:
         reconstructed_msg: LLMChatMessage
         match msg:
             case UserChatMessage(passthrough=True) as m:

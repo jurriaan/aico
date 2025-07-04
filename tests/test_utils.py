@@ -28,7 +28,7 @@ def test_aico_session_file_env_var_works(tmp_path: Path, mocker: MockerFixture) 
 
         # THEN the command succeeds and uses the session file from the env var
         assert result.exit_code == 0
-        assert "Active history starts" in result.stdout
+        assert "Chat history is empty" in result.stdout
 
 
 def test_aico_session_file_env_var_fails_for_relative_path(tmp_path: Path, mocker: MockerFixture) -> None:
@@ -71,4 +71,37 @@ def test_aico_session_file_env_var_not_set_uses_upward_search(tmp_path: Path) ->
 
         # THEN the command succeeds and finds the session file via upward search
         assert result.exit_code == 0
-        assert "Active history starts" in result.stdout
+        assert "Chat history is empty" in result.stdout
+
+
+def test_reconstruct_historical_messages_filters_excluded() -> None:
+    # GIVEN a history list with a mix of active and excluded messages
+    from aico.models import AssistantChatMessage, Mode, UserChatMessage
+    from aico.utils import reconstruct_historical_messages
+
+    history = [
+        UserChatMessage(role="user", content="active 1", mode=Mode.RAW, timestamp="t1"),
+        AssistantChatMessage(
+            role="assistant", content="active 1", mode=Mode.RAW, timestamp="t2", model="m", duration_ms=1
+        ),
+        UserChatMessage(role="user", content="excluded 1", mode=Mode.RAW, timestamp="t3", is_excluded=True),
+        AssistantChatMessage(
+            role="assistant",
+            content="excluded 1",
+            mode=Mode.RAW,
+            timestamp="t4",
+            model="m",
+            duration_ms=1,
+            is_excluded=True,
+        ),
+        UserChatMessage(role="user", content="active 2", mode=Mode.RAW, timestamp="t5"),
+    ]
+
+    # WHEN the history is reconstructed
+    reconstructed = reconstruct_historical_messages(history)
+
+    # THEN the reconstructed list only contains the non-excluded messages
+    assert len(reconstructed) == 3
+    assert "<prompt>\nactive 1\n</prompt>" in reconstructed[0]["content"]
+    assert "active 1" in reconstructed[1]["content"]
+    assert "<prompt>\nactive 2\n</prompt>" in reconstructed[2]["content"]

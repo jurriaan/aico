@@ -15,14 +15,32 @@ history_app = typer.Typer(
 @history_app.command()
 def view() -> None:
     """
-    Shows the current history start index and total message count.
+    Shows a summary of the chat history status.
     """
     _, session_data = load_session()
-    history_len = len(session_data.chat_history)
+    history = session_data.chat_history
+    history_len = len(history)
+
+    if history_len == 0:
+        print("Chat history is empty.")
+        return
+
     start_index = session_data.history_start_index
-    active_messages = history_len - start_index
-    print(f"Active history starts at index {start_index} of {history_len} total messages.")
-    print(f"({active_messages} messages will be sent as context in the next prompt.)")
+    total_excluded_count = sum(1 for msg in history if msg.is_excluded)
+
+    potential_context_slice = history[start_index:]
+    truly_active_count = sum(1 for msg in potential_context_slice if not msg.is_excluded)
+
+    main_status_parts = [
+        f"History contains {history_len} total messages.",
+        f"The next prompt will use {truly_active_count} of these, starting from message {start_index}.",
+    ]
+    if total_excluded_count > 0:
+        main_status_parts.append(
+            f"{total_excluded_count} messages are excluded in total (use 'aico undo' to exclude more)."
+        )
+
+    print(" ".join(main_status_parts))
 
 
 @history_app.command()

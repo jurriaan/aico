@@ -67,7 +67,9 @@ def tokens(
         total_tokens += alignment_prompts_tokens
 
     # 3. Chat History Tokens
-    active_history = session_data.chat_history[session_data.history_start_index :]
+    active_history = [
+        msg for msg in session_data.chat_history[session_data.history_start_index :] if not msg.is_excluded
+    ]
     if active_history:
         history_messages = reconstruct_historical_messages(active_history)
         history_tokens = litellm.token_counter(  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]
