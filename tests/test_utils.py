@@ -17,7 +17,7 @@ def test_aico_session_file_env_var_works(tmp_path: Path, mocker: MockerFixture) 
     session_dir = tmp_path / "custom" / "location"
     session_dir.mkdir(parents=True)
     session_file = session_dir / SESSION_FILE_NAME
-    save_session(session_file, SessionData(model="test-model"))
+    save_session(session_file, SessionData(model="test-model", context_files=[], chat_history=[]))
 
     # WHEN AICO_SESSION_FILE is set to that absolute path
     with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -63,7 +63,7 @@ def test_aico_session_file_env_var_not_set_uses_upward_search(tmp_path: Path) ->
     # GIVEN a session file in the current directory (normal case)
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_file = Path(td) / SESSION_FILE_NAME
-        save_session(session_file, SessionData(model="upward-search-model"))
+        save_session(session_file, SessionData(model="upward-search-model", context_files=[], chat_history=[]))
 
         # AND AICO_SESSION_FILE is not set
         # WHEN we run aico history view

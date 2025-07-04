@@ -11,6 +11,7 @@ from aico.diffing import (
     generate_unified_diff,
     process_llm_response_stream,
 )
+from aico.models import ProcessedDiffBlock
 
 
 def test_apply_patches_single_change(tmp_path: Path) -> None:
@@ -86,6 +87,7 @@ def test_process_llm_response_stream_handles_fallback(tmp_path: Path) -> None:
     assert "WarningMessage" in str(stream_results[0])
     assert "ProcessedDiffBlock" in str(stream_results[1])
     # And the diff is correct, showing a modification not a creation
+    assert isinstance(stream_results[1], ProcessedDiffBlock)
     assert "--- a/file.py" in stream_results[1].unified_diff
 
 
