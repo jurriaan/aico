@@ -431,6 +431,16 @@ def test_edit_command_with_filesystem_fallback_and_warning(tmp_path: Path, mocke
         assert "Warning: 'fallback1.py' was not in the session context but was found on disk." in stderr
         assert "Warning: 'sub/fallback2.py' was not in the session context but was found on disk." in stderr
 
+        # AND the session file now includes the fallback files in its original content record
+        final_session = load_final_session(Path(td))
+        assistant_msg = final_session.chat_history[-1]
+        assert isinstance(assistant_msg, AssistantChatMessage)
+        assert assistant_msg.derived is not None
+        assert assistant_msg.derived.unified_diff is not None
+        # Check that the fallback file content was used as the 'before' state for the diff
+        assert "-content 1" in assistant_msg.derived.unified_diff
+        assert "+new content 1" in assistant_msg.derived.unified_diff
+
 
 def test_prompt_passthrough_mode_bypasses_context_and_formatting(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN an initialized session with files in context

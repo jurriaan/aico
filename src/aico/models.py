@@ -107,6 +107,19 @@ class ProcessedDiffBlock:
 
 
 @dataclass(slots=True, frozen=True)
+class ProcessedPatchResult:
+    new_content: str | None
+    diff_block: ProcessedDiffBlock
+
+
+@dataclass(slots=True, frozen=True)
+class ResolvedFilePath:
+    path: str | None
+    warning: str | None
+    fallback_content: str | None
+
+
+@dataclass(slots=True, frozen=True)
 class WarningMessage:
     text: str
 

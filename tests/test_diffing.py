@@ -6,9 +6,87 @@ from pathlib import Path
 import pytest
 
 from aico.diffing import (
+    _apply_patches,
     generate_display_content,
     generate_unified_diff,
+    process_llm_response_stream,
 )
+
+
+def test_apply_patches_single_change(tmp_path: Path) -> None:
+    # GIVEN original content and a valid patch
+    original_contents = {"file.py": "old content"}
+    llm_response = "File: file.py\n<<<<<<< SEARCH\nold content\n=======\nnew content\n>>>>>>> REPLACE"
+
+    # WHEN _apply_patches is called
+    final_contents, _, warnings = _apply_patches(original_contents, llm_response, tmp_path)
+
+    # THEN the final content is correct and there are no warnings
+    assert final_contents == {"file.py": "new content\n"}
+    assert not warnings
+
+
+def test_apply_patches_sequential_changes(tmp_path: Path) -> None:
+    # GIVEN original content and two sequential patches for the same file
+    original_contents = {"file.py": "line 1\nline 2"}
+    llm_response = (
+        "File: file.py\n<<<<<<< SEARCH\nline 1\n=======\nline one\n>>>>>>> REPLACE\n"
+        "Some chat.\n"
+        "File: file.py\n<<<<<<< SEARCH\nline 2\n=======\nline two\n>>>>>>> REPLACE"
+    )
+
+    # WHEN _apply_patches is called
+    final_contents, _, warnings = _apply_patches(original_contents, llm_response, tmp_path)
+
+    # THEN the final content has both patches applied in order
+    # The `replace_content` from the regex captures the trailing newline.
+    assert final_contents == {"file.py": "line one\nline two\n"}
+    assert not warnings
+
+
+def test_apply_patches_failed_patch_is_ignored(tmp_path: Path) -> None:
+    # GIVEN original content and a patch that will fail
+    original_contents = {"file.py": "original content"}
+    llm_response = "File: file.py\n<<<<<<< SEARCH\nnon-existent\n=======\nnew\n>>>>>>> REPLACE"
+
+    # WHEN _apply_patches is called
+    final_contents, _, warnings = _apply_patches(original_contents, llm_response, tmp_path)
+
+    # THEN the final content is unchanged
+    assert final_contents == original_contents
+    assert not warnings
+
+
+def test_apply_patches_filesystem_fallback(tmp_path: Path) -> None:
+    # GIVEN an empty context, but a file on disk
+    (tmp_path / "file.py").write_text("disk content")
+    original_contents = {}
+    llm_response = "File: file.py\n<<<<<<< SEARCH\ndisk content\n=======\nnew content\n>>>>>>> REPLACE"
+
+    # WHEN _apply_patches is called
+    final_contents, _, warnings = _apply_patches(original_contents, llm_response, tmp_path)
+
+    # THEN the final content is correct and a warning is returned
+    assert final_contents == {"file.py": "new content\n"}
+    assert len(warnings) == 1
+    assert "was not in the session context but was found on disk" in warnings[0].text
+
+
+def test_process_llm_response_stream_handles_fallback(tmp_path: Path) -> None:
+    # GIVEN a file on disk but not in context
+    (tmp_path / "file.py").write_text("disk content")
+    original_contents = {}
+    llm_response = "File: file.py\n<<<<<<< SEARCH\ndisk content\n=======\nnew content\n>>>>>>> REPLACE"
+
+    # WHEN the stream is processed
+    stream_results = list(process_llm_response_stream(original_contents, llm_response, tmp_path))
+
+    # THEN a warning and a valid diff block are yielded
+    assert len(stream_results) == 2
+    assert "WarningMessage" in str(stream_results[0])
+    assert "ProcessedDiffBlock" in str(stream_results[1])
+    # And the diff is correct, showing a modification not a creation
+    assert "--- a/file.py" in stream_results[1].unified_diff
 
 
 def test_generate_diff_for_standard_change(tmp_path: Path) -> None:
@@ -781,14 +859,7 @@ def test_generate_diff_with_filesystem_fallback(tmp_path: Path) -> None:
     fallback_file = tmp_path / "fallback.py"
     fallback_file.write_text("original content")
     # AND an LLM response targeting that file
-    llm_response = (
-        "File: fallback.py\n"
-        "<<<<<<< SEARCH\n"
-        "original content\n"
-        "=======\n"
-        "new content\n"
-        ">>>>>>> REPLACE"
-    )
+    llm_response = "File: fallback.py\n<<<<<<< SEARCH\noriginal content\n=======\nnew content\n>>>>>>> REPLACE"
 
     # WHEN the unified diff is generated
     # The session_root is the tmp_path where the fallback file exists
@@ -854,11 +925,6 @@ def test_generate_diff_for_new_empty_file_followed_by_another_file(tmp_path: Pat
 
     # THEN it should contain a valid diff for BOTH files
     expected_diff = (
-        "--- /dev/null\n"
-        "+++ b/app/__init__.py\n"
-        "--- /dev/null\n"
-        "+++ b/app/renderer.py\n"
-        "@@ -0,0 +1 @@\n"
-        "+import html\n"
+        "--- /dev/null\n+++ b/app/__init__.py\n--- /dev/null\n+++ b/app/renderer.py\n@@ -0,0 +1 @@\n+import html\n"
     )
     assert diff == expected_diff
