@@ -441,7 +441,7 @@ def generate_display_content(original_file_contents: FileContents, llm_response:
             case str() as text:
                 return text
             case ProcessedDiffBlock(llm_file_path=llm_file_path, unified_diff=diff_string):
-                return f"File: {llm_file_path}\n```diff\n{diff_string.strip()}\n```\n"
+                return f"File: `{llm_file_path}`\n```diff\n{diff_string.strip()}\n```\n"
             case WarningMessage():
                 return ""
 

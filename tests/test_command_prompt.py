@@ -225,7 +225,7 @@ def test_ask_command_with_diff_response_saves_derived_content(tmp_path: Path, mo
             "--- a/file.py\n+++ b/file.py\n@@ -1 +1 @@\n-old content\n\\ No newline at end of file\n+new content\n"
         )
         assert expected_diff == assistant_msg.derived.unified_diff
-        assert f"File: file.py\n```diff\n{expected_diff}```\n" == assistant_msg.derived.display_content
+        assert f"File: `file.py`\n```diff\n{expected_diff}```\n" == assistant_msg.derived.display_content
 
 
 def test_prompt_fails_with_no_input(tmp_path: Path, mocker: MockerFixture) -> None:
