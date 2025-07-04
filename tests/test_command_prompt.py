@@ -78,7 +78,7 @@ def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) ->
 
         # THEN the command succeeds and prints the raw response
         assert result.exit_code == 0
-        assert result.stdout == f"{llm_response}\n"
+        assert result.stdout == llm_response
 
         # AND the API was called with the correct context and prompt, including alignment
         mock_completion.assert_called_once()
@@ -208,9 +208,12 @@ def test_ask_command_with_diff_response_saves_derived_content(tmp_path: Path, mo
         # WHEN `aico ask` is run
         result = runner.invoke(app, ["ask", "make a change"])
 
-        # THEN the command succeeds and prints the diff response for a non-TTY runner
+        # THEN the command succeeds and prints the unified diff for a non-TTY runner
         assert result.exit_code == 0
-        assert result.stdout == f"{llm_diff_response}\n"
+        expected_diff = (
+            "--- a/file.py\n+++ b/file.py\n@@ -1 +1 @@\n-old content\n\\ No newline at end of file\n+new content\n"
+        )
+        assert result.stdout == expected_diff
 
         # AND the session file is updated with BOTH the raw content AND parsed diffs
         final_session = load_final_session(Path(td))
@@ -221,11 +224,8 @@ def test_ask_command_with_diff_response_saves_derived_content(tmp_path: Path, mo
         assert assistant_msg.mode == "conversation"
         assert assistant_msg.derived is not None
         assert assistant_msg.derived.unified_diff is not None
-        expected_diff = (
-            "--- a/file.py\n+++ b/file.py\n@@ -1 +1 @@\n-old content\n\\ No newline at end of file\n+new content\n"
-        )
-        assert expected_diff == assistant_msg.derived.unified_diff
-        assert f"File: `file.py`\n```diff\n{expected_diff}```\n" == assistant_msg.derived.display_content
+        assert assistant_msg.derived.unified_diff == expected_diff
+        assert assistant_msg.derived.display_content == f"File: `file.py`\n```diff\n{expected_diff}```\n"
 
 
 def test_prompt_fails_with_no_input(tmp_path: Path, mocker: MockerFixture) -> None:

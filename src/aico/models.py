@@ -110,7 +110,7 @@ class ProcessedDiffBlock:
 
 @dataclass(slots=True, frozen=True)
 class ProcessedPatchResult:
-    new_content: str | None
+    new_content: str
     diff_block: ProcessedDiffBlock
 
 

@@ -8,16 +8,10 @@ from rich.markdown import Markdown
 from aico.diffing import (
     generate_display_content,
     generate_unified_diff,
+    process_patches_sequentially,
 )
-from aico.models import (
-    AssistantChatMessage,
-    ChatMessageHistoryItem,
-)
-from aico.utils import (
-    build_original_file_contents,
-    is_terminal,
-    load_session,
-)
+from aico.models import AssistantChatMessage, ChatMessageHistoryItem, Mode
+from aico.utils import build_original_file_contents, is_terminal, load_session
 
 
 def _render_content(content: str, use_rich_markdown: bool) -> None:
@@ -90,34 +84,46 @@ def last(
             _render_content(target_asst_msg.content, is_terminal())
         return
 
-    final_unified_diff: str | None = None
-    final_display_content: str | None = None
+    unified_diff: str | None = None
+    display_content: str | None = None
 
     if recompute:
         session_root = session_file.parent
         original_file_contents = build_original_file_contents(
             context_files=session_data.context_files, session_root=session_root
         )
-        final_unified_diff = generate_unified_diff(original_file_contents, target_asst_msg.content, session_root)
-        final_display_content = generate_display_content(original_file_contents, target_asst_msg.content, session_root)
+        _, _, warnings = process_patches_sequentially(original_file_contents, target_asst_msg.content, session_root)
+        unified_diff = generate_unified_diff(original_file_contents, target_asst_msg.content, session_root)
+        display_content = generate_display_content(original_file_contents, target_asst_msg.content, session_root)
+
+        if warnings:
+            console = Console(stderr=True)
+            console.print("[yellow]Warnings:[/yellow]")
+            for warning in warnings:
+                console.print(f"[yellow]{warning.text}[/yellow]")
     else:
         # Use stored data
         if target_asst_msg.derived:
-            final_unified_diff = target_asst_msg.derived.unified_diff
-            # Fallback to raw content if display_content was optimized away
-            final_display_content = target_asst_msg.derived.display_content or target_asst_msg.content
+            unified_diff = target_asst_msg.derived.unified_diff
+            display_content = target_asst_msg.derived.display_content or target_asst_msg.content
         else:
-            # Purely conversational messages have no derived content
-            final_display_content = target_asst_msg.content
+            unified_diff = None
+            display_content = target_asst_msg.content
 
-    content_to_show: str | None = None
-    use_rich_markdown = False
-
+    # Unified rendering logic
     if is_terminal():
-        content_to_show = final_display_content
-        use_rich_markdown = True
+        if display_content:
+            _render_content(display_content, use_rich_markdown=True)
     else:
-        content_to_show = final_unified_diff or final_display_content
-
-    if content_to_show:
-        _render_content(content_to_show, use_rich_markdown)
+        # Non-TTY (piped) output logic is now driven by original intent
+        if target_asst_msg.mode == Mode.DIFF:
+            # Strict Contract: For 'edit' commands, the contract is strict: only ever print the diff.
+            # An empty string is printed if the diff is empty or None.
+            print(unified_diff or "", end="")
+        else:  # Mode.CONVERSATION or Mode.RAW
+            # Flexible Contract: For 'ask' or 'raw' commands, be flexible. Prioritize a valid diff,
+            # but fall back to the display_content for conversations or errors.
+            if unified_diff:
+                print(unified_diff, end="")
+            elif display_content:
+                print(display_content, end="")

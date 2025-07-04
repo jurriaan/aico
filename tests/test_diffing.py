@@ -6,29 +6,28 @@ from pathlib import Path
 import pytest
 
 from aico.diffing import (
-    _apply_patches,
     generate_display_content,
     generate_unified_diff,
     process_llm_response_stream,
+    process_patches_sequentially,
 )
 from aico.models import FileHeader, PatchApplicationResult, ProcessedDiffBlock, WarningMessage
 
 
-def test_apply_patches_single_change(tmp_path: Path) -> None:
+def test_process_patches_sequentially_single_change(tmp_path: Path) -> None:
     # GIVEN original content and a valid patch
     original_contents = {"file.py": "old content"}
     llm_response = "File: file.py\n<<<<<<< SEARCH\nold content\n=======\nnew content\n>>>>>>> REPLACE"
 
-    # WHEN _apply_patches is called
-    result = _apply_patches(original_contents, llm_response, tmp_path)
+    # WHEN _process_patches_sequentially is called
+    post_patch_contents, _, warnings = process_patches_sequentially(original_contents, llm_response, tmp_path)
 
     # THEN the final content is correct and there are no warnings
-    assert isinstance(result, PatchApplicationResult)
-    assert result.post_patch_contents == {"file.py": "new content\n"}
-    assert not result.warnings
+    assert post_patch_contents == {"file.py": "new content\n"}
+    assert not warnings
 
 
-def test_apply_patches_sequential_changes(tmp_path: Path) -> None:
+def test_process_patches_sequentially_multiple_changes(tmp_path: Path) -> None:
     # GIVEN original content and two sequential patches for the same file
     original_contents = {"file.py": "line 1\nline 2"}
     llm_response = (
@@ -37,45 +36,44 @@ def test_apply_patches_sequential_changes(tmp_path: Path) -> None:
         "File: file.py\n<<<<<<< SEARCH\nline 2\n=======\nline two\n>>>>>>> REPLACE"
     )
 
-    # WHEN _apply_patches is called
-    result = _apply_patches(original_contents, llm_response, tmp_path)
+    # WHEN _process_patches_sequentially is called
+    post_patch_contents, _, warnings = process_patches_sequentially(original_contents, llm_response, tmp_path)
 
     # THEN the final content has both patches applied in order
-    # The `replace_content` from the regex captures the trailing newline.
-    assert result.post_patch_contents == {"file.py": "line one\nline two\n"}
-    assert not result.warnings
+    assert post_patch_contents == {"file.py": "line one\nline two\n"}
+    assert not warnings
 
 
-def test_apply_patches_failed_patch_is_captured_as_warning(tmp_path: Path) -> None:
+def test_process_patches_sequentially_failed_patch_is_captured_as_warning(tmp_path: Path) -> None:
     # GIVEN original content and a patch that will fail
     original_contents = {"file.py": "original content"}
     llm_response = "File: file.py\n<<<<<<< SEARCH\nnon-existent\n=======\nnew\n>>>>>>> REPLACE"
 
-    # WHEN _apply_patches is called
-    result = _apply_patches(original_contents, llm_response, tmp_path)
+    # WHEN _process_patches_sequentially is called
+    post_patch_contents, _, warnings = process_patches_sequentially(original_contents, llm_response, tmp_path)
 
     # THEN the final content is unchanged because the patch was not applied
-    assert result.post_patch_contents == original_contents
+    assert post_patch_contents == original_contents
 
     # AND a warning message is returned containing a simple text error
-    assert len(result.warnings) == 1
-    assert "could not be found in 'file.py'" in result.warnings[0].text
-    assert "Patch skipped" in result.warnings[0].text
+    assert len(warnings) == 1
+    assert "could not be found in 'file.py'" in warnings[0].text
+    assert "Patch skipped" in warnings[0].text
 
 
-def test_apply_patches_filesystem_fallback(tmp_path: Path) -> None:
+def test_process_patches_sequentially_filesystem_fallback(tmp_path: Path) -> None:
     # GIVEN an empty context, but a file on disk
     (tmp_path / "file.py").write_text("disk content")
     original_contents = {}
     llm_response = "File: file.py\n<<<<<<< SEARCH\ndisk content\n=======\nnew content\n>>>>>>> REPLACE"
 
-    # WHEN _apply_patches is called
-    result = _apply_patches(original_contents, llm_response, tmp_path)
+    # WHEN _process_patches_sequentially is called
+    post_patch_contents, _, warnings = process_patches_sequentially(original_contents, llm_response, tmp_path)
 
     # THEN the final content is correct and a warning is returned
-    assert result.post_patch_contents == {"file.py": "new content\n"}
-    assert len(result.warnings) == 1
-    assert "File 'file.py' was not in the session context but was found on disk" in result.warnings[0].text
+    assert post_patch_contents == {"file.py": "new content\n"}
+    assert len(warnings) == 1
+    assert "File 'file.py' was not in the session context but was found on disk" in warnings[0].text
 
 
 def test_process_llm_response_stream_handles_fallback(tmp_path: Path) -> None:
@@ -88,7 +86,8 @@ def test_process_llm_response_stream_handles_fallback(tmp_path: Path) -> None:
     stream_results = list(process_llm_response_stream(original_contents, llm_response, tmp_path))
 
     # THEN the header, a warning, and a valid diff block are yielded in order
-    assert len(stream_results) == 3
+    # The final item is now the PatchApplicationResult
+    assert len(stream_results) == 4
     assert isinstance(stream_results[0], FileHeader)
     assert stream_results[0].llm_file_path == "file.py"
 
@@ -98,6 +97,8 @@ def test_process_llm_response_stream_handles_fallback(tmp_path: Path) -> None:
     assert isinstance(stream_results[2], ProcessedDiffBlock)
     # And the diff is correct, showing a modification not a creation
     assert "--- a/file.py" in stream_results[2].unified_diff
+
+    assert isinstance(stream_results[3], PatchApplicationResult)
 
 
 def test_generate_diff_for_standard_change(tmp_path: Path) -> None:
@@ -618,6 +619,29 @@ def test_generate_embedded_markdown_diff_malformed_block(tmp_path: Path) -> None
     # THEN the malformed block is treated as conversational text and is preserved as-is.
     # The entire original response should be returned untouched.
     assert markdown_output == llm_response
+
+
+def test_failed_patch_renders_verbatim_block(tmp_path: Path) -> None:
+    # GIVEN an LLM response with a SEARCH block that is guaranteed to fail
+    original_contents = {"file.py": "original content"}
+    failed_block_verbatim = "<<<<<<< SEARCH\nnon-existent content\n=======\nthis will not be applied\n>>>>>>> REPLACE"
+    llm_response = f"File: file.py\n{failed_block_verbatim}"
+
+    # WHEN generate_display_content is called
+    display_output = generate_display_content(original_contents, llm_response, tmp_path)
+
+    # THEN the output contains the warning message
+    assert "⚠️ The SEARCH block from the AI could not be found in 'file.py'." in display_output
+    # AND the output contains the raw, verbatim text of the failed block
+    assert failed_block_verbatim in display_output
+    # AND the output does NOT contain a 'diff' block for the failed patch
+    assert "```diff" not in display_output
+
+    # WHEN generate_unified_diff is called on the same input
+    pipeable_diff = generate_unified_diff(original_contents, llm_response, tmp_path)
+
+    # THEN its output is an empty string, as the failed patch should be ignored
+    assert pipeable_diff == ""
 
 
 @pytest.mark.parametrize(

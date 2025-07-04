@@ -77,8 +77,6 @@ def test_last_for_diff_response_with_and_without_recompute(tmp_path: Path, mocke
             },
         }
 
-        # NOTE: We can use a simpler session data structure for this test, since it's testing the `last` command,
-        # not the `prompt` command's full flow.
         session_data = {
             "model": "test-model",
             "context_files": ["file.py"],
@@ -88,25 +86,24 @@ def test_last_for_diff_response_with_and_without_recompute(tmp_path: Path, mocke
         session_file = Path(td) / SESSION_FILE_NAME
         session_file.write_text(json.dumps(session_data))
 
-        # AND the file on disk has different content now
-        file_on_disk = Path(td) / "file.py"
-        file_on_disk.write_text("the content has now changed")
+        # AND the file on disk has the ORIGINAL content, so recompute will succeed
+        (Path(td) / "file.py").write_text("old line\n")
 
         # --- Test 1: Piped output ---
         mocker.patch("aico.commands.last.is_terminal", return_value=False)
 
         # WHEN piped without recompute
         result_stored_piped = runner.invoke(app, ["last"])
-        # THEN it shows the original, stored unified diff, ignoring disk changes
+        # THEN it shows the original, stored unified diff
         assert result_stored_piped.exit_code == 0
         assert result_stored_piped.stdout == assistant_message["derived"]["unified_diff"]
 
         # WHEN piped with recompute
         result_recomputed_piped = runner.invoke(app, ["last", "--recompute"])
-        # THEN it recalculates the diff, which should now fail to apply.
-        # The specific content of the failure message is tested in `test_diffing.py`.
+        # THEN it recalculates the diff, which should succeed and be identical
         assert result_recomputed_piped.exit_code == 0
-        assert "patch failed" in result_recomputed_piped.stdout
+        assert result_recomputed_piped.stdout == assistant_message["derived"]["unified_diff"]
+        assert "Warning" not in result_recomputed_piped.stderr
 
         # --- Test 2: TTY output ---
         mocker.patch("aico.commands.last.is_terminal", return_value=True)
@@ -116,13 +113,57 @@ def test_last_for_diff_response_with_and_without_recompute(tmp_path: Path, mocke
         # THEN it shows the stored, pretty display_content
         assert result_stored_tty.exit_code == 0
         assert "new line" in result_stored_tty.stdout
-        assert "patch failed" not in result_stored_tty.stdout
+        assert "Warning" not in result_stored_tty.stderr
 
         # WHEN TTY with recompute
         result_recomputed_tty = runner.invoke(app, ["last", "--recompute"])
-        # THEN it recalculates and shows a pretty "patch failed" error.
+        # THEN it recalculates and shows a pretty display_content
         assert result_recomputed_tty.exit_code == 0
-        assert "patch failed" in result_recomputed_tty.stdout
+        assert "new line" in result_recomputed_tty.stdout
+        assert "Warning" not in result_recomputed_tty.stderr
+
+
+def test_last_recompute_failing_edit_piped_is_empty_stdout(tmp_path: Path, mocker: MockerFixture) -> None:
+    """
+    Tests the 'Strict Contract' for `aico last`: a failed recompute of an 'edit'
+    message results in an empty stdout when piped.
+    """
+    # GIVEN a session with a last_response from an 'edit' command (`mode: "diff"`)
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        assistant_message = {
+            "role": "assistant",
+            "content": "File: file.py\n<<<<<<< SEARCH\nold line\n=======\nnew line\n>>>>>>> REPLACE",
+            "mode": "diff",
+            "model": "test-model",
+            "timestamp": "...",
+            "duration_ms": 100,
+            "derived": None,
+        }
+        session_data = {
+            "model": "test-model",
+            "context_files": ["file.py"],
+            "chat_history": [assistant_message],
+            "history_start_index": 0,
+        }
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_file.write_text(json.dumps(session_data))
+
+        # AND the file on disk has changed, so the patch will fail
+        (Path(td) / "file.py").write_text("the content has now changed, recompute will fail")
+
+        # AND the environment is piped (not a TTY)
+        mocker.patch("aico.commands.last.is_terminal", return_value=False)
+
+        # WHEN `aico last --recompute` is run
+        result = runner.invoke(app, ["last", "--recompute"])
+
+        # THEN the command succeeds
+        assert result.exit_code == 0
+        # AND stdout is an empty string, honoring the strict contract for mode=diff
+        assert result.stdout == ""
+        # AND stderr contains the warning about the patch failure
+        assert "Warnings:" in result.stderr
+        assert "The SEARCH block from the AI could not be found" in result.stderr
 
 
 def test_last_verbatim_flag(tmp_path: Path, mocker: MockerFixture) -> None:

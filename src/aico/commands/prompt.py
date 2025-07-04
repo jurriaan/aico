@@ -333,13 +333,17 @@ def _invoke_llm_logic(
         if passthrough:
             print(llm_response_content)
         else:
-            match mode:
-                case Mode.DIFF:
-                    if unified_diff:
-                        print(unified_diff, end="")
-                case Mode.CONVERSATION | Mode.RAW:
-                    # For these modes, the handler is silent in non-TTY, so we print the final result.
-                    print(llm_response_content)
+            if mode == Mode.DIFF:
+                # Strict Contract: For 'edit', always print the diff, even if empty.
+                # Warnings have already been sent to stderr.
+                print(unified_diff or "", end="")
+            else:  # Mode.CONVERSATION or Mode.RAW
+                # Flexible Contract: For 'ask' and 'prompt', prioritize a valid diff,
+                # but fall back to the display_content for conversations or errors.
+                if unified_diff:
+                    print(unified_diff, end="")
+                elif display_content:
+                    print(display_content, end="")
 
 
 def ask(

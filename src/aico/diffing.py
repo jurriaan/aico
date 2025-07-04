@@ -275,9 +275,10 @@ def _process_single_diff_block(
     content_before_patch: str,
     is_new_file: bool,
     actual_file_path: str,
-) -> ProcessedPatchResult:
+) -> ProcessedPatchResult | None:
     """
     Processes a single parsed AIPatch block and returns the resulting content and diff block.
+    Returns None if the patch cannot be applied.
 
     This is a pure function that does not perform I/O or mutate external state. It
     takes the "before" state and a patch, and returns the "after" state and a diff.
@@ -291,12 +292,7 @@ def _process_single_diff_block(
     )
 
     if new_content_full is None:
-        # Create a user-friendly error diff, but the warning will be a simple string
-        diff_string = f"--- a/{actual_file_path} (patch failed)\n+++ b/{actual_file_path} (patch failed)\n"
-        return ProcessedPatchResult(
-            new_content=None,
-            diff_block=ProcessedDiffBlock(llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string),
-        )
+        return None
 
     if is_new_file and not new_content_full:
         # Handle the edge case where a new file is created empty.
@@ -328,21 +324,17 @@ def _process_single_diff_block(
     )
 
 
-def _process_patches_sequentially(
+def process_patches_sequentially(
     original_file_contents: FileContents,
     llm_response: str,
     session_root: Path,
-) -> tuple[dict[str, str], dict[str, str], list[WarningMessage]]:
+) -> tuple[FileContents, FileContents, list[WarningMessage]]:
     """
     The single, robust parsing engine that drives all diffing operations.
 
-    This function uses a "scan" approach with `finditer` to preserve
-    all text from the LLM response. It encapsulates its own state, creating a
-    temporary copy of file contents to ensure that each patch for a given file
-    is applied against the result of the previous one.
-
-    This function calculates the final state and is used by `_apply_patches`.
-    `process_llm_response_stream` is the generator version for live display.
+    This function consumes the `process_llm_response_stream` generator to calculate
+    the final state of all files after patches have been applied. It does this in
+    a single pass for efficiency.
 
     Args:
         original_file_contents: An immutable mapping of the original file contents.
@@ -355,90 +347,32 @@ def _process_patches_sequentially(
         - The baseline "before" contents, updated with any filesystem fallbacks.
         - A list of any warnings that were generated.
     """
-    current_file_contents = dict(original_file_contents)
-    original_contents_for_diffing = dict(original_file_contents)
     warnings: list[WarningMessage] = []
+    final_contents: FileContents = {}
+    baseline_contents: FileContents = {}
 
-    for file_header_match in _FILE_HEADER_REGEX.finditer(llm_response):
-        header_line = file_header_match.group(1)
-        llm_file_path = header_line.strip().removeprefix("File:").strip()
+    stream_processor = process_llm_response_stream(original_file_contents, llm_response, session_root)
 
-        block_content_start = file_header_match.end()
-        next_match_start = len(llm_response)
-        next_header_iter = _FILE_HEADER_REGEX.finditer(llm_response, pos=block_content_start)
-        next_header_match = next(next_header_iter, None)
-        if next_header_match:
-            next_match_start = next_header_match.start()
+    for item in stream_processor:
+        match item:
+            case WarningMessage():
+                warnings.append(item)
+            case PatchApplicationResult() as result:
+                # This is always the last item, containing the final aggregated state.
+                final_contents = result.post_patch_contents
+                baseline_contents = result.baseline_contents_for_diff
+                break  # No need to process further
+            case _:
+                pass
 
-        block_content = llm_response[block_content_start:next_match_start]
-        matches = list(_FILE_BLOCK_REGEX.finditer(block_content))
-
-        if not matches:
-            continue
-
-        for match in matches:
-            parsed_block = _create_aipatch_from_match(match, llm_file_path)
-            resolution = _resolve_file_path(parsed_block, current_file_contents, session_root)
-
-            if resolution.warning:
-                warnings.append(WarningMessage(text=resolution.warning))
-
-            if resolution.path is None:
-                warnings.append(WarningMessage(text=_create_file_not_found_error(parsed_block.llm_file_path)))
-                continue
-
-            actual_file_path = resolution.path
-            if resolution.fallback_content is not None:
-                current_file_contents[actual_file_path] = resolution.fallback_content
-                original_contents_for_diffing[actual_file_path] = resolution.fallback_content
-
-            is_new_file = actual_file_path not in original_contents_for_diffing
-            content_before_patch = current_file_contents.get(actual_file_path, "")
-            result = _process_single_diff_block(parsed_block, content_before_patch, is_new_file, actual_file_path)
-
-            if result.new_content is not None:
-                if not result.new_content and actual_file_path in current_file_contents:
-                    del current_file_contents[actual_file_path]
-                else:
-                    current_file_contents[actual_file_path] = result.new_content
-            else:
-                warnings.append(WarningMessage(text=_create_patch_failed_error(actual_file_path)))
-
-    return current_file_contents, original_contents_for_diffing, warnings
-
-
-def _apply_patches(
-    original_file_contents: FileContents, llm_response: str, session_root: Path
-) -> PatchApplicationResult:
-    """
-    Applies all patches from an LLM response to calculate the final state of files.
-
-    This function is a consumer of the `_process_patches_sequentially` generator.
-    Its only purpose is to compute the "after" state of all files by sequentially
-    applying every valid patch.
-
-    Returns:
-        A PatchApplicationResult containing:
-        - The final contents of all files after patches.
-        - The baseline "before" contents, updated with any filesystem fallbacks.
-        - A list of any warnings that were generated.
-    """
-    final_state, final_baseline, warnings = _process_patches_sequentially(
-        original_file_contents, llm_response, session_root
-    )
-
-    return PatchApplicationResult(
-        post_patch_contents=final_state,
-        baseline_contents_for_diff=final_baseline,
-        warnings=warnings,
-    )
+    return final_contents, baseline_contents, warnings
 
 
 def process_llm_response_stream(
     original_file_contents: FileContents,
     llm_response: str,
     session_root: Path,
-) -> Iterator[StreamYieldItem]:
+) -> Iterator[StreamYieldItem | PatchApplicationResult]:
     """
     The single, robust parsing engine that drives all diffing operations.
 
@@ -449,7 +383,8 @@ def process_llm_response_stream(
     patch for a given file is applied against the result of the previous one.
 
     It yields items representing the entire parsed sequence: conversational text,
-    processed diff blocks, and warnings.
+    processed diff blocks, and warnings. Finally, it yields a PatchApplicationResult
+    with the final state.
 
     Args:
         original_file_contents: An immutable mapping of the original file contents.
@@ -503,12 +438,8 @@ def process_llm_response_stream(
                     yield WarningMessage(text=resolution.warning)
 
                 if resolution.path is None:
-                    diff_string = (
-                        f"--- a/{parsed_block.llm_file_path} (not found)\n"
-                        + f"+++ b/{parsed_block.llm_file_path} (not found)\n"
-                    )
                     yield WarningMessage(text=_create_file_not_found_error(parsed_block.llm_file_path))
-                    yield ProcessedDiffBlock(llm_file_path=parsed_block.llm_file_path, unified_diff=diff_string)
+                    yield match.group("block")
                     continue
 
                 actual_file_path = resolution.path
@@ -520,16 +451,16 @@ def process_llm_response_stream(
                 content_before_patch = current_file_contents.get(actual_file_path, "")
                 result = _process_single_diff_block(parsed_block, content_before_patch, is_new_file, actual_file_path)
 
-                if result.new_content is not None:
+                if result:
                     if not result.new_content and actual_file_path in current_file_contents:
                         del current_file_contents[actual_file_path]
                     else:
                         current_file_contents[actual_file_path] = result.new_content
+                    yield result.diff_block
                 else:
                     error_text = _create_patch_failed_error(actual_file_path)
                     yield WarningMessage(text=error_text)
-
-                yield result.diff_block
+                    yield match.group("block")
 
             if block_last_end < len(block_content):
                 yield block_content[block_last_end:]
@@ -540,6 +471,13 @@ def process_llm_response_stream(
     if last_end < len(llm_response):
         yield llm_response[last_end:]
 
+    # At the very end of the stream, yield the final state for the sequential processor.
+    yield PatchApplicationResult(
+        post_patch_contents=current_file_contents,
+        baseline_contents_for_diff=original_contents_for_diffing,
+        warnings=[],  # Warnings are yielded inline during processing, so this is empty.
+    )
+
 
 def generate_unified_diff(original_file_contents: FileContents, llm_response: str, session_root: Path) -> str:
     """
@@ -548,19 +486,17 @@ def generate_unified_diff(original_file_contents: FileContents, llm_response: st
     It ignores any failed patches, as warnings about those are handled separately
     by the calling display logic.
     """
-    # This is the "happy path" logic. It always tries to produce a clean diff.
-    # Failures are treated as warnings and handled by the UI layer, not here.
-    patch_result = _apply_patches(original_file_contents, llm_response, session_root)
+    post_patch_contents, baseline_contents, _ = process_patches_sequentially(
+        original_file_contents, llm_response, session_root
+    )
     all_diffs: list[str] = []
 
     # Using keys from both dicts ensures we handle file creations and deletions.
-    all_files = sorted(
-        list(set(patch_result.baseline_contents_for_diff.keys()) | set(patch_result.post_patch_contents.keys()))
-    )
+    all_files = sorted(list(set(baseline_contents.keys()) | set(post_patch_contents.keys())))
 
     for file_path in all_files:
-        from_content = patch_result.baseline_contents_for_diff.get(file_path)
-        to_content = patch_result.post_patch_contents.get(file_path)
+        from_content = baseline_contents.get(file_path)
+        to_content = post_patch_contents.get(file_path)
 
         if from_content == to_content:
             continue
@@ -589,7 +525,7 @@ def generate_unified_diff(original_file_contents: FileContents, llm_response: st
 def generate_display_content(original_file_contents: FileContents, llm_response: str, session_root: Path) -> str:
     """
     Generates a markdown-formatted string with diffs embedded in conversational text.
-    Processes all `File:` blocks sequentially. Warnings are ignored.
+    Processes all `File:` blocks sequentially, including warnings.
     """
     output_parts: list[str] = []
     stream = process_llm_response_stream(original_file_contents, llm_response, session_root)
@@ -602,7 +538,9 @@ def generate_display_content(original_file_contents: FileContents, llm_response:
                 output_parts.append(f"File: `{llm_file_path}`\n")
             case ProcessedDiffBlock(unified_diff=diff_string):
                 output_parts.append(f"```diff\n{diff_string}```\n")
-            case WarningMessage():
-                pass  # Warnings are ignored for display content
+            case WarningMessage(text=warning_text):
+                output_parts.append(f"⚠️ {warning_text}\n")
+            case PatchApplicationResult():
+                pass  # Ignore final state object in display
 
     return "".join(output_parts)
