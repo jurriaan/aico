@@ -115,6 +115,15 @@ class ProcessedPatchResult:
 
 
 @dataclass(slots=True, frozen=True)
+class PatchApplicationResult:
+    """The result of applying all patches from an LLM response."""
+
+    post_patch_contents: "FileContents"
+    baseline_contents_for_diff: "FileContents"
+    warnings: list["WarningMessage"]
+
+
+@dataclass(slots=True, frozen=True)
 class ResolvedFilePath:
     path: str | None
     warning: str | None

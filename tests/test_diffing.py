@@ -11,7 +11,7 @@ from aico.diffing import (
     generate_unified_diff,
     process_llm_response_stream,
 )
-from aico.models import ProcessedDiffBlock
+from aico.models import PatchApplicationResult, ProcessedDiffBlock
 
 
 def test_apply_patches_single_change(tmp_path: Path) -> None:
@@ -20,11 +20,12 @@ def test_apply_patches_single_change(tmp_path: Path) -> None:
     llm_response = "File: file.py\n<<<<<<< SEARCH\nold content\n=======\nnew content\n>>>>>>> REPLACE"
 
     # WHEN _apply_patches is called
-    final_contents, _, warnings = _apply_patches(original_contents, llm_response, tmp_path)
+    result = _apply_patches(original_contents, llm_response, tmp_path)
 
     # THEN the final content is correct and there are no warnings
-    assert final_contents == {"file.py": "new content\n"}
-    assert not warnings
+    assert isinstance(result, PatchApplicationResult)
+    assert result.post_patch_contents == {"file.py": "new content\n"}
+    assert not result.warnings
 
 
 def test_apply_patches_sequential_changes(tmp_path: Path) -> None:
@@ -37,25 +38,29 @@ def test_apply_patches_sequential_changes(tmp_path: Path) -> None:
     )
 
     # WHEN _apply_patches is called
-    final_contents, _, warnings = _apply_patches(original_contents, llm_response, tmp_path)
+    result = _apply_patches(original_contents, llm_response, tmp_path)
 
     # THEN the final content has both patches applied in order
     # The `replace_content` from the regex captures the trailing newline.
-    assert final_contents == {"file.py": "line one\nline two\n"}
-    assert not warnings
+    assert result.post_patch_contents == {"file.py": "line one\nline two\n"}
+    assert not result.warnings
 
 
-def test_apply_patches_failed_patch_is_ignored(tmp_path: Path) -> None:
+def test_apply_patches_failed_patch_is_captured_as_warning(tmp_path: Path) -> None:
     # GIVEN original content and a patch that will fail
     original_contents = {"file.py": "original content"}
     llm_response = "File: file.py\n<<<<<<< SEARCH\nnon-existent\n=======\nnew\n>>>>>>> REPLACE"
 
     # WHEN _apply_patches is called
-    final_contents, _, warnings = _apply_patches(original_contents, llm_response, tmp_path)
+    result = _apply_patches(original_contents, llm_response, tmp_path)
 
-    # THEN the final content is unchanged
-    assert final_contents == original_contents
-    assert not warnings
+    # THEN the final content is unchanged because the patch was not applied
+    assert result.post_patch_contents == original_contents
+
+    # AND a warning message is returned containing the failed diff
+    assert len(result.warnings) == 1
+    assert "patch failed" in result.warnings[0].text
+    assert "non-existent" in result.warnings[0].text
 
 
 def test_apply_patches_filesystem_fallback(tmp_path: Path) -> None:
@@ -65,12 +70,12 @@ def test_apply_patches_filesystem_fallback(tmp_path: Path) -> None:
     llm_response = "File: file.py\n<<<<<<< SEARCH\ndisk content\n=======\nnew content\n>>>>>>> REPLACE"
 
     # WHEN _apply_patches is called
-    final_contents, _, warnings = _apply_patches(original_contents, llm_response, tmp_path)
+    result = _apply_patches(original_contents, llm_response, tmp_path)
 
     # THEN the final content is correct and a warning is returned
-    assert final_contents == {"file.py": "new content\n"}
-    assert len(warnings) == 1
-    assert "was not in the session context but was found on disk" in warnings[0].text
+    assert result.post_patch_contents == {"file.py": "new content\n"}
+    assert len(result.warnings) == 1
+    assert "was not in the session context but was found on disk" in result.warnings[0].text
 
 
 def test_process_llm_response_stream_handles_fallback(tmp_path: Path) -> None:
@@ -100,6 +105,7 @@ def test_generate_diff_for_standard_change(tmp_path: Path) -> None:
     diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN it is a valid unified diff
+    assert "patch failed" not in diff
     assert "--- a/file.py" in diff
     assert "+++ b/file.py" in diff
     assert "-old_line = 1" in diff
@@ -173,13 +179,8 @@ def test_patch_failure_when_search_block_not_found(tmp_path: Path) -> None:
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
-    # THEN a failed patch diff is returned with an error
-    assert "a/file.py" in diff
-    assert "b/file.py (patch failed)" in diff
-    assert "Error: The SEARCH block from the AI could not be found" in diff
-    assert "--- SEARCH BLOCK ---" in diff
-    assert "non-existent content" in diff
-    assert "--- END SEARCH BLOCK ---" in diff
+    # THEN an empty diff is generated because the patch failed
+    assert diff == ""
 
 
 def test_error_when_file_not_found_in_context_or_on_disk(tmp_path: Path) -> None:
@@ -190,10 +191,8 @@ def test_error_when_file_not_found_in_context_or_on_disk(tmp_path: Path) -> None
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
-    # THEN a 'not found' diff is generated
-    assert "a/unknown_file.py (not found)" in diff
-    assert "b/unknown_file.py (not found)" in diff
-    assert "Error: The file path 'unknown_file.py' from the AI does not match any file in the context." in diff
+    # THEN an empty diff is generated because the patch failed
+    assert diff == ""
 
 
 def test_handling_of_malformed_llm_responses(tmp_path: Path) -> None:
@@ -388,11 +387,8 @@ def test_predictability_no_fuzzy_matching_on_paths(tmp_path: Path) -> None:
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
-    # THEN it fails with a "file not found" error for the correct path
-    assert "a/src/models/dto/ai.py (not found)" in diff
-
-    # AND it does NOT create a diff for the similarly named file that was in context
-    assert "--- a/src/models/ai.py" not in diff
+    # THEN the diff is empty because the patch failed (file not found)
+    assert diff == ""
 
 
 def test_partial_deletion_inside_file(tmp_path: Path) -> None:
@@ -420,9 +416,8 @@ def test_empty_search_on_existing_file_fails(tmp_path: Path) -> None:
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
-    # THEN it fails with a patch failed error because this is invalid for an existing file
-    assert "patch failed" in diff
-    assert "The SEARCH block from the AI could not be found" in diff
+    # THEN the diff is empty because an empty search on an existing file is an invalid patch
+    assert diff == ""
 
 
 def test_patch_robust_to_delimiters_in_content(tmp_path: Path) -> None:
@@ -691,11 +686,8 @@ def test_whitespace_only_search_block_fails_cleanly(
     # WHEN the diff is generated
     diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
-    # THEN the diff should report a standard "patch failed" error, not an "ambiguous" one
-    # Note: The flexible patcher will fail, and so will the exact patcher, leading to this error.
-    assert "ambiguous" not in diff.lower()
-    assert "patch failed" in diff
-    assert "could not be found" in diff
+    # THEN the diff is empty because whitespace-only search blocks are invalid and fail to patch
+    assert diff == ""
 
 
 def test_no_newline_marker_added_for_existing_file_without_trailing_newline(tmp_path: Path) -> None:

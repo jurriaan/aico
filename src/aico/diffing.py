@@ -7,6 +7,7 @@ import regex as re
 from aico.models import (
     AIPatch,
     FileContents,
+    PatchApplicationResult,
     ProcessedDiffBlock,
     ProcessedPatchResult,
     ResolvedFilePath,
@@ -377,7 +378,7 @@ def _process_single_diff_block(
 
 def _apply_patches(
     original_file_contents: FileContents, llm_response: str, session_root: Path
-) -> tuple[dict[str, str], dict[str, str], list[WarningMessage]]:
+) -> PatchApplicationResult:
     """
     Applies all patches from an LLM response to calculate the final state of files.
 
@@ -387,18 +388,18 @@ def _apply_patches(
     to ensure final diffs are generated correctly.
 
     Returns:
-        A tuple containing:
-        - The final file contents dictionary.
-        - The original file contents, updated with any filesystem fallbacks.
+        A PatchApplicationResult containing:
+        - The final contents of all files after patches.
+        - The baseline "before" contents, updated with any filesystem fallbacks.
         - A list of any warnings that were generated.
     """
-    final_contents = dict(original_file_contents)
+    post_patch_contents = dict(original_file_contents)
     warnings: list[WarningMessage] = []
 
     # This is a bit tricky: `original_file_contents` is a Mapping (immutable view),
     # but when a file is found via fallback, we need to add it to the "original"
     # set to generate the correct final diff. We use a mutable copy for this.
-    original_contents_mutable = dict(original_file_contents)
+    baseline_contents_for_diff = dict(original_file_contents)
 
     chunks = _FILE_HEADER_REGEX.split(llm_response)
     _ = chunks.pop(0)  # Discard initial conversational text
@@ -411,30 +412,40 @@ def _apply_patches(
         for match in _FILE_BLOCK_REGEX.finditer(content):
             parsed_block = _create_aipatch_from_match(match, llm_file_path)
 
-            resolution = _resolve_file_path(parsed_block, final_contents, session_root)
+            resolution = _resolve_file_path(parsed_block, post_patch_contents, session_root)
             if resolution.warning:
                 warnings.append(WarningMessage(text=resolution.warning))
 
             if resolution.path is None:
+                error_diff = _create_file_not_found_error_diff(parsed_block.llm_file_path)
+                # Treat file not found as a warning for the user
+                warnings.append(WarningMessage(text=error_diff))
                 continue
 
             actual_file_path = resolution.path
             if resolution.fallback_content is not None:
-                final_contents[actual_file_path] = resolution.fallback_content
-                original_contents_mutable[actual_file_path] = resolution.fallback_content
+                post_patch_contents[actual_file_path] = resolution.fallback_content
+                baseline_contents_for_diff[actual_file_path] = resolution.fallback_content
 
-            is_new_file = actual_file_path not in original_contents_mutable
-            content_before_patch = final_contents.get(actual_file_path, "")
+            is_new_file = actual_file_path not in baseline_contents_for_diff
+            content_before_patch = post_patch_contents.get(actual_file_path, "")
 
             result = _process_single_diff_block(parsed_block, content_before_patch, is_new_file, actual_file_path)
 
             if result.new_content is not None:
-                if not result.new_content and actual_file_path in final_contents:
-                    del final_contents[actual_file_path]
+                if not result.new_content and actual_file_path in post_patch_contents:
+                    del post_patch_contents[actual_file_path]
                 else:
-                    final_contents[actual_file_path] = result.new_content
+                    post_patch_contents[actual_file_path] = result.new_content
+            else:
+                # Patch failed, so `new_content` is None. Treat as a warning.
+                warnings.append(WarningMessage(text=result.diff_block.unified_diff))
 
-    return final_contents, original_contents_mutable, warnings
+    return PatchApplicationResult(
+        post_patch_contents=post_patch_contents,
+        baseline_contents_for_diff=baseline_contents_for_diff,
+        warnings=warnings,
+    )
 
 
 def process_llm_response_stream(
@@ -516,36 +527,24 @@ def process_llm_response_stream(
 
 def generate_unified_diff(original_file_contents: FileContents, llm_response: str, session_root: Path) -> str:
     """
-    Generates a unified diff string by processing all `File:` blocks sequentially.
-    On success with multiple patches for a single file, it generates a single compound diff.
-    On failure, it returns incremental diffs to show the error message.
+    Generates a single, clean, compound unified diff string of all successful changes.
+    This function creates a "best-effort" diff that can be piped to other tools.
+    It ignores any failed patches, as warnings about those are handled separately
+    by the calling display logic.
     """
-    # Run the stream processor once to get the incremental diffs and check for errors.
-    # This is necessary because if a patch fails, we need to show the error in context.
-    incremental_blocks: list[ProcessedDiffBlock] = []
-    has_errors = False
-    stream_results = process_llm_response_stream(original_file_contents, llm_response, session_root)
-
-    for item in stream_results:
-        if isinstance(item, ProcessedDiffBlock):
-            incremental_blocks.append(item)
-            if "patch failed" in item.unified_diff or "not found" in item.unified_diff:
-                has_errors = True
-
-    # If any patches failed, return the concatenated incremental diffs, which will show the error messages.
-    if has_errors:
-        return "".join(block.unified_diff for block in incremental_blocks)
-
-    # If all patches succeeded, calculate the final state and compose a single clean diff.
-    final_contents, original_contents_updated, _ = _apply_patches(original_file_contents, llm_response, session_root)
+    # This is the "happy path" logic. It always tries to produce a clean diff.
+    # Failures are treated as warnings and handled by the UI layer, not here.
+    patch_result = _apply_patches(original_file_contents, llm_response, session_root)
     all_diffs: list[str] = []
 
     # Using keys from both dicts ensures we handle file creations and deletions.
-    all_files = sorted(list(set(original_contents_updated.keys()) | set(final_contents.keys())))
+    all_files = sorted(
+        list(set(patch_result.baseline_contents_for_diff.keys()) | set(patch_result.post_patch_contents.keys()))
+    )
 
     for file_path in all_files:
-        from_content = original_contents_updated.get(file_path)
-        to_content = final_contents.get(file_path)
+        from_content = patch_result.baseline_contents_for_diff.get(file_path)
+        to_content = patch_result.post_patch_contents.get(file_path)
 
         if from_content == to_content:
             continue
