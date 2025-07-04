@@ -104,13 +104,20 @@ def is_input_terminal() -> bool:
     return sys.stdin.isatty()
 
 
+def get_active_history(session_data: SessionData) -> list[ChatMessageHistoryItem]:
+    """
+    Returns the active slice of chat history based on the start index and excluded messages.
+    """
+    potential_context_slice = session_data.chat_history[session_data.history_start_index :]
+    return [msg for msg in potential_context_slice if not msg.is_excluded]
+
+
 def reconstruct_historical_messages(
     history: list[ChatMessageHistoryItem],
 ) -> list[LLMChatMessage]:
     reconstructed: list[LLMChatMessage] = []
-    active_history = [msg for msg in history if not msg.is_excluded]
 
-    for msg in active_history:
+    for msg in history:
         reconstructed_msg: LLMChatMessage
         match msg:
             case UserChatMessage(passthrough=True) as m:

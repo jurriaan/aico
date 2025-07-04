@@ -38,6 +38,7 @@ from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
 from aico.utils import (
     build_original_file_contents,
     calculate_and_display_cost,
+    get_active_history,
     is_input_terminal,
     is_terminal,
     load_session,
@@ -167,11 +168,12 @@ def _build_messages(
 ) -> list[LLMChatMessage]:
     messages: list[LLMChatMessage] = []
 
+    active_history = get_active_history(session_data)
+
     if passthrough:
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
 
-        active_history = session_data.chat_history[session_data.history_start_index :]
         messages.extend(reconstruct_historical_messages(active_history))
         messages.append({"role": "user", "content": prompt_text})
         return messages
@@ -197,7 +199,6 @@ def _build_messages(
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
 
-    active_history = session_data.chat_history[session_data.history_start_index :]
     messages.extend(reconstruct_historical_messages(active_history))
 
     if mode in ALIGNMENT_PROMPTS:

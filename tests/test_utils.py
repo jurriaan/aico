@@ -74,34 +74,39 @@ def test_aico_session_file_env_var_not_set_uses_upward_search(tmp_path: Path) ->
         assert "Chat history is empty" in result.stdout
 
 
-def test_reconstruct_historical_messages_filters_excluded() -> None:
-    # GIVEN a history list with a mix of active and excluded messages
-    from aico.models import AssistantChatMessage, Mode, UserChatMessage
-    from aico.utils import reconstruct_historical_messages
+def test_get_active_history_filters_and_slices() -> None:
+    # GIVEN a SessionData object with a mix of messages
+    from aico.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
+    from aico.utils import get_active_history
 
     history = [
-        UserChatMessage(role="user", content="active 1", mode=Mode.RAW, timestamp="t1"),
-        AssistantChatMessage(
-            role="assistant", content="active 1", mode=Mode.RAW, timestamp="t2", model="m", duration_ms=1
-        ),
-        UserChatMessage(role="user", content="excluded 1", mode=Mode.RAW, timestamp="t3", is_excluded=True),
+        UserChatMessage(role="user", content="msg 0 - before start", mode=Mode.RAW, timestamp="t0"),  # before start
+        UserChatMessage(role="user", content="msg 1 - active", mode=Mode.RAW, timestamp="t1"),  # after start
+        UserChatMessage(
+            role="user", content="msg 2 - excluded", mode=Mode.RAW, timestamp="t2", is_excluded=True
+        ),  # after start, excluded
         AssistantChatMessage(
             role="assistant",
-            content="excluded 1",
+            content="resp 2 - excluded",
             mode=Mode.RAW,
-            timestamp="t4",
+            timestamp="t3",
             model="m",
             duration_ms=1,
             is_excluded=True,
         ),
-        UserChatMessage(role="user", content="active 2", mode=Mode.RAW, timestamp="t5"),
+        UserChatMessage(role="user", content="msg 3 - active", mode=Mode.RAW, timestamp="t4"),  # after start
     ]
+    session_data = SessionData(
+        model="test",
+        context_files=[],
+        chat_history=history,
+        history_start_index=1,
+    )
 
-    # WHEN the history is reconstructed
-    reconstructed = reconstruct_historical_messages(history)
+    # WHEN get_active_history is called
+    active_history = get_active_history(session_data)
 
-    # THEN the reconstructed list only contains the non-excluded messages
-    assert len(reconstructed) == 3
-    assert "<prompt>\nactive 1\n</prompt>" in reconstructed[0]["content"]
-    assert "active 1" in reconstructed[1]["content"]
-    assert "<prompt>\nactive 2\n</prompt>" in reconstructed[2]["content"]
+    # THEN the returned list contains only the correct messages
+    assert len(active_history) == 2
+    assert active_history[0].content == "msg 1 - active"
+    assert active_history[1].content == "msg 3 - active"

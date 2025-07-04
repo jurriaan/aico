@@ -7,7 +7,7 @@ from rich.table import Table
 
 from aico.models import TokenInfo, TokenReport
 from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
-from aico.utils import load_session, reconstruct_historical_messages
+from aico.utils import get_active_history, load_session, reconstruct_historical_messages
 
 tokens_app = typer.Typer(
     help="Commands for inspecting prompt token usage and costs.",
@@ -67,9 +67,7 @@ def tokens(
         total_tokens += alignment_prompts_tokens
 
     # 3. Chat History Tokens
-    active_history = [
-        msg for msg in session_data.chat_history[session_data.history_start_index :] if not msg.is_excluded
-    ]
+    active_history = get_active_history(session_data)
     if active_history:
         history_messages = reconstruct_historical_messages(active_history)
         history_tokens = litellm.token_counter(  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]

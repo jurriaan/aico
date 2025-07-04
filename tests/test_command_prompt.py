@@ -466,7 +466,7 @@ def test_prompt_passthrough_mode_bypasses_context_and_formatting(tmp_path: Path,
 
         # AND the session history correctly records the passthrough state
         final_session = load_final_session(Path(td))
-        user_msg = final_session.chat_history[0]
+        user_msg = final_session.chat_history[-2]
         assert isinstance(user_msg, UserChatMessage)
         assert user_msg.passthrough is True
 
