@@ -634,6 +634,178 @@ def test_no_newline_marker_added_for_existing_file_without_trailing_newline(tmp_
     assert diff == expected_diff
 
 
+def test_multi_patch_on_single_file(tmp_path: Path) -> None:
+    # GIVEN a file and an LLM response with two sequential patches for that file
+    original_contents = {"file.py": "line 1\nline 2"}
+    llm_response = (
+        "File: file.py\n"
+        "<<<<<<< SEARCH\n"
+        "line 1\n"
+        "=======\n"
+        "line one changed\n"
+        ">>>>>>> REPLACE\n"
+        "<<<<<<< SEARCH\n"
+        "line 2\n"
+        "=======\n"
+        "line two changed\n"
+        ">>>>>>> REPLACE"
+    )
+
+    # WHEN the diff is generated
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
+
+    # THEN both patches should be applied sequentially to the same file
+    expected_diff = (
+        "--- a/file.py\n"
+        "+++ b/file.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        "-line 1\n"
+        "-line 2\n"
+        "\\ No newline at end of file\n"
+        "+line one changed\n"
+        "+line two changed\n"
+    )
+    assert diff == expected_diff
+
+
+def test_multi_patch_with_interstitial_conversation(tmp_path: Path) -> None:
+    # GIVEN an LLM response with two patches for the same file, separated by conversation
+    original_contents = {"file.py": "line 1\nline 2"}
+    llm_response = (
+        "File: file.py\n"
+        "<<<<<<< SEARCH\n"
+        "line 1\n"
+        "=======\n"
+        "line one changed\n"
+        ">>>>>>> REPLACE\n"
+        "Okay, and now for the second part.\n"
+        "<<<<<<< SEARCH\n"
+        "line 2\n"
+        "=======\n"
+        "line two changed\n"
+        ">>>>>>> REPLACE"
+    )
+
+    # WHEN the unified diff is generated
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
+
+    # THEN the diff should be clean and contain both changes, with no conversational text
+    expected_diff = (
+        "--- a/file.py\n"
+        "+++ b/file.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        "-line 1\n"
+        "-line 2\n"
+        "\\ No newline at end of file\n"
+        "+line one changed\n"
+        "+line two changed\n"
+    )
+    assert diff == expected_diff
+
+    # WHEN the display content is generated
+    display_content = generate_display_content(original_contents, llm_response, tmp_path)
+
+    # THEN it should contain the conversational text between the rendered diffs
+    assert "Okay, and now for the second part." in display_content
+    assert "File: `file.py`" in display_content
+    assert "```diff" in display_content
+    # Check that there are two separate diff blocks rendered
+    assert display_content.count("```diff") == 2
+
+
+def test_complex_multi_file_and_multi_patch_scenario(tmp_path: Path) -> None:
+    # GIVEN multiple files and a complex response
+    original_contents = {"file1.py": "f1 line1", "file2.py": "f2 line1\nf2 line2"}
+    llm_response = (
+        "First, a simple change.\n"
+        "File: file1.py\n"
+        "<<<<<<< SEARCH\n"
+        "f1 line1\n"
+        "=======\n"
+        "f1 line1 changed\n"
+        ">>>>>>> REPLACE\n"
+        "Now for the more complex file.\n"
+        "File: file2.py\n"
+        "<<<<<<< SEARCH\n"
+        "f2 line1\n"
+        "=======\n"
+        "f2 line1 changed\n"
+        ">>>>>>> REPLACE\n"
+        "And the second line in that same file.\n"
+        "<<<<<<< SEARCH\n"
+        "f2 line2\n"
+        "=======\n"
+        "f2 line2 changed\n"
+        ">>>>>>> REPLACE\n"
+        "All done."
+    )
+
+    # WHEN unified diff is generated
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
+
+    # THEN it contains all three changes correctly
+    expected_diff = (
+        "--- a/file1.py\n"
+        "+++ b/file1.py\n"
+        "@@ -1 +1 @@\n"
+        "-f1 line1\n"
+        "\\ No newline at end of file\n"
+        "+f1 line1 changed\n"
+        "--- a/file2.py\n"
+        "+++ b/file2.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        "-f2 line1\n"
+        "-f2 line2\n"
+        "\\ No newline at end of file\n"
+        "+f2 line1 changed\n"
+        "+f2 line2 changed\n"
+    )
+    assert diff == expected_diff
+
+    # WHEN display content is generated
+    display_content = generate_display_content(original_contents, llm_response, tmp_path)
+
+    # THEN it contains all conversational text and all rendered diffs
+    assert "First, a simple change." in display_content
+    assert "Now for the more complex file." in display_content
+    assert "And the second line in that same file." in display_content
+    assert "All done." in display_content
+
+    assert display_content.count("```diff") == 3
+
+
+def test_generate_diff_with_filesystem_fallback(tmp_path: Path) -> None:
+    # GIVEN an empty initial context
+    original_contents = {}
+    # AND a file that exists on disk but is not in the context
+    fallback_file = tmp_path / "fallback.py"
+    fallback_file.write_text("original content")
+    # AND an LLM response targeting that file
+    llm_response = (
+        "File: fallback.py\n"
+        "<<<<<<< SEARCH\n"
+        "original content\n"
+        "=======\n"
+        "new content\n"
+        ">>>>>>> REPLACE"
+    )
+
+    # WHEN the unified diff is generated
+    # The session_root is the tmp_path where the fallback file exists
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
+
+    # THEN the diff should show a file modification, not a file creation
+    expected_diff = (
+        "--- a/fallback.py\n"
+        "+++ b/fallback.py\n"
+        "@@ -1 +1 @@\n"
+        "-original content\n"
+        "\\ No newline at end of file\n"
+        "+new content\n"
+    )
+    assert diff == expected_diff
+
+
 def test_no_newline_marker_logic_is_correct_for_new_file_creation(tmp_path: Path) -> None:
     # GIVEN a patch to create a new file that itself has no trailing newline
     original_contents = {}

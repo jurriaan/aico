@@ -136,8 +136,9 @@ def _handle_unified_streaming(
     # Process the final response to collect and display warnings
     if full_llm_response_buffer:
         # Make a copy because the stream processor modifies it in-place
+        current_contents = dict(original_file_contents)
         processed_stream = process_llm_response_stream(
-            dict(original_file_contents), full_llm_response_buffer, session_root
+            current_contents, original_file_contents, full_llm_response_buffer, session_root
         )
         warnings_to_display = [item.text for item in processed_stream if isinstance(item, WarningMessage)]
         if warnings_to_display:

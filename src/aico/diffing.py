@@ -22,9 +22,12 @@ from aico.models import (
 # - `\s*$`: Allows for trailing whitespace on the final `>>>>>>> REPLACE` line.
 # - `re.DOTALL`: Allows `.` to match newlines, so the content blocks can be multiline.
 # - `re.MULTILINE`: Allows `^` and `$` to match the start/end of lines, not just the string.
+_FILE_HEADER_REGEX = re.compile(r"(^\p{H}*File: .*?\n)", re.MULTILINE | re.UNICODE)
+
+# This regex is the core of the parser for individual SEARCH/REPLACE blocks.
+# It no longer includes the "File:" header.
 _FILE_BLOCK_REGEX = re.compile(
-    r"File: (?P<file_path>.*?)\n"
-    + r"(?P<block>"
+    r"(?P<block>"
     + r"^(?P<indent>\p{H}*)<<<<<<< SEARCH\n"
     + r"(?P<search_content>.*?)"
     + r"^(?P=indent)=======\n"  # <-- The ^ anchors this to the start of a line
@@ -40,6 +43,34 @@ _IN_PROGRESS_BLOCK_REGEX = re.compile(
     r"File: .*?^(\p{H}*)<<<<<<< SEARCH.*$",
     re.MULTILINE | re.DOTALL | re.UNICODE,
 )
+
+
+def _add_no_newline_marker_if_needed(diff_lines: list[str], original_content: str | None) -> None:
+    """
+    Manually injects the '\\ No newline at end of file' marker into a diff list IN-PLACE.
+    This is a workaround because `difflib` doesn't add the marker itself when using
+    `splitlines(keepends=True)`, which is necessary to handle files with significant blank lines.
+
+    It also ensures the line preceding the marker correctly ends with a newline, as `difflib`
+    omits it for the last line of a file that lacks a trailing newline.
+    """
+    if not (diff_lines and original_content and not original_content.endswith("\n")):
+        return
+
+    # Find the last line in the diff hunk that originates from the "from" file.
+    # These lines start with ' ' (context) or '-' (deletion).
+    # We iterate backwards from the end of the diff list.
+    for i in range(len(diff_lines) - 1, 1, -1):  # Stop after headers at index 1
+        line = diff_lines[i]
+        if line.startswith("-") or line.startswith(" "):
+            # This is the last relevant line from the original file.
+            # If difflib's output for this line lacks a newline, add one.
+            if not diff_lines[i].endswith("\n"):
+                diff_lines[i] += "\n"
+
+            # Insert the marker immediately after this line.
+            diff_lines.insert(i + 1, "\\ No newline at end of file\n")
+            return
 
 
 def _try_exact_string_patch(original_content: str, search_block: str, replace_block: str) -> str | None:
@@ -145,21 +176,25 @@ def _create_patched_content(original_content: str, search_block: str, replace_bl
 
 
 def _resolve_file_path(
-    patch: AIPatch, file_contents: dict[str, str], session_root: Path
+    patch: AIPatch,
+    current_file_contents: dict[str, str],
+    original_file_contents: FileContents,
+    session_root: Path,
 ) -> tuple[str | None, str | None]:
     """
     Resolves the file path from an AI patch using a hierarchical strategy.
 
-    1.  Exact match in context.
+    1.  Exact match in the current set of files being processed.
     2.  New file intent (empty search block).
     3.  Filesystem fallback (file exists on disk but not in context).
     4.  Failure.
 
     Returns a tuple of (resolved_path, warning_message).
-    If a file is found on disk, it's added to the `file_contents` dict.
+    If a file is found on disk, its content is added to both the `current_file_contents`
+    (for patching) and `original_file_contents` (for final diff generation) dicts.
     """
-    # 1. Exact Match
-    if patch.llm_file_path in file_contents:
+    # 1. Exact Match in current working set
+    if patch.llm_file_path in current_file_contents:
         return patch.llm_file_path, None
 
     # 2. New file intent (empty or whitespace-only search block)
@@ -169,9 +204,11 @@ def _resolve_file_path(
     # 3. Filesystem Fallback
     disk_path = session_root / patch.llm_file_path
     if disk_path.is_file():
-        # Read content and add to in-memory context for this session
+        # Read content and add to in-memory context for this session.
+        # This establishes the "original" content for this file.
         content = disk_path.read_text()
-        file_contents[patch.llm_file_path] = content
+        current_file_contents[patch.llm_file_path] = content
+        original_file_contents[patch.llm_file_path] = content
 
         warning = (
             f"Warning: '{patch.llm_file_path}' was not in the session context but was found on disk. "
@@ -183,10 +220,10 @@ def _resolve_file_path(
     return None, None
 
 
-def _create_aipatch_from_match(match: re.Match[str]) -> AIPatch:
+def _create_aipatch_from_match(match: re.Match[str], llm_file_path: str) -> AIPatch:
     """Helper to create an AIPatch from a regex match object."""
     return AIPatch(
-        llm_file_path=match.group("file_path").strip(),
+        llm_file_path=llm_file_path,
         search_content=match.group("search_content"),
         replace_content=match.group("replace_content"),
     )
@@ -262,8 +299,10 @@ def parse_live_render_segments(llm_response: str) -> Iterator[tuple[str, str]]:
     Types can be 'conversation', 'complete_diff', or 'in_progress_diff'.
     """
     last_end = 0
-    # Use the existing _FILE_BLOCK_REGEX to find all *complete* blocks first.
-    complete_matches = list(_FILE_BLOCK_REGEX.finditer(llm_response))
+    # We now need a regex that includes the file header to correctly segment for rendering.
+    # This is different from the main parser which splits by header first.
+    rendering_block_regex = re.compile(r"File: .*?\n" + _FILE_BLOCK_REGEX.pattern, re.MULTILINE | re.DOTALL | re.UNICODE)
+    complete_matches = list(rendering_block_regex.finditer(llm_response))
 
     for match in complete_matches:
         # Yield conversational text that appears before a complete block.
@@ -292,7 +331,9 @@ def _process_single_diff_block(
 ) -> tuple[ProcessedDiffBlock, WarningMessage | None]:
     """Processes a single parsed AIPatch block and returns the resulting diff and any warnings."""
     diff_string: str
-    actual_file_path, warning_text = _resolve_file_path(parsed_block, current_file_contents, session_root)
+    actual_file_path, warning_text = _resolve_file_path(
+        parsed_block, current_file_contents, original_file_contents, session_root
+    )
     warning_message = WarningMessage(text=warning_text) if warning_text else None
 
     if actual_file_path is None:
@@ -333,12 +374,7 @@ def _process_single_diff_block(
                 tofile=to_file,
             )
         )
-
-        if diff_lines and not content_before_patch.endswith("\n") and content_before_patch:
-            for i, line in reversed(list(enumerate(diff_lines))):
-                if line.startswith(("-", " ")) and i > 2:
-                    diff_lines.insert(i + 1, "\n\\ No newline at end of file\n")
-                    break
+        _add_no_newline_marker_if_needed(diff_lines, content_before_patch)
 
         diff_string = "".join(diff_lines)
 
@@ -352,48 +388,75 @@ def _process_single_diff_block(
 
 
 def process_llm_response_stream(
-    original_file_contents: FileContents, llm_response: str, session_root: Path
+    current_file_contents: dict[str, str],
+    original_file_contents: FileContents,
+    llm_response: str,
+    session_root: Path,
 ) -> Iterator[StreamYieldItem]:
     """
     Parses an LLM response, processes diff blocks sequentially, and yields results.
 
     This generator is the core stateful engine. It maintains the "current" state
     of file contents as it iterates through diff blocks, ensuring that each
-
     patch is applied against the result of the previous one for the same file.
+    It also handles multiple patches for a single file and conversational text
+    interspersed between blocks.
+
+    Args:
+        current_file_contents: A mutable dictionary of file contents that will be updated in-place.
+        original_file_contents: An immutable mapping of the original file contents.
+        llm_response: The raw response from the language model.
+        session_root: The root path of the session.
 
     Yields:
         Either a string (for conversational text), a ProcessedDiffBlock, or a WarningMessage.
     """
-    current_file_contents = dict(original_file_contents)
-    last_end = 0
-    matches = list(_FILE_BLOCK_REGEX.finditer(llm_response))
+    # Split the response by file headers, keeping the headers as part of the output array.
+    # The result is [initial_convo, full_header1, content1, full_header2, content2, ...]
+    chunks = _FILE_HEADER_REGEX.split(llm_response)
 
-    if not matches:
-        if llm_response:
-            yield llm_response
-        return
+    # The first chunk is always conversational text before any "File:" header.
+    initial_convo = chunks.pop(0)
+    if initial_convo:
+        yield initial_convo
 
-    for match in matches:
-        # 1. Yield any conversational text that appeared before this block
-        if match.start() > last_end:
-            yield llm_response[last_end : match.start()]
-        last_end = match.end()
+    # Process the remaining chunks in pairs of (header, content_block).
+    for i in range(0, len(chunks), 2):
+        header_line = chunks[i]
+        content = chunks[i + 1] if (i + 1) < len(chunks) else ""
 
-        # 2. Process the found `File:` block
-        parsed_block = _create_aipatch_from_match(match)
-        processed_block, warning = _process_single_diff_block(
-            parsed_block, current_file_contents, original_file_contents, session_root
-        )
+        llm_file_path = header_line.strip().removeprefix("File:").strip()
 
-        if warning:
-            yield warning
+        last_end = 0
+        matches = list(_FILE_BLOCK_REGEX.finditer(content))
 
-        yield processed_block
+        if not matches:
+            # If a "File:" header is present but no valid blocks follow, treat the
+            # whole section as conversational. This is important for robustness.
+            # Re-joining the header and content preserves the original text exactly.
+            yield header_line + content
+            continue
 
-    # 3. Yield any remaining conversational text after the last block
-    if last_end < len(llm_response):
-        yield llm_response[last_end:]
+        for match in matches:
+            # 1. Yield any conversational text that appeared before this block.
+            if match.start() > last_end:
+                yield content[last_end : match.start()]
+            last_end = match.end()
+
+            # 2. Process the found `SEARCH/REPLACE` block.
+            parsed_block = _create_aipatch_from_match(match, llm_file_path)
+            processed_block, warning = _process_single_diff_block(
+                parsed_block, current_file_contents, original_file_contents, session_root
+            )
+
+            if warning:
+                yield warning
+
+            yield processed_block
+
+        # 3. Yield any remaining conversational text after the last block.
+        if last_end < len(content):
+            yield content[last_end:]
 
 
 def _generate_output_from_stream(
@@ -404,7 +467,10 @@ def _generate_output_from_stream(
 ) -> str:
     output_parts: list[str] = []
     # Make a copy because the stream processor modifies it in-place
-    stream = process_llm_response_stream(dict(original_file_contents), llm_response, session_root)
+    current_file_contents = dict(original_file_contents)
+    stream = process_llm_response_stream(
+        current_file_contents, original_file_contents, llm_response, session_root
+    )
 
     for item in stream:
         output_parts.append(formatter(item))
@@ -415,19 +481,63 @@ def _generate_output_from_stream(
 def generate_unified_diff(original_file_contents: FileContents, llm_response: str, session_root: Path) -> str:
     """
     Generates a unified diff string by processing all `File:` blocks sequentially.
-    Conversational text and warnings are ignored.
+    On success with multiple patches for a single file, it generates a single compound diff.
+    On failure, it returns incremental diffs to show the error message.
     """
+    final_contents = dict(original_file_contents)
+    processed_blocks: list[ProcessedDiffBlock] = []
+    has_errors = False
 
-    def formatter(item: StreamYieldItem) -> str:
-        match item:
-            case ProcessedDiffBlock(unified_diff=diff_string):
-                return diff_string
-            case WarningMessage():
-                return ""
-            case str():
-                return ""
+    # This stream processor now has a dual purpose:
+    # 1. It mutates `final_contents` to get the final state of all files.
+    # 2. It returns incremental `ProcessedDiffBlock` objects which we use if an error occurs.
+    stream_results = process_llm_response_stream(
+        final_contents, original_file_contents, llm_response, session_root
+    )
 
-    return _generate_output_from_stream(original_file_contents, llm_response, session_root, formatter)
+    for item in stream_results:
+        if isinstance(item, ProcessedDiffBlock):
+            processed_blocks.append(item)
+            if "patch failed" in item.unified_diff or "not found" in item.unified_diff:
+                has_errors = True
+
+    # If any patches failed, return the concatenated incremental diffs, which will show the error messages.
+    if has_errors:
+        return "".join(block.unified_diff for block in processed_blocks)
+
+    # If all patches succeeded, compose a single clean diff from the original state to the final state.
+    all_diffs = []
+    # Using keys from both dicts ensures we handle file creations and deletions.
+    all_files = sorted(list(set(original_file_contents.keys()) | set(final_contents.keys())))
+
+    for file_path in all_files:
+        from_content = original_file_contents.get(file_path)  # Returns None if new file
+        to_content = final_contents.get(file_path)
+
+        # No change, no diff.
+        if from_content == to_content:
+            continue
+
+        # Handle new empty file creation edge case
+        if from_content is None and to_content == "":
+            all_diffs.append(f"--- /dev/null\n+++ b/{file_path}\n")
+            continue
+
+        from_file = f"a/{file_path}"
+        to_file = f"b/{file_path}"
+        if from_content is None:  # New file
+            from_file = "/dev/null"
+        if to_content is None:  # Deleted file
+            to_file = "/dev/null"
+
+        from_lines = from_content.splitlines(keepends=True) if from_content is not None else []
+        to_lines = to_content.splitlines(keepends=True) if to_content is not None else []
+
+        diff_lines = list(difflib.unified_diff(from_lines, to_lines, fromfile=from_file, tofile=to_file))
+        _add_no_newline_marker_if_needed(diff_lines, from_content)
+        all_diffs.extend(diff_lines)
+
+    return "".join(all_diffs)
 
 
 def generate_display_content(original_file_contents: FileContents, llm_response: str, session_root: Path) -> str:
