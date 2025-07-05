@@ -50,19 +50,15 @@ def test_history_view_shows_summary_with_excluded_and_start_index(tmp_path: Path
     # GIVEN a session with 6 messages, start index at 2, and one pair excluded after the start index
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         history = [
-            UserChatMessage(
-                role="user", content="msg 0", mode=Mode.CONVERSATION, timestamp="t0"
-            ),  # Active, but before start_index
+            UserChatMessage(role="user", content="msg 0", mode=Mode.CONVERSATION, timestamp="t0"),
             AssistantChatMessage(
                 role="assistant", content="resp 0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=1
             ),
-            UserChatMessage(role="user", content="msg 1", mode=Mode.CONVERSATION, timestamp="t1"),  # Included
+            UserChatMessage(role="user", content="msg 1", mode=Mode.CONVERSATION, timestamp="t1"),
             AssistantChatMessage(
                 role="assistant", content="resp 1", mode=Mode.CONVERSATION, timestamp="t1", model="m", duration_ms=1
             ),
-            UserChatMessage(
-                role="user", content="msg 2", mode=Mode.CONVERSATION, timestamp="t2", is_excluded=True
-            ),  # Excluded
+            UserChatMessage(role="user", content="msg 2", mode=Mode.CONVERSATION, timestamp="t2", is_excluded=True),
             AssistantChatMessage(
                 role="assistant",
                 content="resp 2",
@@ -76,18 +72,19 @@ def test_history_view_shows_summary_with_excluded_and_start_index(tmp_path: Path
         session_data = SessionData(model="test-model", chat_history=history, context_files=[], history_start_index=2)
         save_session(Path(td) / SESSION_FILE_NAME, session_data)
 
-        # WHEN `aico history view` is run
-        result = runner.invoke(app, ["history", "view"])
+        # WHEN `aico history view` is run with color enabled for rich
+        result = runner.invoke(app, ["history", "view"], color=True)
 
         # THEN the command succeeds and shows the correct summary
         assert result.exit_code == 0
         output = result.stdout
-        expected_output = (
-            "History contains 6 total messages. "
-            "The next prompt will use 2 of these, starting from message 2. "
-            "2 messages are excluded in total (use 'aico undo' to exclude more)."
-        )
-        assert expected_output in output
+        # Test for key components rather than exact ANSI code-filled string
+        assert "Full history summary:" in output
+        assert "Total messages: 6 recorded." in output
+        assert "Total excluded: 2 (across the entire history)." in output
+        assert "Current context (for next prompt):" in output
+        assert "Messages to be sent: 2" in output
+        assert "(From an active window of 4 messages (indices 2-5), with 2 excluded via `aico undo`)" in output
 
 
 def test_history_view_shows_summary_with_no_excluded_messages(tmp_path: Path) -> None:
@@ -106,17 +103,18 @@ def test_history_view_shows_summary_with_no_excluded_messages(tmp_path: Path) ->
         session_data = SessionData(model="test-model", chat_history=history, context_files=[], history_start_index=0)
         save_session(Path(td) / SESSION_FILE_NAME, session_data)
 
-        # WHEN `aico history view` is run
-        result = runner.invoke(app, ["history", "view"])
+        # WHEN `aico history view` is run with color enabled for rich
+        result = runner.invoke(app, ["history", "view"], color=True)
 
-        # THEN the command succeeds and shows the correct summary without mentioning excluded messages
+        # THEN the command succeeds and shows the correct summary
         assert result.exit_code == 0
         output = result.stdout
-        expected_output = (
-            "History contains 4 total messages. The next prompt will use 4 of these, starting from message 0."
-        )
-        assert expected_output in output
-        assert "excluded" not in output
+        assert "Full history summary:" in output
+        assert "Total messages: 4 recorded." in output
+        assert "Total excluded: 0 (across the entire history)." in output
+        assert "Current context (for next prompt):" in output
+        assert "Messages to be sent: 4" in output
+        assert "(From an active window of 4 messages (indices 0-3), with 0 excluded via `aico undo`)" in output
 
 
 def test_history_reset_sets_index_to_zero(tmp_path: Path) -> None:

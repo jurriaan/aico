@@ -12,6 +12,9 @@ history_app = typer.Typer(
 )
 
 
+from rich.console import Console
+
+
 @history_app.command()
 def view() -> None:
     """
@@ -21,26 +24,42 @@ def view() -> None:
     history = session_data.chat_history
     history_len = len(history)
 
+    console = Console()
+
     if history_len == 0:
-        print("Chat history is empty.")
+        console.print("Chat history is empty.")
         return
 
-    start_index = session_data.history_start_index
+    # Full history summary
     total_excluded_count = sum(1 for msg in history if msg.is_excluded)
+    console.print("[bold]Full history summary:[/bold]")
+    console.print(f"Total messages: {history_len} recorded.")
+    console.print(f"Total excluded: {total_excluded_count} (across the entire history).")
 
+    console.print()
+
+    # Current context
+    start_index = session_data.history_start_index
     potential_context_slice = history[start_index:]
-    truly_active_count = sum(1 for msg in potential_context_slice if not msg.is_excluded)
+    active_window_size = len(potential_context_slice)
+    excluded_in_window = sum(1 for msg in potential_context_slice if msg.is_excluded)
+    messages_to_be_sent = active_window_size - excluded_in_window
 
-    main_status_parts = [
-        f"History contains {history_len} total messages.",
-        f"The next prompt will use {truly_active_count} of these, starting from message {start_index}.",
-    ]
-    if total_excluded_count > 0:
-        main_status_parts.append(
-            f"{total_excluded_count} messages are excluded in total (use 'aico undo' to exclude more)."
-        )
+    console.print("[bold]Current context (for next prompt):[/bold]")
+    console.print(f"Messages to be sent: {messages_to_be_sent}")
 
-    print(" ".join(main_status_parts))
+    indices_str_part = ""
+    if active_window_size > 0:
+        end_index = history_len - 1
+        if start_index == end_index:
+            indices_str_part = f" (index {start_index})"
+        else:
+            indices_str_part = f" (indices {start_index}-{end_index})"
+
+    console.print(
+        f"    [italic](From an active window of {active_window_size} messages{indices_str_part}, "
+        f"with {excluded_in_window} excluded via `aico undo`)[/italic]"
+    )
 
 
 @history_app.command()
