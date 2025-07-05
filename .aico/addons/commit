@@ -15,6 +15,10 @@
 # 4. DELEGATION: This addon delegates the core AI work back to `aico` by
 #    calling `aico prompt --passthrough`. This is the recommended pattern for
 #    complex addons, as it leverages `aico`'s features.
+#
+# 5. HISTORY MANAGEMENT: Before the commit is finalized, this addon calls `aico undo`
+#    to immediately remove the commit-generation prompt and response from the main session
+#    history. This ensures the history remains clean, even if the commit is aborted.
 
 set -e
 set -o pipefail
@@ -117,6 +121,12 @@ COMMIT_ARGS=("--file" "-" "--edit")
 if [ ${#AUTHORS[@]} -gt 0 ]; then
   COMMIT_ARGS+=("--author=${AUTHORS[0]}")
 fi
+
+# 6. Clean up the history before committing
+# The `aico prompt` call added two messages to the history (prompt + response).
+# We undo this immediately to keep the session history clean, regardless of
+# whether the user proceeds with the commit.
+aico undo &>/dev/null
 
 {
   echo "$AI_COMMIT_MSG"
