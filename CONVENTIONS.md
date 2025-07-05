@@ -22,6 +22,7 @@ When writing code, you MUST follow these project-specific principles:
 ### High-Level Architecture
 
 - **Intent-Driven Commands:** Command names must be verbs that clearly express user intent (e.g., `ask`, `edit`). This is a core design principle of the `aico` CLI.
+- **Orthogonal Commands and Flags:** Prefer creating new, specific commands over adding flags that fundamentally change the behavior of an existing command (e.g., `aico edit` is better than `aico prompt --mode=diff`). Similarly, flags should be orthogonal, controlling a single, well-defined aspect of a command's behavior (e.g., `--recompute` has a single, clear purpose).
 - **Principle of Centralized Logic:** Core logic shared between multiple commands (like invoking the LLM, managing session state, or processing output) should be centralized in helper functions or dedicated modules. This avoids code duplication and ensures a consistent user experience across different commands (e.g., `edit` and `last` should display diffs consistently).
 - **Principle of Streaming Abstractions:** For operations that involve parsing complex, multi-part data streams (especially from LLMs), prefer creating a generator-based streaming parser. This pattern isolates the complex parsing logic and provides a clean, iterable interface for consumers, simplifying the command-level code.
 - **Atomic Operations:** Critical file operations, especially session writing, must be atomic to prevent data corruption. Use a temporary file + rename pattern.
