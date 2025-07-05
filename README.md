@@ -128,15 +128,15 @@ Repeat steps 5 and 6 for each increment of the plan.
 - `aico tokens`: Shows a breakdown of token usage and estimated cost for the current context.
 - `aico ask "<instruction>"`: Have a conversation with the AI for planning and discussion.
 - `aico edit "<instruction>"`: Generate code modifications as a unified diff.
-- `aico prompt "<instruction>"`: Send a raw prompt directly to the AI with minimal formatting.
+- `aico prompt "<instruction>"`: A power-user command for sending unformatted prompts. Primarily intended for scripting or addons (like `aico commit`). Prefer `ask` or `edit` for general use.
 - `aico last [N]`: Shows the N-th to last response from the AI (defaults to 1).
-  - `--recompute`: Recalculates the response against the current state of files.
+  - `--recompute`: Re-applies the original instruction to the current file state. Useful for retrying a command after adding/changing context.
   - `--verbatim`: Prints the original, unprocessed response from the AI.
 - `aico history`: A subcommand group for managing the chat history.
   - `aico history view`: See the current status of the history.
   - `aico history set <index>`: Set which message the active history starts from.
   - `aico history reset`: Reset the history to include all messages.
-- `aico undo [N]`: Marks the last N message pairs as excluded from future context (defaults to 1). This is a "soft delete" that lets you undo recent conversational steps without losing the history, which is useful if an instruction produced an undesirable result.
+- `aico undo [N]`: Marks the last N message pairs as excluded from future context (defaults to 1). This "soft delete" is useful for undoing a conversational step if an `edit` or `ask` command produced an undesirable result.
 
 ## Addons: Extending `aico`
 
@@ -151,5 +151,5 @@ Addons are discovered at runtime and listed in `aico --help`. To provide a descr
 
 The repository includes two addons that serve as practical examples:
 
-- [`commit`](.aico/addons/commit): Uses `aico` to generate a Conventional Commit message based on your staged git changes.
+- [`commit`](.aico/addons/commit): Generates a Conventional Commit message for staged changes by piping your `git diff` into `aico prompt`.
 - [`summarize`](.aico/addons/summarize): Uses `aico` to first generate a comprehensive project summary, and then resets the session history to that summary. This is a useful technique for managing context length and cost.
