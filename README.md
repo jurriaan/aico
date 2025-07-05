@@ -48,8 +48,8 @@ For a complete list of supported providers and the environment variables they re
 - **Built for Composition.** One of the primary outputs of `aico` is a clean, standard unified diff printed to `stdout`. This allows it to be piped directly into other powerful command-line tools you already use.
 
   ```bash
-  # Generate a diff and pipe it directly to git to apply it
-  aico edit "Implement Increment 1 of the plan" | git apply
+  # Generate a diff and pipe it directly to patch to apply it
+  aico edit "Implement Increment 1 of the plan" | patch -p1
 
   # Or review the last generated diff with a modern diffing tool like delta
   aico last | delta
@@ -112,10 +112,10 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
    aico last | delta
 
    # If the patch is correct, apply it
-   aico last | git apply
+   aico last | patch -p1
 
    # Made a mistake? Undo the 3rd to last change by reversing its diff.
-   aico last 3 | git apply --reverse
+   aico last 3 | patch -p1 -R
    ```
 
 Repeat steps 5 and 6 for each increment of the plan.
