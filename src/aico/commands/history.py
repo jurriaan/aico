@@ -2,6 +2,7 @@ import sys
 from typing import Annotated
 
 import typer
+from rich.console import Console
 
 from aico.utils import load_session, save_session
 
@@ -10,9 +11,6 @@ history_app = typer.Typer(
     help="Commands for managing the chat history context sent to the AI.",
     no_args_is_help=True,
 )
-
-
-from rich.console import Console
 
 
 @history_app.command()
@@ -58,7 +56,7 @@ def view() -> None:
 
     console.print(
         f"    [italic](From an active window of {active_window_size} messages{indices_str_part}, "
-        f"with {excluded_in_window} excluded via `aico undo`)[/italic]"
+        + f"with {excluded_in_window} excluded via `aico undo`)[/italic]"
     )
 
 

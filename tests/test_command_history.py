@@ -84,7 +84,9 @@ def test_history_view_shows_summary_with_excluded_and_start_index(tmp_path: Path
         assert "Total excluded: 2 (across the entire history)." in output
         assert "Current context (for next prompt):" in output
         assert "Messages to be sent: 2" in output
-        assert "(From an active window of 4 messages (indices 2-5), with 2 excluded via `aico undo`)" in output
+        assert "(From an active window of 4 messages (indices 2-5), with 2 excluded via `aico undo`)" in output.replace(
+            "\n", ""
+        )
 
 
 def test_history_view_shows_summary_with_no_excluded_messages(tmp_path: Path) -> None:
@@ -114,7 +116,9 @@ def test_history_view_shows_summary_with_no_excluded_messages(tmp_path: Path) ->
         assert "Total excluded: 0 (across the entire history)." in output
         assert "Current context (for next prompt):" in output
         assert "Messages to be sent: 4" in output
-        assert "(From an active window of 4 messages (indices 0-3), with 0 excluded via `aico undo`)" in output
+        assert "(From an active window of 4 messages (indices 0-3), with 0 excluded via `aico undo`)" in output.replace(
+            "\n", ""
+        )
 
 
 def test_history_reset_sets_index_to_zero(tmp_path: Path) -> None:
