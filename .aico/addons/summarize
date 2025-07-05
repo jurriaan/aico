@@ -1,4 +1,21 @@
 #!/bin/bash
+#
+# This script is an example of an `aico` addon. Here's how it works:
+#
+# 1. DISCOVERY: `aico` finds this script because it's executable (`chmod +x`)
+#    and located in the `./.aico/addons/` directory.
+#
+# 2. HELP TEXT: When `aico --help` is run, `aico` executes this script with
+#    the `--usage` flag. The first line of output is used as the help text.
+#
+# 3. SESSION CONTEXT: `aico` sets the `AICO_SESSION_FILE` environment
+#    variable. This addon doesn't need to read it directly, as it uses other
+#    `aico` commands that implicitly use it.
+#
+# 4. DELEGATION: This addon orchestrates multiple `aico` commands (`aico ask`
+#    and `aico history set`) to perform a complex workflow. This is a common
+#    pattern for addons that manage session state.
+
 set -e
 set -o pipefail
 

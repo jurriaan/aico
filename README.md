@@ -140,14 +140,19 @@ Repeat steps 5 and 6 for each increment of the plan.
 
 ## Addons: Extending `aico`
 
-You can extend `aico` with custom commands using a simple addon system. An addon can be any executable script (e.g., a shell script, Python file, or compiled binary), making the system highly flexible.
+You can extend `aico` with custom commands using a simple addon system, making it easy to create custom workflows.
 
-`aico` discovers addons by searching for executables in the following directories, in order of precedence:
+### Creating Your Own Addon
 
-1.  **Project-level addons**: `./.aico/addons/`
-2.  **User-level addons**: `~/.config/aico/addons/`
+An addon can be any executable script (e.g., a shell script, Python file) that meets three simple requirements:
 
-Addons are discovered at runtime and listed in `aico --help`. To provide a description for your addon, make sure it prints a single line of help text when executed with a `--usage` flag.
+1.  It must be placed in an addon directory (`./.aico/addons/` for project-specific or `~/.config/aico/addons/` for global).
+2.  It must be executable (`chmod +x my-addon`).
+3.  It must respond to a `--usage` flag by printing a single line of help text.
+
+The best way to learn how to write an addon is to inspect the examples provided in this repository.
+
+### Example Addons
 
 The repository includes two addons that serve as practical examples:
 
