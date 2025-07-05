@@ -6,7 +6,12 @@ from typer.testing import CliRunner
 
 from aico.main import app
 from aico.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
-from aico.utils import SESSION_FILE_NAME, SessionDataAdapter, save_session
+from aico.utils import (
+    SESSION_FILE_NAME,
+    SessionDataAdapter,
+    get_active_history,
+    save_session,
+)
 
 runner = CliRunner()
 
@@ -52,6 +57,10 @@ def test_undo_default_one_pair(tmp_path: Path) -> None:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_file = _setup_session(Path(td), 4)
 
+        # AND initially all 4 messages are active
+        initial_session_data = _load_session_data(session_file)
+        assert len(get_active_history(initial_session_data)) == 4
+
         # WHEN `aico undo` is run with default count
         result = runner.invoke(app, ["undo"])
 
@@ -59,9 +68,10 @@ def test_undo_default_one_pair(tmp_path: Path) -> None:
         assert result.exit_code == 0
         assert "Marked the last 2 messages as excluded." in result.stdout
 
-        # AND the last 2 messages are marked as excluded
+        # AND the number of active messages is now 2
         final_session = _load_session_data(session_file)
-        assert len(final_session.chat_history) == 4
+        assert len(get_active_history(final_session)) == 2
+        # AND the last two messages are marked as excluded
         assert final_session.chat_history[0].is_excluded is False
         assert final_session.chat_history[1].is_excluded is False
         assert final_session.chat_history[2].is_excluded is True
@@ -73,6 +83,10 @@ def test_undo_count_two_pairs(tmp_path: Path) -> None:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_file = _setup_session(Path(td), 4)
 
+        # AND initially all 4 messages are active
+        initial_session_data = _load_session_data(session_file)
+        assert len(get_active_history(initial_session_data)) == 4
+
         # WHEN `aico undo 2` is run
         result = runner.invoke(app, ["undo", "2"])
 
@@ -80,8 +94,10 @@ def test_undo_count_two_pairs(tmp_path: Path) -> None:
         assert result.exit_code == 0
         assert "Marked the last 4 messages as excluded." in result.stdout
 
-        # AND all 4 messages are marked as excluded
+        # AND the number of active messages is now 0
         final_session = _load_session_data(session_file)
+        assert len(get_active_history(final_session)) == 0
+        # AND all messages are marked as excluded
         assert all(msg.is_excluded for msg in final_session.chat_history)
 
 
@@ -102,6 +118,8 @@ def test_undo_count_exceeds_history(tmp_path: Path) -> None:
     # GIVEN a session with 4 messages (2 pairs)
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_file = _setup_session(Path(td), 4)
+        initial_session_data = _load_session_data(session_file)
+        assert len(get_active_history(initial_session_data)) == 4
 
         # WHEN `aico undo` is run with a count that exceeds the history length
         result = runner.invoke(app, ["undo", "3"])  # 3 pairs = 6 messages
@@ -110,8 +128,10 @@ def test_undo_count_exceeds_history(tmp_path: Path) -> None:
         assert result.exit_code == 1
         assert "Error: Cannot undo 3 pairs (6 messages), history only contains 4 messages." in result.stderr
 
-        # AND no messages were changed
+        # AND the number of active messages remains unchanged
         final_session = _load_session_data(session_file)
+        assert len(get_active_history(final_session)) == 4
+        # AND no messages were changed
         assert all(not msg.is_excluded for msg in final_session.chat_history)
 
 
@@ -126,6 +146,9 @@ def test_undo_on_already_excluded_messages(tmp_path: Path) -> None:
         session_data.chat_history[3] = replace(session_data.chat_history[3], is_excluded=True)
         save_session(session_file, session_data)
 
+        # AND there are initially 2 active messages
+        assert len(get_active_history(session_data)) == 2
+
         # WHEN `aico undo` is run again
         result = runner.invoke(app, ["undo"])
 
@@ -133,6 +156,8 @@ def test_undo_on_already_excluded_messages(tmp_path: Path) -> None:
         assert result.exit_code == 0
         assert "Marked the last 2 messages as excluded." in result.stdout
 
-        # AND all four messages are now excluded
+        # AND there are now 0 active messages
         final_session = _load_session_data(session_file)
+        assert len(get_active_history(final_session)) == 0
+        # AND all four messages are now excluded
         assert all(msg.is_excluded for msg in final_session.chat_history)

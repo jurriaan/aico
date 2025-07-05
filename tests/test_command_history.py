@@ -1,6 +1,5 @@
 # pyright: standard
 
-import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -8,8 +7,13 @@ import pytest
 from typer.testing import CliRunner
 
 from aico.main import app
-from aico.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
-from aico.utils import SESSION_FILE_NAME, save_session
+from aico.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
+from aico.utils import (
+    SESSION_FILE_NAME,
+    SessionDataAdapter,
+    get_active_history,
+    save_session,
+)
 
 runner = CliRunner()
 
@@ -41,9 +45,10 @@ def test_history_set_with_negative_index_argument(tmp_path: Path) -> None:
         assert result.exit_code == 0
         assert "History start index set to 8" in result.stdout
 
-        # AND the session file is updated with the correct index
-        updated_session_data = json.loads(session_file.read_text())
-        assert updated_session_data["history_start_index"] == 8
+        # AND the number of active messages for the next prompt is now 2
+        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        active_history = get_active_history(updated_session_data)
+        assert len(active_history) == 2
 
 
 def test_history_view_shows_summary_with_excluded_and_start_index(tmp_path: Path) -> None:
@@ -122,20 +127,21 @@ def test_history_view_shows_summary_with_no_excluded_messages(tmp_path: Path) ->
 
 
 def test_history_reset_sets_index_to_zero(tmp_path: Path) -> None:
-    # GIVEN a session with the history index at 5
+    # GIVEN a session with 10 messages and the history index at 5
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        chat_history: list[ChatMessageHistoryItem] = [
+            UserChatMessage(
+                role="user",
+                content=f"msg {i}",
+                mode=Mode.CONVERSATION,
+                timestamp=datetime.now(UTC).isoformat(),
+            )
+            for i in range(10)
+        ]
         session_data = SessionData(
             model="test-model",
             context_files=[],
-            chat_history=[
-                UserChatMessage(
-                    role="user",
-                    content=f"msg {i}",
-                    mode=Mode.CONVERSATION,
-                    timestamp=datetime.now(UTC).isoformat(),
-                )
-                for i in range(10)
-            ],
+            chat_history=chat_history,
             history_start_index=5,
         )
         session_file = Path(td) / SESSION_FILE_NAME
@@ -148,9 +154,10 @@ def test_history_reset_sets_index_to_zero(tmp_path: Path) -> None:
         assert result.exit_code == 0
         assert "History index reset to 0. Full chat history is now active." in result.stdout
 
-        # AND the session file is updated
-        updated_session_data = json.loads(session_file.read_text())
-        assert updated_session_data["history_start_index"] == 0
+        # AND all 10 messages are now active for the next prompt
+        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        active_history = get_active_history(updated_session_data)
+        assert len(active_history) == 10
 
 
 def test_history_set_with_positive_index(tmp_path: Path) -> None:
@@ -179,9 +186,10 @@ def test_history_set_with_positive_index(tmp_path: Path) -> None:
         assert result.exit_code == 0
         assert "History start index set to 7" in result.stdout
 
-        # AND the session file is updated
-        updated_session_data = json.loads(session_file.read_text())
-        assert updated_session_data["history_start_index"] == 7
+        # AND the number of active messages for the next prompt is now 3
+        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        active_history = get_active_history(updated_session_data)
+        assert len(active_history) == 3
 
 
 @pytest.mark.parametrize(
@@ -212,6 +220,10 @@ def test_history_set_fails_with_invalid_index(tmp_path: Path, invalid_input: str
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, session_data)
 
+        # AND the initial number of active messages is 5
+        initial_active_history = get_active_history(session_data)
+        assert len(initial_active_history) == 5
+
         # WHEN `aico history set` is run with an invalid index
         result = runner.invoke(app, ["history", "set", invalid_input])
 
@@ -219,9 +231,10 @@ def test_history_set_fails_with_invalid_index(tmp_path: Path, invalid_input: str
         assert result.exit_code == 1
         assert error_message in result.stderr
 
-        # AND the session file remains unchanged
-        updated_session_data = json.loads(session_file.read_text())
-        assert updated_session_data["history_start_index"] == 5
+        # AND the number of active messages remains unchanged
+        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        final_active_history = get_active_history(updated_session_data)
+        assert len(final_active_history) == 5
 
 
 @pytest.mark.parametrize(
