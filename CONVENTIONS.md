@@ -4,17 +4,27 @@
 Do NOT add comments within the code that merely describe the diff, such as `# Added this line` or `# Changed X to Y`. Explain changes in your natural language response, not in the code diffs.
 Adhere strictly to the user's request. If a request is ambiguous or critical information is missing, **always clarify by asking focused questions** before proceeding. Do not generate code until the necessary information is provided.
 
-## Architecture and Design Principles
+## Core Philosophy: A Composable Unix Tool
+
+The fundamental design of `aico` is that of a predictable, composable Unix tool. It is a **tool, not an agent**. This principle gives rise to our most important conventions:
+
+- **Predictable and Composable I/O:** The application MUST respect its execution context.
+  - When `stdout` is piped or redirected (i.e., not a TTY), its output MUST be clean, machine-readable data (e.g., a unified diff).
+  - All human-centric output (progress indicators, diagnostics, warnings, cost info) MUST be directed to `stderr` to avoid corrupting the data stream.
+  - When `stdout` is connected to a TTY, its output can be enhanced for human readability (e.g., with Rich Markdown).
+- **Transparent State:** The entire session context is stored in a single, human-readable `.ai_session.json` file. There should be no hidden state.
+- **Developer in Control:** The workflow is designed for a "Plan and Execute" model, where the developer uses `aico` to augment their own process, not replace it.
+
+## Architectural Principles
 
 When writing code, you MUST follow these project-specific principles:
 
 ### High-Level Architecture
 
 - **Intent-Driven Commands:** Command names must be verbs that clearly express user intent (e.g., `ask`, `edit`). This is a core design principle of the `aico` CLI.
-- **Composable Output:** Primary outputs should be standard formats (like unified diffs) that integrate cleanly with other Unix tools.
-- **Shared Logic:** Extract common functionality into reusable components or helper functions rather than duplicating logic across commands.
+- **Principle of Centralized Logic:** Core logic shared between multiple commands (like invoking the LLM, managing session state, or processing output) should be centralized in helper functions or dedicated modules. This avoids code duplication and ensures a consistent user experience across different commands (e.g., `edit` and `last` should display diffs consistently).
+- **Principle of Streaming Abstractions:** For operations that involve parsing complex, multi-part data streams (especially from LLMs), prefer creating a generator-based streaming parser. This pattern isolates the complex parsing logic and provides a clean, iterable interface for consumers, simplifying the command-level code.
 - **Atomic Operations:** Critical file operations, especially session writing, must be atomic to prevent data corruption. Use a temporary file + rename pattern.
-- **Streaming Interfaces:** For long-running operations like LLM calls, use streaming to provide immediate feedback to the user.
 - **Simplicity and Readability:** Keep the code as simple as possible. Use self-explanatory identifier names over comments. Do not add docstrings to simple methods/functions.
 
 ### Modern Python and Type Safety
@@ -23,6 +33,7 @@ When writing code, you MUST follow these project-specific principles:
 - **Static Type Checking:** All code MUST pass `basedpyright` type-checking without any errors or warnings.
 - **Pydantic for Data Contracts:** Use Pydantic models for all data structures that are serialized/deserialized (e.g., `.ai_session.json`) or received from external APIs. This is our primary mechanism for ensuring data integrity and preventing runtime errors from corrupt files or unexpected API changes.
 - **Contracts for Untyped Libraries:** Use `typing.Protocol` with `@runtime_checkable` to create a defensive boundary around external library objects that lack precise types (e.g., `litellm` response objects). This insulates our code from upstream changes and makes our internal logic more predictable.
+- **Immutability for Data Models:** When defining Pydantic models or dataclasses that represent data that should not be mutated after creation (such as historical log entries like `ChatMessageHistoryItem`), prefer making them immutable (e.g., using `frozen=True`). This prevents bugs related to accidental state modification.
 - **Specific Collection Types:** Use specific collection types from `collections.abc` (like `Mapping`, `Sequence`) in type hints over generic `dict` or `list` where appropriate.
 - **Enums for Finite Sets:** Use `enum.Enum` for fixed sets of values (like `Mode`) to ensure type safety and prevent magic strings.
 - **Latest Python Features:** Write code using the latest stable Python version and its modern features, such as:
@@ -36,3 +47,12 @@ When writing code, you MUST follow these project-specific principles:
 - **Isolated Filesystems:** CLI tests that interact with the filesystem MUST use `typer.testing.CliRunner.isolated_filesystem` to ensure tests are hermetic and do not interfere with each other.
 - **Mock External Services:** All external API calls, particularly to LLMs, MUST be mocked using `pytest-mock`.
 - **Prefer Helper Functions:** For repetitive test setup (like initializing sessions and mocking API calls), prefer creating a dedicated helper function over complex `pytest.mark.parametrize` fixtures to keep individual tests readable and self-contained.
+
+## Addon Development Conventions
+
+To ensure addons integrate seamlessly and provide a consistent user experience, they SHOULD adhere to the following conventions:
+
+- **Discovery:** Addons must be executable and placed in one of the standard addon directories (`./.aico/addons/` or `~/.config/aico/addons/`).
+- **Help Text:** An addon must provide a single line of help text by responding to a `--usage` flag.
+- **Session Interaction:** An addon MUST use the `AICO_SESSION_FILE` environment variable to locate and interact with the session state, ensuring portability.
+- **Delegation:** Complex addons are encouraged to delegate to `aico`'s built-in commands (e.g., `aico prompt --passthrough`) for core functionality rather than re-implementing it.
