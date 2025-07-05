@@ -57,7 +57,7 @@ GIT_DIFF_OUTPUT="$(git diff --staged --unified=0 --color=never)"
 GIT_LOG_OUTPUT="$(git log --pretty=format:'%s' -n 20)"
 
 # 3. Build the prompt
-SYSTEM_PROMPT="You are an expert AI assistant named \`commit-bot\`. Your sole purpose is to generate a high-quality Git commit message in the Conventional Commit format. You are a tool, not a conversationalist. The conversation provided is solely for context and should not be included in your response. Focus on the task at hand: creating a clear, concise commit message based on the provided git diff and recent log."
+SYSTEM_PROMPT="You are an expert AI assistant named \`commit-bot\`. Your sole purpose is to generate a high-quality Git commit message in the Conventional Commit format. You are a tool, not a conversationalist. The conversation provided is solely for context and should not be included in your response. Focus on the task at hand: creating a clear, concise commit message based on the provided git diff and recent log. The diff is leading here, as that is the change that will be committed. Ensure your generated message accurately and comprehensively summarizes all the changes present in the diff; do not omit any significant changes."
 
 PROMPT=$(
   cat <<EOF
