@@ -12,6 +12,33 @@ Install `aico` using `uv`:
 uv tool install --from git+https://github.com/jurriaan/aico/ aico
 ```
 
+## Configuration
+
+`aico` uses [LiteLLM](https://litellm.ai/) to support a large number of models and providers. To use a specific model provider, you need to set the corresponding API key as an environment variable.
+
+For example:
+
+-   For OpenAI models (like `gpt-4o`):
+    ```bash
+    export OPENAI_API_KEY="sk-..."
+    ```
+-   For Anthropic models (like `claude-4-sonnet`):
+    ```bash
+    export ANTHROPIC_API_KEY="sk-..."
+    ```
+-   For OpenRouter models (like `openrouter/google/gemini-flash-1.5`):
+    ```bash
+    export OPENROUTER_API_KEY="sk-..."
+    ```
+
+You specify which model to use when you initialize a session:
+
+```bash
+aico init --model "openrouter/google/gemini-2.5-pro"
+```
+
+For a complete list of supported providers and the environment variables they require, please refer to the [LiteLLM Provider documentation](https://docs.litellm.ai/docs/providers).
+
 ## Philosophy
 
 `aico` is guided by a few core principles that differentiate it from chat-based assistants.
