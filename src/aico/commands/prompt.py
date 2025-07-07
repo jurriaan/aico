@@ -17,7 +17,6 @@ from aico.aico_live_render import AicoLiveRender
 from aico.diffing import (
     generate_display_content,
     generate_unified_diff,
-    parse_live_render_segments,
     process_llm_response_stream,
 )
 from aico.models import (
@@ -25,10 +24,12 @@ from aico.models import (
     ChatMessageHistoryItem,
     DerivedContent,
     FileContents,
+    FileHeader,
     LiteLLMChoiceContainer,
     LiteLLMUsage,
     LLMChatMessage,
     Mode,
+    ProcessedDiffBlock,
     SessionData,
     TokenUsage,
     UserChatMessage,
@@ -105,17 +106,26 @@ def _handle_unified_streaming(
             if delta:
                 full_llm_response_buffer += delta
 
-                segments = parse_live_render_segments(full_llm_response_buffer)
+                # Re-process the entire buffer on each chunk to get an updated stream of renderables.
+                # This delegates all complex parsing and stateful logic to the diffing engine.
+                stream_processor = process_llm_response_stream(
+                    original_file_contents, full_llm_response_buffer, session_root
+                )
                 renderables: list[Markdown | Text] = []
 
-                for segment_type, content in segments:
-                    if segment_type == "conversation":
-                        renderables.append(Markdown(content))
-                    elif segment_type == "complete_diff":
-                        display_version = generate_display_content(original_file_contents, content, session_root)
-                        renderables.append(Markdown(display_version))
-                    elif segment_type == "in_progress_diff":
-                        renderables.append(Text(content, no_wrap=True))
+                for item in stream_processor:
+                    match item:
+                        case str() as text:
+                            # Render conversational text and failed/in-progress blocks
+                            renderables.append(Markdown(text))
+                        case FileHeader(llm_file_path=path):
+                            renderables.append(Markdown(f"File: `{path}`\n"))
+                        case ProcessedDiffBlock(unified_diff=diff):
+                            renderables.append(Markdown(f"```diff\n{diff}```\n"))
+                        case WarningMessage(text=warning):
+                            renderables.append(Markdown(f"⚠️ {warning}\n"))
+                        case _:
+                            pass
 
                 live.update(Group(*renderables), refresh=True)
 

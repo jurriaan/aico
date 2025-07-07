@@ -43,10 +43,6 @@ _FILE_BLOCK_REGEX = re.compile(
 
 # This regex checks for a File: line followed by a SEARCH delimiter at the end of the text.
 # It's more robust than simple string checking.
-_IN_PROGRESS_BLOCK_REGEX = re.compile(
-    r"File: .*?^(\p{H}*)<<<<<<< SEARCH.*$",
-    re.MULTILINE | re.DOTALL | re.UNICODE,
-)
 
 
 def _add_no_newline_marker_if_needed(diff_lines: list[str], original_content: str | None) -> None:
@@ -236,38 +232,6 @@ def _create_patch_failed_error(file_path: str) -> str:
         f"This can happen if the file has changed or the AI made a mistake. Patch skipped."
     )
     return error_message
-
-
-def parse_live_render_segments(llm_response: str) -> Iterator[tuple[str, str]]:
-    """
-    Parses the full LLM response buffer and yields tuples of (type, content).
-    Types can be 'conversation', 'complete_diff', or 'in_progress_diff'.
-    """
-    last_end = 0
-    # We now need a regex that includes the file header to correctly segment for rendering.
-    # This is different from the main parser which splits by header first.
-    rendering_block_regex = re.compile(
-        r"File: .*?\n" + _FILE_BLOCK_REGEX.pattern, re.MULTILINE | re.DOTALL | re.UNICODE
-    )
-    complete_matches = list(rendering_block_regex.finditer(llm_response))
-
-    for match in complete_matches:
-        # Yield conversational text that appears before a complete block.
-        if match.start() > last_end:
-            yield ("conversation", llm_response[last_end : match.start()])
-
-        # Yield the complete, parseable block.
-        yield ("complete_diff", match.group(0))
-        last_end = match.end()
-
-    # Get any text remaining after the last complete block.
-    remaining_text = llm_response[last_end:]
-
-    # Use the new, more precise regex to check if the remaining text looks like the beginning of a diff block.
-    if remaining_text and _IN_PROGRESS_BLOCK_REGEX.search(remaining_text):
-        yield ("in_progress_diff", remaining_text)
-    elif remaining_text:
-        yield ("conversation", remaining_text)
 
 
 def _process_single_diff_block(
