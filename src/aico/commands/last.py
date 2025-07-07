@@ -2,15 +2,16 @@ import sys
 from typing import Annotated
 
 import typer
-from rich.console import Console
+from rich.console import Console, Group
 from rich.markdown import Markdown
+from rich.text import Text
 
 from aico.diffing import (
     generate_display_content,
     generate_unified_diff,
     process_patches_sequentially,
 )
-from aico.models import AssistantChatMessage, ChatMessageHistoryItem, Mode
+from aico.models import AssistantChatMessage, ChatMessageHistoryItem, DisplayItem, Mode
 from aico.utils import build_original_file_contents, is_terminal, load_session
 
 
@@ -85,7 +86,7 @@ def last(
         return
 
     unified_diff: str | None = None
-    display_content: str | None = None
+    display_content: str | list[DisplayItem] | None = None
 
     if recompute:
         session_root = session_file.parent
@@ -112,8 +113,23 @@ def last(
 
     # Unified rendering logic
     if is_terminal():
-        if display_content:
-            _render_content(display_content, use_rich_markdown=True)
+        console = Console()
+        renderables: list[Markdown | Text] = []
+        match display_content:
+            case list() as items:
+                # New, structured path
+                for item in items:
+                    if item["type"] == "markdown":
+                        renderables.append(Markdown(item["content"]))
+                    else:  # "text"
+                        renderables.append(Text(item["content"], no_wrap=True))
+                if renderables:
+                    console.print(Group(*renderables))
+
+            case str() as content_string:
+                # Backward compatibility path: treat the old string as a single Markdown block
+                if content_string:
+                    console.print(Markdown(content_string))
     else:
         # Non-TTY (piped) output logic is now driven by original intent
         if target_asst_msg.mode == Mode.DIFF:
@@ -126,4 +142,10 @@ def last(
             if unified_diff:
                 print(unified_diff, end="")
             elif display_content:
-                print(display_content, end="")
+                if isinstance(display_content, list):
+                    # New format: reconstruct the string from display items
+                    full_content = "".join(item["content"] for item in display_content)
+                    print(full_content, end="")
+                else:
+                    # Old format: print the string directly
+                    print(display_content, end="")

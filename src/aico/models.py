@@ -46,10 +46,15 @@ class UserChatMessage:
     is_excluded: bool = False
 
 
+class DisplayItem(TypedDict):
+    type: Literal["markdown", "text"]
+    content: str
+
+
 @dataclass(slots=True, frozen=True)
 class DerivedContent:
     unified_diff: str | None
-    display_content: str | None
+    display_content: list[DisplayItem] | str | None
 
 
 @dataclass(slots=True, frozen=True)

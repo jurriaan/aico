@@ -199,7 +199,7 @@ def test_ask_command_with_diff_response_renders_live_diff(tmp_path: Path, mocker
         assert final_session.chat_history[-1].mode == "conversation"
 
 
-def test_ask_command_with_diff_response_saves_derived_content(tmp_path: Path, mocker) -> None:
+def test_ask_command_with_diff_response_saves_derived_content(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a session and a mocked LLM returning a diff
     llm_diff_response = "File: file.py\n<<<<<<< SEARCH\nold content\n=======\nnew content\n>>>>>>> REPLACE"
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
@@ -225,7 +225,11 @@ def test_ask_command_with_diff_response_saves_derived_content(tmp_path: Path, mo
         assert assistant_msg.derived is not None
         assert assistant_msg.derived.unified_diff is not None
         assert assistant_msg.derived.unified_diff == expected_diff
-        assert assistant_msg.derived.display_content == f"File: `file.py`\n```diff\n{expected_diff}```\n"
+        expected_display_items = [
+            {"type": "markdown", "content": "File: `file.py`\n"},
+            {"type": "markdown", "content": f"```diff\n{expected_diff}```\n"},
+        ]
+        assert assistant_msg.derived.display_content == expected_display_items
 
 
 def test_prompt_fails_with_no_input(tmp_path: Path, mocker: MockerFixture) -> None:
