@@ -32,6 +32,7 @@ from aico.models import (
     ProcessedDiffBlock,
     SessionData,
     TokenUsage,
+    UnparsedBlock,
     UserChatMessage,
     WarningMessage,
 )
@@ -116,8 +117,11 @@ def _handle_unified_streaming(
                 for item in stream_processor:
                     match item:
                         case str() as text:
-                            # Render conversational text and failed/in-progress blocks
+                            # Render conversational text.
                             renderables.append(Markdown(text))
+                        case UnparsedBlock(text=block_text):
+                            # Render unparsed/failed blocks as plain text to avoid markdown artifacts.
+                            renderables.append(Text(block_text, no_wrap=True))
                         case FileHeader(llm_file_path=path):
                             renderables.append(Markdown(f"File: `{path}`\n"))
                         case ProcessedDiffBlock(unified_diff=diff):

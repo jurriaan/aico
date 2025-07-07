@@ -140,7 +140,12 @@ class FileHeader:
     llm_file_path: str
 
 
-type StreamYieldItem = str | FileHeader | ProcessedDiffBlock | WarningMessage
+@dataclass(slots=True, frozen=True)
+class UnparsedBlock:
+    text: str
+
+
+type StreamYieldItem = str | FileHeader | ProcessedDiffBlock | WarningMessage | UnparsedBlock
 
 
 class LLMChatMessage(TypedDict):

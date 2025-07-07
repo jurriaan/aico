@@ -13,6 +13,7 @@ from aico.models import (
     ProcessedPatchResult,
     ResolvedFilePath,
     StreamYieldItem,
+    UnparsedBlock,
     WarningMessage,
 )
 
@@ -27,6 +28,9 @@ from aico.models import (
 # - `re.DOTALL`: Allows `.` to match newlines, so the content blocks can be multiline.
 # - `re.MULTILINE`: Allows `^` and `$` to match the start/end of lines, not just the string.
 _FILE_HEADER_REGEX = re.compile(r"(^\p{H}*File: .*?\n)", re.MULTILINE | re.UNICODE)
+
+_INCOMPLETE_BLOCK_REGEX = re.compile(r"^\p{H}*<<<<<<< SEARCH", re.MULTILINE | re.UNICODE)
+
 
 # This regex is the core of the parser for individual SEARCH/REPLACE blocks.
 # It no longer includes the "File:" header.
@@ -332,6 +336,19 @@ def process_patches_sequentially(
     return final_contents, baseline_contents, warnings
 
 
+def _yield_remaining_text(text: str) -> Iterator[str | UnparsedBlock]:
+    """
+    Helper to yield remaining text, classifying it as conversational or an incomplete block.
+    """
+    # Heuristic to detect an incomplete block.
+    # If it looks like a SEARCH block but isn't complete, treat it as an UnparsedBlock
+    # to prevent broken Markdown rendering.
+    if _INCOMPLETE_BLOCK_REGEX.search(text) and ">>>>>>> REPLACE" not in text:
+        yield UnparsedBlock(text=text)
+    else:
+        yield text
+
+
 def process_llm_response_stream(
     original_file_contents: FileContents,
     llm_response: str,
@@ -385,8 +402,13 @@ def process_llm_response_stream(
         matches = list(_FILE_BLOCK_REGEX.finditer(block_content))
 
         if not matches:
-            # If no SEARCH/REPLACE blocks found, treat the whole block as conversational
-            yield header_line + block_content
+            # If no SEARCH/REPLACE blocks found, check if it's an incomplete block
+            if _INCOMPLETE_BLOCK_REGEX.search(block_content):
+                yield FileHeader(llm_file_path=llm_file_path)
+                yield UnparsedBlock(text=block_content)
+            else:
+                # Treat the whole block as conversational
+                yield header_line + block_content
         else:
             yield FileHeader(llm_file_path=llm_file_path)
             for match in matches:
@@ -403,7 +425,7 @@ def process_llm_response_stream(
 
                 if resolution.path is None:
                     yield WarningMessage(text=_create_file_not_found_error(parsed_block.llm_file_path))
-                    yield match.group("block")
+                    yield UnparsedBlock(text=match.group("block"))
                     continue
 
                 actual_file_path = resolution.path
@@ -424,16 +446,18 @@ def process_llm_response_stream(
                 else:
                     error_text = _create_patch_failed_error(actual_file_path)
                     yield WarningMessage(text=error_text)
-                    yield match.group("block")
+                    yield UnparsedBlock(text=match.group("block"))
 
             if block_last_end < len(block_content):
-                yield block_content[block_last_end:]
+                remaining_in_block = block_content[block_last_end:]
+                yield from _yield_remaining_text(remaining_in_block)
 
         last_end = file_header_match.end() + len(block_content)
 
     # Yield any final conversational text after the last file block
     if last_end < len(llm_response):
-        yield llm_response[last_end:]
+        remaining_text = llm_response[last_end:]
+        yield from _yield_remaining_text(remaining_text)
 
     # At the very end of the stream, yield the final state for the sequential processor.
     yield PatchApplicationResult(
@@ -504,6 +528,8 @@ def generate_display_content(original_file_contents: FileContents, llm_response:
                 output_parts.append(f"```diff\n{diff_string}```\n")
             case WarningMessage(text=warning_text):
                 output_parts.append(f"⚠️ {warning_text}\n")
+            case UnparsedBlock(text=unparsed_text):
+                output_parts.append(unparsed_text)
             case PatchApplicationResult():
                 pass  # Ignore final state object in display
 

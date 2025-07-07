@@ -133,3 +133,68 @@ def test_streaming_handles_multiple_patches_for_same_file_piped(tmp_path: Path, 
     not in the sequential processing that generates the final piped output.
     """
     _run_multiple_patches_test(tmp_path, mocker, is_tty=False)
+
+
+def test_streaming_renders_failed_diff_block_as_plain_text(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN a TTY environment and a file
+    file_content = "original content\n"
+    context_files = {"file.py": file_content}
+    mocker.patch("aico.commands.prompt.is_terminal", return_value=True)
+
+    # AND an LLM response stream containing a SEARCH/REPLACE block that will fail to apply
+    llm_response_chunks = [
+        "This is some conversational text.\n",
+        "File: file.py\n",
+        "<<<<<<< SEARCH\n",
+        "some text not in file\n",
+        "=======\n",
+        "new content\n",
+        ">>>>>>> REPLACE\n",
+        "Some final text.",
+    ]
+
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        setup_streaming_test(mocker, Path(td), llm_response_chunks, context_files=context_files)
+
+        # WHEN `aico edit` is run
+        result = runner.invoke(app, ["edit", "a prompt that will fail"])
+
+        # THEN the command should succeed
+        assert result.exit_code == 0, result.stderr
+
+        # AND the output contains all expected text elements
+        output = result.stdout
+        raw_block_text = "<<<<<<< SEARCH\nsome text not in file\n=======\nnew content\n>>>>>>> REPLACE"
+        assert "This is some conversational text." in output
+        assert "⚠️" in output
+        assert "The SEARCH block from the AI could not be found" in output
+        assert raw_block_text in output
+        assert "Some final text." in output
+
+
+def test_streaming_renders_incomplete_diff_block_as_plain_text(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN a TTY environment and a file
+    mocker.patch("aico.commands.prompt.is_terminal", return_value=True)
+
+    # AND an LLM response stream that cuts off in the middle of a SEARCH/REPLACE block
+    llm_response_chunks = [
+        "File: file.py\n",
+        "<<<<<<< SEARCH\n",
+        "some text\n",
+        "=======\n",
+        "# new content that is never finished",
+    ]
+
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        setup_streaming_test(mocker, Path(td), llm_response_chunks, context_files={"file.py": "some text\n"})
+
+        # WHEN `aico edit` is run
+        result = runner.invoke(app, ["edit", "a prompt that will be cut off"])
+
+        # THEN the command should succeed
+        assert result.exit_code == 0, result.stderr
+
+        # AND the output should contain the raw, incomplete block
+        output = result.stdout
+        expected_incomplete_text = "<<<<<<< SEARCH\nsome text\n=======\n# new content that is never finished"
+        assert expected_incomplete_text in output
