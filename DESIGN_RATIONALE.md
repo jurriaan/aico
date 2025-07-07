@@ -24,6 +24,17 @@ These records explain the motivation and consequences of key architectural decis
 -   **Decision:** The `last` command includes a `--recompute` flag.
 -   **Rationale:** The primary purpose of `last --recompute` is to **fix broken context**. It allows a user to run an instruction, see it fail, correct the session context (`aico add ...`), and then re-apply the *exact same instruction* to the new, correct state. To serve this purpose reliably, `recompute` will *always* use the full, current session context, even if the original command was run with `--passthrough`. This makes it a predictable and powerful tool for recovering from context-related failures.
 
+### ADR-004: Unified Parsing and Structured Display Persistence
+
+-   **Context:** A series of rendering bugs revealed systemic issues. The live renderer showed garbled output for failed patches, and the `aico last` command showed the same garbled output for historical failed patches because the structural information from parsing was being lost during session saving.
+-   **Decision:** We made two related architectural changes:
+    1.  The `process_llm_response_stream` generator in `diffing.py` was made the **single source of truth** for all LLM output parsing (live rendering, final output, `last --recompute`).
+    2.  The result of this parsing is stored in the session history not as a pre-rendered string, but as a structured list of display items (`list[DisplayItem]`).
+-   **Rationale:**
+    -   **Unified Parsing:** The initial bugs stemmed from having duplicated and slightly different parsing logic in multiple places. By centralizing all parsing into one stateful generator, we guarantee that the live view, the piped output, and the historical view (`aico last`) are all derived from the exact same logic, eliminating an entire class of rendering inconsistencies.
+    -   **Structured Persistence:** The `aico last` bug was caused by "stringly-typed" persistence—flattening structured data (like conversational text, diffs, and warnings) into a single string for storage, thereby losing the information needed for correct rendering later. Storing the output as a `list[{"type": ..., "content": ...}]` preserves this structure.
+    -   **Backward Compatibility:** The session model for the persistence field (`derived.display_content`) uses the type `list[DisplayItem] | str | None`. This allows the `last` command to correctly render new, structured history while seamlessly falling back to the old rendering behavior for session files created before this change, ensuring a smooth and non-breaking upgrade for users.
+
 ## Project Philosophy & Vision
 
 ### Dependency Rationale: Why `litellm`?

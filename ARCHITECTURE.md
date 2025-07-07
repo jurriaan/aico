@@ -57,4 +57,4 @@ The components work together in a predictable sequence. The lifecycle of a typic
     -   The **Diff & Patch Engine** live-parses the stream for `SEARCH/REPLACE` blocks.
     -   A live renderer displays conversational text and formatted diffs to the user in real-time.
 6.  **State Saving:** After the full response is received, the user's prompt and the assistant's complete response are appended to the chat history. The **State Persistence Layer** then saves the updated session object back to disk atomically.
-7.  **Final Output:** If the command is being piped (non-TTY), the **Diff & Patch Engine** generates a final, clean unified diff, which the **Command Layer** prints to `stdout`. All diagnostic information has already been sent to `stderr`.
+7.  **Final Output:** If the command is being piped (non-TTY), the **Diff & Patch Engine** generates a final, clean unified diff from the full response. The **Command Layer** then prints this diff to `stdout`. All diagnostic information has already been sent to `stderr`.
