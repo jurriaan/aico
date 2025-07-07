@@ -7,7 +7,7 @@ from rich.markdown import Markdown
 from rich.text import Text
 
 from aico.diffing import (
-    generate_display_content,
+    generate_display_items,
     generate_unified_diff,
     process_patches_sequentially,
 )
@@ -95,7 +95,7 @@ def last(
         )
         _, _, warnings = process_patches_sequentially(original_file_contents, target_asst_msg.content, session_root)
         unified_diff = generate_unified_diff(original_file_contents, target_asst_msg.content, session_root)
-        display_content = generate_display_content(original_file_contents, target_asst_msg.content, session_root)
+        display_content = generate_display_items(original_file_contents, target_asst_msg.content, session_root)
 
         if warnings:
             console = Console(stderr=True)
@@ -122,7 +122,7 @@ def last(
                     if item["type"] == "markdown":
                         renderables.append(Markdown(item["content"]))
                     else:  # "text"
-                        renderables.append(Text(item["content"], no_wrap=True))
+                        renderables.append(Text(item["content"]))
                 if renderables:
                     console.print(Group(*renderables))
 

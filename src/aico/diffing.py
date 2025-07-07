@@ -6,6 +6,7 @@ import regex as re
 
 from aico.models import (
     AIPatch,
+    DisplayItem,
     FileContents,
     FileHeader,
     PatchApplicationResult,
@@ -36,11 +37,11 @@ _INCOMPLETE_BLOCK_REGEX = re.compile(r"^\p{H}*<<<<<<< SEARCH", re.MULTILINE | re
 # It no longer includes the "File:" header.
 _FILE_BLOCK_REGEX = re.compile(
     r"(?P<block>"
-    + r"^(?P<indent>\p{H}*)<<<<<<< SEARCH\n"
+    + r"^(?P<indent>\p{H}*)<<<<<<< SEARCH\p{H}*\n"
     + r"(?P<search_content>.*?)"
-    + r"^(?P=indent)=======\n"  # <-- The ^ anchors this to the start of a line
+    + r"^(?P=indent)=======\n"
     + r"(?P<replace_content>.*?)"
-    + r"^(?P=indent)>>>>>>> REPLACE\s*$"  # <-- Same here
+    + r"^(?P=indent)>>>>>>> REPLACE\p{H}*$"
     + r")",
     re.MULTILINE | re.DOTALL | re.UNICODE,
 )
@@ -510,27 +511,29 @@ def generate_unified_diff(original_file_contents: FileContents, llm_response: st
     return "".join(all_diffs)
 
 
-def generate_display_content(original_file_contents: FileContents, llm_response: str, session_root: Path) -> str:
+def generate_display_items(
+    original_file_contents: FileContents, llm_response: str, session_root: Path
+) -> list[DisplayItem]:
     """
-    Generates a markdown-formatted string with diffs embedded in conversational text.
-    Processes all `File:` blocks sequentially, including warnings.
+    Generates a list of structured display items for rendering.
     """
-    output_parts: list[str] = []
+    items: list[DisplayItem] = []
     stream = process_llm_response_stream(original_file_contents, llm_response, session_root)
 
     for item in stream:
         match item:
             case str() as text:
-                output_parts.append(text)
+                if text:
+                    items.append({"type": "markdown", "content": text})
             case FileHeader(llm_file_path=llm_file_path):
-                output_parts.append(f"File: `{llm_file_path}`\n")
+                items.append({"type": "markdown", "content": f"File: `{llm_file_path}`\n"})
             case ProcessedDiffBlock(unified_diff=diff_string):
-                output_parts.append(f"```diff\n{diff_string}```\n")
+                items.append({"type": "markdown", "content": f"```diff\n{diff_string}```\n"})
             case WarningMessage(text=warning_text):
-                output_parts.append(f"⚠️ {warning_text}\n")
+                items.append({"type": "text", "content": f"⚠️ {warning_text}\n"})
             case UnparsedBlock(text=unparsed_text):
-                output_parts.append(unparsed_text)
+                items.append({"type": "text", "content": unparsed_text})
             case PatchApplicationResult():
                 pass  # Ignore final state object in display
 
-    return "".join(output_parts)
+    return items

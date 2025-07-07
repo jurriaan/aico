@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from aico.diffing import (
-    generate_display_content,
+    generate_display_items,
     generate_unified_diff,
     process_llm_response_stream,
     process_patches_sequentially,
@@ -249,15 +249,16 @@ def test_multi_block_llm_response_with_conversation(tmp_path: Path) -> None:
     assert "-two" in diff
     assert "+2" in diff
 
-    # WHEN the display content is generated
-    display_content = generate_display_content(original_contents, llm_response, tmp_path)
+    # WHEN the display items are generated
+    display_items = generate_display_items(original_contents, llm_response, tmp_path)
 
     # THEN the output contains the conversation and markdown diffs
-    assert "Here is the first change" in display_content
-    assert "And here is the second change" in display_content
-    assert "All done!" in display_content
-    assert "```diff\n--- a/file_one.py" in display_content
-    assert "```diff\n--- a/file_two.py" in display_content
+    all_content = "".join(item["content"] for item in display_items)
+    assert "Here is the first change" in all_content
+    assert "And here is the second change" in all_content
+    assert "All done!" in all_content
+    assert "```diff\n--- a/file_one.py" in all_content
+    assert "```diff\n--- a/file_two.py" in all_content
 
 
 def test_ambiguous_patch_succeeds_on_first_match(tmp_path: Path) -> None:
@@ -521,10 +522,10 @@ def test_mismatched_line_endings_patch_succeeds(tmp_path: Path) -> None:
     assert "+new_line2" in diff
 
 
-# --- Tests for Dual-Format Diff Presentation ---
+# --- Tests for structured display item generation ---
 
 
-def test_generate_pipeable_diff_with_conversation(tmp_path: Path) -> None:
+def test_generate_display_items_with_conversation(tmp_path: Path) -> None:
     # GIVEN an LLM response with conversational text and a diff block
     original_contents = {"file.py": "old_line"}
     llm_response = (
@@ -538,73 +539,31 @@ def test_generate_pipeable_diff_with_conversation(tmp_path: Path) -> None:
         "Let me know if you need anything else!"
     )
 
-    # WHEN the pipeable diff is generated
-    pipeable_diff = generate_unified_diff(original_contents, llm_response, tmp_path)
+    # WHEN the display items are generated
+    display_items = generate_display_items(original_contents, llm_response, tmp_path)
 
-    # THEN the output is a clean diff with no conversational text
-    assert "Hello!" not in pipeable_diff
-    assert "Let me know" not in pipeable_diff
-    assert "--- a/file.py" in pipeable_diff
-    assert "+++ b/file.py" in pipeable_diff
-    assert "-old_line" in pipeable_diff
-    assert "+new_line" in pipeable_diff
+    # THEN the items represent the conversational text and the diff in order
+    assert len(display_items) == 4
+    assert display_items[0] == {"type": "markdown", "content": "Hello! I've made the change you requested.\n\n"}
+    assert display_items[1] == {"type": "markdown", "content": "File: `file.py`\n"}
+    assert display_items[2]["type"] == "markdown"
+    assert "```diff" in display_items[2]["content"]
+    assert display_items[3] == {"type": "markdown", "content": "\n\nLet me know if you need anything else!"}
 
 
-def test_generate_pipeable_diff_from_conversation_only_returns_empty(tmp_path: Path) -> None:
+def test_generate_display_items_from_conversation_only(tmp_path: Path) -> None:
     # GIVEN an LLM response with only conversational text
     original_contents = {"file.py": "old_line"}
     llm_response = "I'm not sure how to make that change. Could you clarify?"
 
-    # WHEN the pipeable diff is generated
-    pipeable_diff = generate_unified_diff(original_contents, llm_response, tmp_path)
+    # WHEN the display items are generated
+    display_items = generate_display_items(original_contents, llm_response, tmp_path)
 
-    # THEN the output is an empty string
-    assert pipeable_diff == ""
-
-
-def test_generate_embedded_markdown_diff_with_conversation(tmp_path: Path) -> None:
-    # GIVEN an LLM response with conversational text and a diff block
-    original_contents = {"file.py": "old_line"}
-    llm_response = (
-        "Hello! I've made the change you requested.\n\n"
-        "File: file.py\n"
-        "<<<<<<< SEARCH\n"
-        "old_line\n"
-        "=======\n"
-        "new_line\n"
-        ">>>>>>> REPLACE\n\n"
-        "Let me know if you need anything else!"
-    )
-
-    # WHEN the embedded markdown diff is generated
-    markdown_output = generate_display_content(original_contents, llm_response, tmp_path)
-
-    # THEN the conversational text is preserved
-    assert "Hello! I've made the change you requested." in markdown_output
-    assert "Let me know if you need anything else!" in markdown_output
-
-    # AND the SEARCH/REPLACE block is replaced with a Markdown diff block
-    assert "<<<<<<< SEARCH" not in markdown_output
-    assert "```diff" in markdown_output
-    assert "--- a/file.py" in markdown_output
-    assert "-old_line" in markdown_output
-    assert "+new_line" in markdown_output
-    assert "```" in markdown_output
+    # THEN the output is a single markdown item
+    assert display_items == [{"type": "markdown", "content": llm_response}]
 
 
-def test_generate_embedded_markdown_diff_from_conversation_only_is_unchanged(tmp_path: Path) -> None:
-    # GIVEN an LLM response with only conversational text
-    original_contents = {"file.py": "old_line"}
-    llm_response = "I'm not sure how to make that change. Could you clarify?"
-
-    # WHEN the embedded markdown diff is generated
-    markdown_output = generate_display_content(original_contents, llm_response, tmp_path)
-
-    # THEN the output is the original response, unchanged
-    assert markdown_output == llm_response
-
-
-def test_generate_embedded_markdown_diff_malformed_block(tmp_path: Path) -> None:
+def test_generate_display_items_malformed_block(tmp_path: Path) -> None:
     # GIVEN an LLM response with conversational text and a malformed block
     original_contents = {}
     llm_response = (
@@ -613,29 +572,34 @@ def test_generate_embedded_markdown_diff_malformed_block(tmp_path: Path) -> None
         "This is not a valid diff block because it's missing the delimiters.\n"
     )
 
-    # WHEN the embedded markdown diff is generated using the new robust parser
-    markdown_output = generate_display_content(original_contents, llm_response, tmp_path)
+    # WHEN the display items are generated
+    display_items = generate_display_items(original_contents, llm_response, tmp_path)
 
-    # THEN the malformed block is treated as conversational text and is preserved as-is.
-    # The entire original response should be returned untouched.
-    assert markdown_output == llm_response
+    # THEN the malformed block is treated as conversational text and is preserved in markdown items.
+    assert display_items == [
+        {"type": "markdown", "content": "I tried to make a change, but I might have messed up the format.\n\n"},
+        {
+            "type": "markdown",
+            "content": "File: file.py\nThis is not a valid diff block because it's missing the delimiters.\n",
+        },
+    ]
 
 
-def test_failed_patch_renders_verbatim_block(tmp_path: Path) -> None:
+def test_failed_patch_yields_warning_and_unparsed_block(tmp_path: Path) -> None:
     # GIVEN an LLM response with a SEARCH block that is guaranteed to fail
     original_contents = {"file.py": "original content"}
     failed_block_verbatim = "<<<<<<< SEARCH\nnon-existent content\n=======\nthis will not be applied\n>>>>>>> REPLACE"
     llm_response = f"File: file.py\n{failed_block_verbatim}"
 
-    # WHEN generate_display_content is called
-    display_output = generate_display_content(original_contents, llm_response, tmp_path)
+    # WHEN generate_display_items is called
+    display_items = generate_display_items(original_contents, llm_response, tmp_path)
 
-    # THEN the output contains the warning message
-    assert "⚠️ The SEARCH block from the AI could not be found in 'file.py'." in display_output
-    # AND the output contains the raw, verbatim text of the failed block
-    assert failed_block_verbatim in display_output
-    # AND the output does NOT contain a 'diff' block for the failed patch
-    assert "```diff" not in display_output
+    # THEN the output contains a warning item and a text item for the unparsed block
+    assert len(display_items) == 3  # FileHeader, Warning, UnparsedBlock
+    assert display_items[0] == {"type": "markdown", "content": "File: `file.py`\n"}
+    assert display_items[1]["type"] == "text"
+    assert "The SEARCH block from the AI could not be found in 'file.py'." in display_items[1]["content"]
+    assert display_items[2] == {"type": "text", "content": failed_block_verbatim}
 
     # WHEN generate_unified_diff is called on the same input
     pipeable_diff = generate_unified_diff(original_contents, llm_response, tmp_path)
@@ -671,10 +635,10 @@ def test_failed_patch_renders_verbatim_block(tmp_path: Path) -> None:
 )
 @pytest.mark.parametrize(
     "func_to_test",
-    [generate_unified_diff, generate_display_content],
-    ids=["unified_diff", "display_content"],
+    [generate_unified_diff],
+    ids=["unified_diff"],
 )
-def test_parser_is_robust_to_formatting(
+def test_parser_is_robust_to_formatting_for_diff(
     llm_response_template: str, func_to_test: Callable[[dict[str, str], str, Path], str], tmp_path: Path
 ) -> None:
     # GIVEN an LLM response with quirky but valid formatting
@@ -690,6 +654,49 @@ def test_parser_is_robust_to_formatting(
     assert "MALFORMED_BLOCK" not in result
     assert "+new_line" in result
     assert "-old_line" in result
+
+
+@pytest.mark.parametrize(
+    "llm_response_template",
+    [
+        (
+            "   File: file.py\n"
+            "   <<<<<<< SEARCH\n"  # Indented
+            "   {search}\n"
+            "   =======\n"
+            "   {replace}\n"
+            "   >>>>>>> REPLACE"
+        ),
+        (
+            "File: file.py\n"
+            "   <<<<<<< SEARCH\n"  # Indented
+            "{search}\n"
+            "   =======\n"
+            "{replace}\n"
+            "   >>>>>>> REPLACE   "  # Trailing whitespace
+        ),
+        (
+            "File: file.py\n<<<<<<< SEARCH\n{search}\n=======\n{replace}\n>>>>>>> REPLACE"  # No trailing newli
+        ),
+    ],
+    ids=["fully_indented", "indented", "no_trailing_newline"],
+)
+def test_parser_is_robust_to_formatting_for_display_items(llm_response_template: str, tmp_path: Path) -> None:
+    # GIVEN an LLM response with quirky but valid formatting
+    search_block = "old_line"
+    replace_block = "new_line"
+    llm_response = llm_response_template.format(search=search_block, replace=replace_block)
+    original_contents = {"file.py": "old_line"}
+
+    # WHEN the display items are generated
+    result = generate_display_items(original_contents, llm_response, tmp_path)
+
+    # THEN the items are generated successfully without being treated as an unparsed block
+    assert len(result) == 2
+    assert result[0] == {"type": "markdown", "content": "File: `file.py`\n"}
+    assert result[1]["type"] == "markdown"
+    assert "+new_line" in result[1]["content"]
+    assert "-old_line" in result[1]["content"]
 
 
 @pytest.mark.parametrize(
@@ -802,15 +809,14 @@ def test_multi_patch_with_interstitial_conversation(tmp_path: Path) -> None:
     )
     assert diff == expected_diff
 
-    # WHEN the display content is generated
-    display_content = generate_display_content(original_contents, llm_response, tmp_path)
+    # WHEN the display items are generated
+    display_items = generate_display_items(original_contents, llm_response, tmp_path)
 
     # THEN it should contain the conversational text between the rendered diffs
-    assert "Okay, and now for the second part." in display_content
-    assert "File: `file.py`" in display_content
-    assert "```diff" in display_content
-    # Check that there are two separate diff blocks rendered
-    assert display_content.count("```diff") == 2
+    all_content = "".join(item["content"] for item in display_items)
+    assert "Okay, and now for the second part." in all_content
+    assert "File: `file.py`" in all_content
+    assert all_content.count("```diff") == 2
 
 
 def test_complex_multi_file_and_multi_patch_scenario(tmp_path: Path) -> None:
@@ -862,16 +868,17 @@ def test_complex_multi_file_and_multi_patch_scenario(tmp_path: Path) -> None:
     )
     assert diff == expected_diff
 
-    # WHEN display content is generated
-    display_content = generate_display_content(original_contents, llm_response, tmp_path)
+    # WHEN display items are generated
+    display_items = generate_display_items(original_contents, llm_response, tmp_path)
 
     # THEN it contains all conversational text and all rendered diffs
-    assert "First, a simple change." in display_content
-    assert "\n\nNow for the more complex file.\n\n" in display_content
-    assert "And the second line in that same file." in display_content
-    assert "All done." in display_content
+    all_content = "".join(item["content"] for item in display_items)
+    assert "First, a simple change." in all_content
+    assert "\n\nNow for the more complex file.\n\n" in all_content
+    assert "And the second line in that same file." in all_content
+    assert "All done." in all_content
 
-    assert display_content.count("```diff") == 3
+    assert sum(1 for item in display_items if item["type"] == "markdown" and "```diff" in item["content"]) == 3
 
 
 def test_generate_diff_with_filesystem_fallback(tmp_path: Path) -> None:
@@ -964,11 +971,12 @@ def test_parser_preserves_interstitial_conversation_and_newlines(tmp_path: Path)
         "<<<<<<< SEARCH\ncontent2\n=======\nnew content 2\n>>>>>>> REPLACE\n"
     )
 
-    # WHEN the display content is generated
-    display_content = generate_display_content(original_contents, llm_response, tmp_path)
+    # WHEN the display items are generated
+    display_items = generate_display_items(original_contents, llm_response, tmp_path)
 
     # THEN the interstitial conversation and its newlines are preserved exactly
-    assert "\n\nAnd now for the second file.\n\n" in display_content
+    all_content = "".join(item["content"] for item in display_items)
+    assert "\n\nAnd now for the second file.\n\n" in all_content
 
     # WHEN the unified diff is generated
     unified_diff = generate_unified_diff(original_contents, llm_response, tmp_path)

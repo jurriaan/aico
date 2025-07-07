@@ -14,7 +14,11 @@ from rich.spinner import Spinner
 from rich.text import Text
 
 from aico.aico_live_render import AicoLiveRender
-from aico.diffing import generate_unified_diff, process_llm_response_stream
+from aico.diffing import (
+    generate_display_items,
+    generate_unified_diff,
+    process_llm_response_stream,
+)
 from aico.models import (
     AssistantChatMessage,
     ChatMessageHistoryItem,
@@ -26,7 +30,6 @@ from aico.models import (
     LiteLLMUsage,
     LLMChatMessage,
     Mode,
-    PatchApplicationResult,
     ProcessedDiffBlock,
     SessionData,
     TokenUsage,
@@ -65,34 +68,6 @@ def _process_chunk(chunk: object) -> tuple[str | None, TokenUsage | None, str | 
     if isinstance(chunk, LiteLLMChoiceContainer) and chunk.choices and (delta := chunk.choices[0].delta):
         return delta.content, token_usage, getattr(delta, "reasoning_content", None)
     return None, token_usage, None
-
-
-def _generate_display_items(
-    original_file_contents: FileContents, llm_response: str, session_root: Path
-) -> list[DisplayItem]:
-    """
-    Generates a list of structured display items for rendering.
-    """
-    items: list[DisplayItem] = []
-    stream = process_llm_response_stream(original_file_contents, llm_response, session_root)
-
-    for item in stream:
-        match item:
-            case str() as text:
-                if text:
-                    items.append({"type": "markdown", "content": text})
-            case FileHeader(llm_file_path=llm_file_path):
-                items.append({"type": "markdown", "content": f"File: `{llm_file_path}`\n"})
-            case ProcessedDiffBlock(unified_diff=diff_string):
-                items.append({"type": "markdown", "content": f"```diff\n{diff_string}```\n"})
-            case WarningMessage(text=warning_text):
-                items.append({"type": "text", "content": f"⚠️ {warning_text}\n"})
-            case UnparsedBlock(text=unparsed_text):
-                items.append({"type": "text", "content": unparsed_text})
-            case PatchApplicationResult():
-                pass  # Ignore final state object in display
-
-    return items
 
 
 def _handle_unified_streaming(
@@ -188,7 +163,7 @@ def _handle_unified_streaming(
             for warning in warnings_to_display:
                 console.print(f"[yellow]{warning}[/yellow]")
 
-    final_display_items = _generate_display_items(original_file_contents, full_llm_response_buffer, session_root)
+    final_display_items = generate_display_items(original_file_contents, full_llm_response_buffer, session_root)
 
     message_cost: float | None = None
     if token_usage:
