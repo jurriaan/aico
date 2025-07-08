@@ -3,8 +3,10 @@ from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.table import Table
 
-from aico.utils import load_session, save_session
+from aico.models import UserChatMessage
+from aico.utils import format_tokens, load_session, save_session
 
 history_app = typer.Typer(
     name="history",
@@ -69,6 +71,47 @@ def reset() -> None:
     session_data.history_start_index = 0
     save_session(session_file, session_data)
     print("History index reset to 0. Full chat history is now active.")
+
+
+@history_app.command()
+def log() -> None:
+    """
+    Shows a compact log of the active chat history context.
+    """
+    _, session_data = load_session()
+
+    console = Console()
+
+    active_history = session_data.chat_history[session_data.history_start_index :]
+
+    if not active_history:
+        console.print("Active context is empty. No history will be sent.")
+        return
+
+    table = Table(title="Active Context Log", show_header=True, header_style="bold")
+    table.add_column("Idx", justify="right", min_width=5)
+    table.add_column("Tokens", justify="right", min_width=8)
+    table.add_column("Content Snippet", overflow="ellipsis")
+
+    for i, msg in enumerate(active_history, start=session_data.history_start_index):
+        row_style = "dim" if msg.is_excluded else ""
+
+        idx_str: str
+        tokens_str: str
+
+        if isinstance(msg, UserChatMessage):
+            idx_str = f"[blue]{i}[/blue]"
+            tokens_str = "user"
+        else:
+            idx_str = f"[green]{i}[/green]"
+            tokens_str = format_tokens(msg.token_usage.completion_tokens) if msg.token_usage else "-"
+
+        lines = msg.content.strip().splitlines()
+        snippet = lines[0] if lines else ""
+
+        table.add_row(idx_str, tokens_str, snippet, style=row_style)
+
+    console.print(table)
 
 
 @history_app.command(name="set", context_settings={"ignore_unknown_options": True})

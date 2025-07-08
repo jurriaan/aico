@@ -7,7 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from aico.main import app
-from aico.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
+from aico.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, TokenUsage, UserChatMessage
 from aico.utils import (
     SESSION_FILE_NAME,
     SessionDataAdapter,
@@ -243,6 +243,7 @@ def test_history_set_fails_with_invalid_index(tmp_path: Path, invalid_input: str
         ["history", "view"],
         ["history", "reset"],
         ["history", "set", "5"],
+        ["history", "log"],
     ],
 )
 def test_history_commands_fail_without_session(tmp_path: Path, command_args: list[str]) -> None:
@@ -254,3 +255,126 @@ def test_history_commands_fail_without_session(tmp_path: Path, command_args: lis
         # THEN the command fails with a clear error message
         assert result.exit_code == 1
         assert f"Error: No session file '{SESSION_FILE_NAME}' found." in result.stderr
+
+
+def test_history_log_shows_active_context(tmp_path: Path):
+    # GIVEN a session with a history, a start index, and an excluded message
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        chat_history: list[ChatMessageHistoryItem] = [
+            # Before start_index, should not be shown
+            UserChatMessage(role="user", content="prompt 0, inactive", mode=Mode.CONVERSATION, timestamp="t0"),
+            AssistantChatMessage(
+                role="assistant",
+                content="resp 0, inactive",
+                mode=Mode.CONVERSATION,
+                model="m",
+                timestamp="t0",
+                duration_ms=1,
+            ),
+            # After start_index, should be shown
+            UserChatMessage(role="user", content="prompt 1, active", mode=Mode.CONVERSATION, timestamp="t1"),
+            AssistantChatMessage(
+                role="assistant",
+                content="resp 1, active",
+                mode=Mode.CONVERSATION,
+                model="m",
+                timestamp="t1",
+                duration_ms=1,
+                token_usage=TokenUsage(prompt_tokens=10, completion_tokens=100, total_tokens=110),
+            ),
+            # Excluded, should be shown but styled
+            UserChatMessage(
+                role="user", content="prompt 2, excluded", mode=Mode.CONVERSATION, timestamp="t2", is_excluded=True
+            ),
+        ]
+        session_data = SessionData(
+            model="test-model", context_files=[], chat_history=chat_history, history_start_index=2
+        )
+        session_file = Path(td) / SESSION_FILE_NAME
+        save_session(session_file, session_data)
+
+        # WHEN `aico history log` is run
+        result = runner.invoke(app, ["history", "log"])
+
+        # THEN the command succeeds and prints a table with the correct content
+        assert result.exit_code == 0
+        output = result.stdout
+        assert "Active Context Log" in output
+
+        # AND it does NOT contain inactive messages
+        assert "prompt 0, inactive" not in output
+
+        # AND it contains active messages
+        assert "prompt 1, active" in output
+        assert "resp 1, active" in output
+        assert "100" in output
+
+        # AND it contains excluded messages (without any "(Excluded)" prefix)
+        assert "prompt 2, excluded" in output
+        assert "(Excluded)" not in output
+
+
+def test_history_log_empty_active_context(tmp_path: Path):
+    # GIVEN a session where all history is before start_index
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        chat_history: list[ChatMessageHistoryItem] = [
+            UserChatMessage(role="user", content="prompt 0", mode=Mode.CONVERSATION, timestamp="t0")
+        ]
+        session_data = SessionData(
+            model="test-model", context_files=[], chat_history=chat_history, history_start_index=1
+        )
+        session_file = Path(td) / SESSION_FILE_NAME
+        save_session(session_file, session_data)
+
+        # WHEN `aico history log` is run
+        result = runner.invoke(app, ["history", "log"])
+
+        # THEN the command succeeds and prints a message
+        assert result.exit_code == 0
+        assert "Active context is empty. No history will be sent." in result.stdout
+
+
+def test_history_log_truncates_multiline_content(tmp_path: Path):
+    # GIVEN a session with a multiline message in the active context
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        chat_history: list[ChatMessageHistoryItem] = [
+            UserChatMessage(
+                role="user", content="This is line 1\nThis is line 2", mode=Mode.CONVERSATION, timestamp="t0"
+            ),
+        ]
+        session_data = SessionData(
+            model="test-model", context_files=[], chat_history=chat_history, history_start_index=0
+        )
+        session_file = Path(td) / SESSION_FILE_NAME
+        save_session(session_file, session_data)
+
+        # WHEN `aico history log` is run
+        result = runner.invoke(app, ["history", "log"])
+
+        # THEN the command succeeds
+        assert result.exit_code == 0
+        output = result.stdout
+
+        # AND the output contains only the first line of the content
+        assert "This is line 1" in output
+        assert "This is line 2" not in output
+
+
+def test_history_log_handles_whitespace_only_content(tmp_path: Path):
+    # GIVEN a session with a message containing only whitespace
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        chat_history: list[ChatMessageHistoryItem] = [
+            UserChatMessage(role="user", content="\n  \t\n", mode=Mode.CONVERSATION, timestamp="t0"),
+        ]
+        session_data = SessionData(
+            model="test-model", context_files=[], chat_history=chat_history, history_start_index=0
+        )
+        session_file = Path(td) / SESSION_FILE_NAME
+        save_session(session_file, session_data)
+
+        # WHEN `aico history log` is run
+        result = runner.invoke(app, ["history", "log"])
+
+        # THEN the command succeeds (does not crash)
+        assert result.exit_code == 0
+        assert "Active Context Log" in result.stdout

@@ -133,7 +133,8 @@ Repeat steps 5 and 6 for each increment of the plan.
   - `--recompute`: Re-applies the original instruction to the current file state. Useful for retrying a command after adding/changing context.
   - `--verbatim`: Prints the original, unprocessed response from the AI.
 - `aico history`: A subcommand group for managing the chat history.
-  - `aico history view`: See the current status of the history.
+  - `aico history log`: Show a compact log of the active context.
+  - `aico history view`: See a summary of the history status.
   - `aico history set <index>`: Set which message the active history starts from.
   - `aico history reset`: Reset the history to include all messages.
 - `aico undo [N]`: Marks the last N message pairs as excluded from future context (defaults to 1). This "soft delete" is useful for undoing a conversational step if a `gen` or `ask` command produced an undesirable result.
