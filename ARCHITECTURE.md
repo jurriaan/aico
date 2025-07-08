@@ -47,7 +47,7 @@ These are specialized components that handle the most complex processing tasks.
 
 ## Data & Control Flow: Lifecycle of a Command
 
-The components work together in a predictable sequence. The lifecycle of a typical `aico edit` command illustrates this flow:
+The components work together in a predictable sequence. The lifecycle of a typical `aico gen` command illustrates this flow:
 
 1.  **Invocation:** The user's command is received by the **Entrypoint**, which routes it to the correct function in the **Command Layer**.
 2.  **State Loading:** The command uses the **State Persistence Layer** to find and load the `.ai_session.json` file into memory as a structured Pydantic object.

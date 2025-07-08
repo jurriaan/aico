@@ -123,12 +123,12 @@ def test_last_for_diff_response_with_and_without_recompute(tmp_path: Path, mocke
         assert "Warning" not in result_recomputed_tty.stderr
 
 
-def test_last_recompute_failing_edit_piped_is_empty_stdout(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_last_recompute_failing_gen_piped_is_empty_stdout(tmp_path: Path, mocker: MockerFixture) -> None:
     """
-    Tests the 'Strict Contract' for `aico last`: a failed recompute of an 'edit'
+    Tests the 'Strict Contract' for `aico last`: a failed recompute of a 'gen'
     message results in an empty stdout when piped.
     """
-    # GIVEN a session with a last_response from an 'edit' command (`mode: "diff"`)
+    # GIVEN a session with a last_response from a 'gen' command (`mode: "diff"`)
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         assistant_message = {
             "role": "assistant",

@@ -1,21 +1,43 @@
+import re
 import warnings
+from typing import final, override
 
 import typer
+from click import Context
+from typer.core import TyperGroup
 
 from aico.addons import register_addon_commands
 from aico.commands.context import add, drop
 from aico.commands.history import history_app
 from aico.commands.init import init
 from aico.commands.last import last
-from aico.commands.prompt import ask, edit, prompt
+from aico.commands.prompt import ask, generate_patch, prompt
 from aico.commands.tokens import tokens_app
 from aico.commands.undo import undo
 
-app = typer.Typer()
+
+@final
+class AliasGroup(TyperGroup):
+    _CMD_SPLIT_P = re.compile(r" ?[,|] ?")
+
+    @override
+    def get_command(self, ctx: Context, cmd_name: str):
+        cmd_name = self._group_cmd_name(cmd_name)
+        return super().get_command(ctx, cmd_name)
+
+    def _group_cmd_name(self, default_name: str):
+        for cmd in self.commands.values():
+            name = cmd.name
+            if name and default_name in self._CMD_SPLIT_P.split(name):
+                return name
+        return default_name
+
+
+app = typer.Typer(cls=AliasGroup)
 app.add_typer(history_app, name="history")
 app.add_typer(tokens_app, name="tokens")
 _ = app.command("ask")(ask)
-_ = app.command("edit")(edit)
+_ = app.command("generate-patch | gen")(generate_patch)
 _ = app.command("prompt")(prompt)
 _ = app.command("last")(last)
 _ = app.command("add")(add)

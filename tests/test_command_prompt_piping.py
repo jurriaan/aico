@@ -55,17 +55,17 @@ def setup_piping_test(
     mocker.patch("litellm.completion_cost", return_value=0.001)
 
 
-def test_edit_successful_diff_piped(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_gen_successful_diff_piped(tmp_path: Path, mocker: MockerFixture) -> None:
     """
-    Tests the 'Strict Contract' for `aico edit`: successful diffs are printed to stdout.
+    Tests the 'Strict Contract' for `aico gen`: successful diffs are printed to stdout.
     """
     # GIVEN a session with a file and a mocked LLM returning a valid diff
     llm_response = "File: file.py\n<<<<<<< SEARCH\nold content\n=======\nnew content\n>>>>>>> REPLACE"
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         setup_piping_test(mocker, Path(td), llm_response, context_files={"file.py": "old content"})
 
-        # WHEN `aico edit` is run
-        result = runner.invoke(app, ["edit", "a prompt"])
+        # WHEN `aico gen` is run
+        result = runner.invoke(app, ["gen", "a prompt"])
 
         # THEN the command succeeds
         assert result.exit_code == 0
@@ -79,17 +79,17 @@ def test_edit_successful_diff_piped(tmp_path: Path, mocker: MockerFixture) -> No
         assert "Warning" not in result.stderr
 
 
-def test_edit_failing_diff_piped(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_gen_failing_diff_piped(tmp_path: Path, mocker: MockerFixture) -> None:
     """
-    Tests the 'Strict Contract' for `aico edit`: failing diffs result in an empty stdout.
+    Tests the 'Strict Contract' for `aico gen`: failing diffs result in an empty stdout.
     """
     # GIVEN a session with a file and a mocked LLM returning a failing diff
     llm_response = "File: file.py\n<<<<<<< SEARCH\ncontent not found\n=======\nnew content\n>>>>>>> REPLACE"
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         setup_piping_test(mocker, Path(td), llm_response, context_files={"file.py": "old content"})
 
-        # WHEN `aico edit` is run
-        result = runner.invoke(app, ["edit", "a prompt"])
+        # WHEN `aico gen` is run
+        result = runner.invoke(app, ["gen", "a prompt"])
 
         # THEN the command succeeds
         assert result.exit_code == 0

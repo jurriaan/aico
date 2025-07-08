@@ -133,7 +133,7 @@ def last(
     else:
         # Non-TTY (piped) output logic is now driven by original intent
         if target_asst_msg.mode == Mode.DIFF:
-            # Strict Contract: For 'edit' commands, the contract is strict: only ever print the diff.
+            # Strict Contract: For 'gen' commands, the contract is strict: only ever print the diff.
             # An empty string is printed if the diff is empty or None.
             print(unified_diff or "", end="")
         else:  # Mode.CONVERSATION or Mode.RAW

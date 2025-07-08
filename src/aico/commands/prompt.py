@@ -382,7 +382,7 @@ def ask(
     _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.CONVERSATION, passthrough, model)
 
 
-def edit(
+def generate_patch(
     cli_prompt_text: Annotated[str | None, typer.Argument(help="The user's instruction for the AI.")] = None,
     system_prompt: Annotated[
         str, typer.Option(help="The system prompt to guide the AI.")

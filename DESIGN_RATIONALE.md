@@ -15,7 +15,7 @@ These records explain the motivation and consequences of key architectural decis
 ### ADR-002: The `passthrough` Feature for Advanced Scripting
 
 -   **Context:** We needed a way for advanced scripting workflows (like the `commit` addon) to leverage the LLM without `aico`'s built-in prompt engineering.
--   **Decision:** We introduced a `--passthrough` flag available on core commands (`ask`, `edit`, `prompt`).
+-   **Decision:** We introduced a `--passthrough` flag available on core commands (`ask`, `gen`, `prompt`).
 -   **Rationale:** The `--passthrough` flag is more than just a "no-context" switch. When enabled, it bypasses *all* of `aico`'s prompt engineering: it does not inject file context, it does not add `<prompt>` or `<stdin_content>` XML-like tags, and it does not use the alignment prompts. It creates a clean, direct "pipe" to the LLM, sending the user's input verbatim. This gives addon authors and scripters full control over the prompt when `aico`'s default formatting is not desired.
 
 ### ADR-003: The `last --recompute` Feature for Context Correction

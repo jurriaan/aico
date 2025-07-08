@@ -49,7 +49,7 @@ For a complete list of supported providers and the environment variables they re
 
   ```bash
   # Generate a diff and pipe it directly to patch to apply it
-  aico edit "Implement Increment 1 of the plan" | patch -p1
+  aico gen "Implement Increment 1 of the plan" | patch -p1
 
   # Or review the last generated diff with a modern diffing tool like delta
   aico last | delta
@@ -57,11 +57,11 @@ For a complete list of supported providers and the environment variables they re
 
 - **Transparent State.** There is no hidden state or magic. The entire session—context files, chat history, and model configuration—is stored in a single, human-readable `.ai_session.json` file in your project's root. You can inspect it, edit it, or even version-control it.
 
-- **Focused on Code Modification.** The `aico edit` command is optimized to produce standard unified diffs, making it ideal for refactoring, adding features, or fixing bugs directly from your terminal.
+- **Focused on Code Modification.** The `aico gen` (`generate-patch`) command is optimized to produce standard unified diffs, making it ideal for refactoring, adding features, or fixing bugs directly from your terminal.
 
 ## Features
 
-- **Streaming Output:** See the AI's response in real-time. With the `edit` command, watch as diffs are generated and rendered in-place.
+- **Streaming Output:** See the AI's response in real-time. With the `gen` command, watch as diffs are generated and rendered in-place.
 - **Context Management:** Explicitly `add` and `drop` files to control exactly what the AI sees.
 - **History Control:** Easily manage how much of the conversation history is included in the next prompt to balance context-awareness with cost.
 - **Cost and Token Tracking:** See token usage and estimated cost for each interaction.
@@ -100,7 +100,7 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
 1. **Execute one step. Ask the AI to write the code for the first increment.**
 
    ```bash
-   aico edit "Implement Increment 1 of the plan."
+   aico gen "Implement Increment 1 of the plan."
    ```
 
    `aico` will stream a response, ending with a proposed diff.
@@ -127,8 +127,8 @@ Repeat steps 5 and 6 for each increment of the plan.
 - `aico drop <files...>`: Removes one or more files from the context.
 - `aico tokens`: Shows a breakdown of token usage and estimated cost for the current context.
 - `aico ask "<instruction>"`: Have a conversation with the AI for planning and discussion.
-- `aico edit "<instruction>"`: Generate code modifications as a unified diff.
-- `aico prompt "<instruction>"`: A power-user command for sending unformatted prompts. Primarily intended for scripting or addons (like `aico commit`). Prefer `ask` or `edit` for general use.
+- `aico gen | generate-patch "<instruction>"`: Generate code modifications as a unified diff.
+- `aico prompt "<instruction>"`: A power-user command for sending unformatted prompts. Primarily intended for scripting or addons (like `aico commit`). Prefer `ask` or `gen` for general use.
 - `aico last [N]`: Shows the N-th to last response from the AI (defaults to 1).
   - `--recompute`: Re-applies the original instruction to the current file state. Useful for retrying a command after adding/changing context.
   - `--verbatim`: Prints the original, unprocessed response from the AI.
@@ -136,7 +136,7 @@ Repeat steps 5 and 6 for each increment of the plan.
   - `aico history view`: See the current status of the history.
   - `aico history set <index>`: Set which message the active history starts from.
   - `aico history reset`: Reset the history to include all messages.
-- `aico undo [N]`: Marks the last N message pairs as excluded from future context (defaults to 1). This "soft delete" is useful for undoing a conversational step if an `edit` or `ask` command produced an undesirable result.
+- `aico undo [N]`: Marks the last N message pairs as excluded from future context (defaults to 1). This "soft delete" is useful for undoing a conversational step if a `gen` or `ask` command produced an undesirable result.
 
 ## Addons: Extending `aico`
 

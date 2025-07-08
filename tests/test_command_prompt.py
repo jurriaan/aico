@@ -108,7 +108,7 @@ def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) ->
         assert assistant_msg.token_usage.prompt_tokens == 100
 
 
-def test_edit_command_generates_diff(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_gen_command_generates_diff(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a session with a context file and a mocked LLM returning a diff
     llm_diff_response = (
         "File: code.py\n"
@@ -123,8 +123,8 @@ def test_edit_command_generates_diff(tmp_path: Path, mocker: MockerFixture) -> N
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         setup_prompt_test(mocker, Path(td), llm_diff_response, context_files={"code.py": "def hello():\n    pass"})
 
-        # WHEN `aico edit` is run
-        result = runner.invoke(app, ["edit", "a prompt"])
+        # WHEN `aico gen` is run
+        result = runner.invoke(app, ["gen", "a prompt"])
 
         # THEN the command succeeds and prints a valid unified diff
         assert result.exit_code == 0
@@ -336,13 +336,14 @@ def test_ask_command_invokes_correct_mode(tmp_path: Path, mocker: MockerFixture)
         assert mock_invoke_logic.call_args[0][2] == Mode.CONVERSATION
 
 
-def test_edit_command_invokes_correct_mode(tmp_path: Path, mocker: MockerFixture) -> None:
+@pytest.mark.parametrize("command", ["gen", "generate-patch"])
+def test_gen_commands_invoke_correct_mode(command: str, tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN an initialized session
     with runner.isolated_filesystem(temp_dir=tmp_path):
         mock_invoke_logic = mocker.patch("aico.commands.prompt._invoke_llm_logic")
 
-        # WHEN `aico edit` is run
-        result = runner.invoke(app, ["edit", "Add error handling"])
+        # WHEN `aico gen` or `aico generate-patch` is run
+        result = runner.invoke(app, [command, "Add error handling"])
 
         # THEN the command succeeds and calls the core logic with diff mode
         assert result.exit_code == 0
@@ -408,7 +409,7 @@ def test_prompt_model_flag_overrides_session_default(tmp_path: Path, mocker: Moc
         assert assistant_msg.model == override_model
 
 
-def test_edit_command_with_filesystem_fallback_and_warning(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_gen_command_with_filesystem_fallback_and_warning(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a session and files on disk that are NOT in context
     llm_response = (
         "File: fallback1.py\n<<<<<<< SEARCH\ncontent 1\n=======\nnew content 1\n>>>>>>> REPLACE\n"
@@ -421,8 +422,8 @@ def test_edit_command_with_filesystem_fallback_and_warning(tmp_path: Path, mocke
         (Path(td) / "sub").mkdir()
         (Path(td) / "sub/fallback2.py").write_text("content 2\n")
 
-        # WHEN the edit command is run
-        result = runner.invoke(app, ["edit", "patch the files"])
+        # WHEN the gen command is run
+        result = runner.invoke(app, ["gen", "patch the files"])
 
         # THEN the command succeeds and the diff is printed to stdout
         assert result.exit_code == 0
@@ -510,3 +511,16 @@ def test_prompt_with_excluded_history_omits_messages(tmp_path: Path, mocker: Moc
         assert "<prompt>\nprompt 2\n</prompt>" not in user_prompts
         assert "<prompt>\nprompt 3\n</prompt>" in user_prompts
         assert "<prompt>\nprompt 4\n</prompt>" in user_prompts
+
+
+def test_old_edit_command_is_removed(tmp_path: Path) -> None:
+    # GIVEN an initialized session
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        runner.invoke(app, ["init"])
+
+        # WHEN the old `edit` command is run
+        result = runner.invoke(app, ["edit", "a prompt"])
+
+        # THEN it fails with an error indicating the command doesn't exist
+        assert result.exit_code != 0
+        assert "No such command 'edit'." in result.stderr

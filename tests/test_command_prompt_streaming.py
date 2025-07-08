@@ -86,8 +86,8 @@ def _run_multiple_patches_test(
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         setup_streaming_test(mocker, Path(td), llm_response_chunks, context_files=context_files)
 
-        # WHEN `aico edit` is run
-        result = runner.invoke(app, ["edit", "a prompt"])
+        # WHEN `aico gen` is run
+        result = runner.invoke(app, ["gen", "a prompt"])
 
         # THEN the command should succeed
         assert result.exit_code == 0, result.stderr
@@ -156,8 +156,8 @@ def test_streaming_renders_failed_diff_block_as_plain_text(tmp_path: Path, mocke
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         setup_streaming_test(mocker, Path(td), llm_response_chunks, context_files=context_files)
 
-        # WHEN `aico edit` is run
-        result = runner.invoke(app, ["edit", "a prompt that will fail"])
+        # WHEN `aico gen` is run
+        result = runner.invoke(app, ["gen", "a prompt that will fail"])
 
         # THEN the command should succeed
         assert result.exit_code == 0, result.stderr
@@ -188,8 +188,8 @@ def test_streaming_renders_incomplete_diff_block_as_plain_text(tmp_path: Path, m
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         setup_streaming_test(mocker, Path(td), llm_response_chunks, context_files={"file.py": "some text\n"})
 
-        # WHEN `aico edit` is run
-        result = runner.invoke(app, ["edit", "a prompt that will be cut off"])
+        # WHEN `aico gen` is run
+        result = runner.invoke(app, ["gen", "a prompt that will be cut off"])
 
         # THEN the command should succeed
         assert result.exit_code == 0, result.stderr
