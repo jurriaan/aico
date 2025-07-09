@@ -53,8 +53,8 @@ class DisplayItem(TypedDict):
 
 @dataclass(slots=True, frozen=True)
 class DerivedContent:
-    unified_diff: str | None
-    display_content: list[DisplayItem] | str | None
+    unified_diff: str | None = None
+    display_content: list[DisplayItem] | str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -72,6 +72,12 @@ class AssistantChatMessage:
 
 
 type ChatMessageHistoryItem = UserChatMessage | AssistantChatMessage
+
+
+@dataclass(slots=True, frozen=True)
+class MessagePairIndices:
+    user_index: int
+    assistant_index: int
 
 
 @dataclass(slots=True)

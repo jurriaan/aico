@@ -39,11 +39,11 @@ app.add_typer(tokens_app, name="tokens")
 _ = app.command("ask")(ask)
 _ = app.command("generate-patch | gen")(generate_patch)
 _ = app.command("prompt")(prompt)
-_ = app.command("last")(last)
+_ = app.command("last", context_settings={"ignore_unknown_options": True})(last)
 _ = app.command("add")(add)
 _ = app.command("drop")(drop)
 _ = app.command("init")(init)
-_ = app.command("undo")(undo)
+_ = app.command("undo", context_settings={"ignore_unknown_options": True})(undo)
 register_addon_commands(app)
 
 

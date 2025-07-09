@@ -11,7 +11,8 @@ from aico.diffing import (
     generate_unified_diff,
     process_patches_sequentially,
 )
-from aico.models import AssistantChatMessage, ChatMessageHistoryItem, DisplayItem, Mode
+from aico.index_logic import resolve_pair_index_to_message_indices
+from aico.models import AssistantChatMessage, DisplayItem, Mode
 from aico.utils import build_original_file_contents, is_terminal, load_session
 
 
@@ -26,31 +27,21 @@ def _render_content(content: str, use_rich_markdown: bool) -> None:
         print(content, end="")
 
 
-def _find_nth_last_assistant_message(history: list[ChatMessageHistoryItem], n: int) -> AssistantChatMessage | None:
-    """
-    Finds the Nth-to-last assistant message in the chat history.
-    n=1 is the most recent, n=2 is the second most recent, etc.
-    """
-    if n < 1:
-        return None
-
-    count = 0
-    for msg in reversed(history):
-        if isinstance(msg, AssistantChatMessage):
-            count += 1
-            if count == n:
-                return msg
-    return None
-
-
 def last(
-    n: Annotated[
-        int,
+    index: Annotated[
+        str,
         typer.Argument(
-            help="The Nth-to-last assistant response to show (e.g., 1 for the last, 2 for the second-to-last).",
-            min=1,
+            help="The index of the message pair to show. Use negative numbers to count from the end "
+            + "(e.g., -1 for the last pair).",
         ),
-    ] = 1,
+    ] = "-1",
+    prompt: Annotated[
+        bool,
+        typer.Option(
+            "--prompt",
+            help="Show the user prompt instead of the assistant response.",
+        ),
+    ] = False,
     verbatim: Annotated[
         bool,
         typer.Option(
@@ -63,26 +54,52 @@ def last(
         typer.Option(
             "--recompute",
             "-r",
-            help="Recalculate the response against the current state of files.",
+            help="Recalculate the response against the current state of files. Only valid for assistant responses.",
         ),
     ] = False,
 ) -> None:
     """
-    Prints a processed response from the AI to standard output.
+    Prints a historical message to standard output.
 
-    By default, it shows the last response as it was originally generated.
-    Use N to select a specific historical response.
-    Use --recompute to re-apply the AI's instructions to the current file state.
+    By default, it shows the assistant response from the last pair.
+    Use INDEX to select a specific pair (e.g., 0 for the first, -1 for the last).
+    Use --prompt to see the user's prompt instead of the AI's response.
+    Use --recompute to re-apply an AI's instructions to the current file state.
     """
     session_file, session_data = load_session()
-    target_asst_msg = _find_nth_last_assistant_message(session_data.chat_history, n)
-    if not target_asst_msg:
-        print(f"Error: Assistant response at index {n} not found.", file=sys.stderr)
+
+    try:
+        index_val = int(index)
+    except ValueError:
+        print(f"Error: Invalid index '{index}'. Must be an integer.", file=sys.stderr)
+        raise typer.Exit(code=1) from None
+
+    try:
+        pair_indices = resolve_pair_index_to_message_indices(session_data.chat_history, index_val)
+    except IndexError as e:
+        print(str(e), file=sys.stderr)
+        raise typer.Exit(code=1) from None
+
+    if prompt:
+        if recompute:
+            print("Error: --recompute cannot be used with --prompt.", file=sys.stderr)
+            raise typer.Exit(code=1)
+
+        target_user_msg = session_data.chat_history[pair_indices.user_index]
+        if target_user_msg.content:
+            _render_content(target_user_msg.content, is_terminal() and not verbatim)
+        return
+
+    # --- Start of Assistant Message Handling ---
+    target_msg = session_data.chat_history[pair_indices.assistant_index]
+    if not isinstance(target_msg, AssistantChatMessage):
+        # This is a safeguard; find_message_pairs should prevent this.
+        print("Error: Internal error. Could not find a valid assistant message for this pair.", file=sys.stderr)
         raise typer.Exit(code=1)
 
     if verbatim:
-        if target_asst_msg.content:
-            _render_content(target_asst_msg.content, is_terminal())
+        if target_msg.content:
+            _render_content(target_msg.content, is_terminal())
         return
 
     unified_diff: str | None = None
@@ -93,9 +110,9 @@ def last(
         original_file_contents = build_original_file_contents(
             context_files=session_data.context_files, session_root=session_root
         )
-        _, _, warnings = process_patches_sequentially(original_file_contents, target_asst_msg.content, session_root)
-        unified_diff = generate_unified_diff(original_file_contents, target_asst_msg.content, session_root)
-        display_content = generate_display_items(original_file_contents, target_asst_msg.content, session_root)
+        _, _, warnings = process_patches_sequentially(original_file_contents, target_msg.content, session_root)
+        unified_diff = generate_unified_diff(original_file_contents, target_msg.content, session_root)
+        display_content = generate_display_items(original_file_contents, target_msg.content, session_root)
 
         if warnings:
             console = Console(stderr=True)
@@ -104,12 +121,12 @@ def last(
                 console.print(f"[yellow]{warning.text}[/yellow]")
     else:
         # Use stored data
-        if target_asst_msg.derived:
-            unified_diff = target_asst_msg.derived.unified_diff
-            display_content = target_asst_msg.derived.display_content or target_asst_msg.content
+        if target_msg.derived:
+            unified_diff = target_msg.derived.unified_diff
+            display_content = target_msg.derived.display_content or target_msg.content
         else:
             unified_diff = None
-            display_content = target_asst_msg.content
+            display_content = target_msg.content
 
     # Unified rendering logic
     if is_terminal():
@@ -132,7 +149,7 @@ def last(
                     console.print(Markdown(content_string))
     else:
         # Non-TTY (piped) output logic is now driven by original intent
-        if target_asst_msg.mode == Mode.DIFF:
+        if target_msg.mode == Mode.DIFF:
             # Strict Contract: For 'gen' commands, the contract is strict: only ever print the diff.
             # An empty string is printed if the diff is empty or None.
             print(unified_diff or "", end="")

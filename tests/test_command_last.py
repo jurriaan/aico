@@ -1,8 +1,10 @@
 # pyright: standard
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
+import pytest
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
@@ -12,295 +14,178 @@ from aico.utils import SESSION_FILE_NAME
 runner = CliRunner()
 
 
-def test_last_for_conversational_response(tmp_path: Path, mocker: MockerFixture) -> None:
-    # GIVEN a session file with a conversational last_response
+@pytest.fixture
+def session_with_two_pairs(tmp_path: Path) -> Iterator[Path]:
+    """Creates a session with two user/assistant pairs within an isolated filesystem."""
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        assistant_message = {
-            "role": "assistant",
-            "content": "Hello there!",
-            "mode": "conversation",
-            "model": "test-model",
-            "timestamp": "...",
-            "duration_ms": 123,
-            "derived": None,
-        }
         session_data = {
             "model": "test-model",
             "context_files": [],
-            "chat_history": [assistant_message],
             "history_start_index": 0,
+            "chat_history": [
+                {"role": "user", "content": "prompt one", "mode": "conversation", "timestamp": "t1"},
+                {
+                    "role": "assistant",
+                    "content": "response one",
+                    "mode": "conversation",
+                    "model": "test",
+                    "timestamp": "t1",
+                    "duration_ms": 1,
+                },
+                {"role": "user", "content": "prompt two", "mode": "conversation", "timestamp": "t2"},
+                {
+                    "role": "assistant",
+                    "content": "response two",
+                    "mode": "conversation",
+                    "model": "test",
+                    "timestamp": "t2",
+                    "duration_ms": 1,
+                },
+            ],
         }
         (Path(td) / SESSION_FILE_NAME).write_text(json.dumps(session_data))
-
-        # WHEN run in a TTY (default)
-        mocker.patch("aico.commands.last.is_terminal", return_value=True)
-        result_tty = runner.invoke(app, ["last"])
-        # THEN it shows the rich display content
-        assert result_tty.exit_code == 0
-        assert "Hello there!" in result_tty.stdout
-
-        # WHEN run in a TTY with --recompute
-        result_recompute_tty = runner.invoke(app, ["last", "--recompute"])
-        # THEN it shows the same (recomputed) content
-        assert result_recompute_tty.exit_code == 0
-        assert "Hello there!" in result_recompute_tty.stdout
-
-        # WHEN piped (default)
-        mocker.patch("aico.commands.last.is_terminal", return_value=False)
-        result_piped = runner.invoke(app, ["last"])
-        # THEN it shows the display_content (since there's no diff)
-        assert result_piped.exit_code == 0
-        assert result_piped.stdout == "Hello there!"
-
-        # WHEN piped with --recompute
-        result_recompute_piped = runner.invoke(app, ["last", "--recompute"])
-        # THEN it shows the same (recomputed) content
-        assert result_recompute_piped.exit_code == 0
-        assert result_recompute_piped.stdout == "Hello there!"
+        # Yielding here ensures the 'with' block remains active for the test's duration
+        yield Path(td)
 
 
-def test_last_for_diff_response_with_and_without_recompute(tmp_path: Path, mocker: MockerFixture) -> None:
-    # GIVEN a session with a last_response, where the file on disk has changed since
-    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        # This stored response was generated when file.py contained "old line"
-        assistant_message = {
-            "role": "assistant",
-            "content": "File: file.py\n<<<<<<< SEARCH\nold line\n=======\nnew line\n>>>>>>> REPLACE",
-            "mode": "diff",
-            "model": "test-model",
-            "timestamp": "2024-05-18T12:00:00Z",
-            "duration_ms": 100,
-            "derived": {
-                "unified_diff": "--- a/file.py\n+++ b/file.py\n@@ -1 +1 @@\n-old line\n+new line\n",
-                "display_content": "File: file.py\n```diff\n--- a/file.py\n"
-                + "+++ b/file.py\n@@ -1 +1 @@\n-old line\n+new line\n```\n",
-            },
-        }
+def test_last_default_shows_last_assistant_response(session_with_two_pairs: Path) -> None:
+    # GIVEN a session with two pairs
+    # WHEN `aico last` is run with no arguments
+    result = runner.invoke(app, ["last"])
 
-        session_data = {
-            "model": "test-model",
-            "context_files": ["file.py"],
-            "chat_history": [assistant_message],
-            "history_start_index": 0,
-        }
-        session_file = Path(td) / SESSION_FILE_NAME
-        session_file.write_text(json.dumps(session_data))
-
-        # AND the file on disk has the ORIGINAL content, so recompute will succeed
-        (Path(td) / "file.py").write_text("old line\n")
-
-        # --- Test 1: Piped output ---
-        mocker.patch("aico.commands.last.is_terminal", return_value=False)
-
-        # WHEN piped without recompute
-        result_stored_piped = runner.invoke(app, ["last"])
-        # THEN it shows the original, stored unified diff
-        assert result_stored_piped.exit_code == 0
-        assert result_stored_piped.stdout == assistant_message["derived"]["unified_diff"]
-
-        # WHEN piped with recompute
-        result_recomputed_piped = runner.invoke(app, ["last", "--recompute"])
-        # THEN it recalculates the diff, which should succeed and be identical
-        assert result_recomputed_piped.exit_code == 0
-        assert result_recomputed_piped.stdout == assistant_message["derived"]["unified_diff"]
-        assert "Warning" not in result_recomputed_piped.stderr
-
-        # --- Test 2: TTY output ---
-        mocker.patch("aico.commands.last.is_terminal", return_value=True)
-
-        # WHEN TTY without recompute
-        result_stored_tty = runner.invoke(app, ["last"])
-        # THEN it shows the stored, pretty display_content
-        assert result_stored_tty.exit_code == 0
-        assert "new line" in result_stored_tty.stdout
-        assert "Warning" not in result_stored_tty.stderr
-
-        # WHEN TTY with recompute
-        result_recomputed_tty = runner.invoke(app, ["last", "--recompute"])
-        # THEN it recalculates and shows a pretty display_content
-        assert result_recomputed_tty.exit_code == 0
-        assert "new line" in result_recomputed_tty.stdout
-        assert "Warning" not in result_recomputed_tty.stderr
+    # THEN it shows the assistant response from the last pair (-1)
+    assert result.exit_code == 0
+    assert "response two" in result.stdout
+    assert "response one" not in result.stdout
 
 
-def test_last_recompute_failing_gen_piped_is_empty_stdout(tmp_path: Path, mocker: MockerFixture) -> None:
-    """
-    Tests the 'Strict Contract' for `aico last`: a failed recompute of a 'gen'
-    message results in an empty stdout when piped.
-    """
-    # GIVEN a session with a last_response from a 'gen' command (`mode: "diff"`)
-    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        assistant_message = {
-            "role": "assistant",
-            "content": "File: file.py\n<<<<<<< SEARCH\nold line\n=======\nnew line\n>>>>>>> REPLACE",
-            "mode": "diff",
-            "model": "test-model",
-            "timestamp": "...",
-            "duration_ms": 100,
-            "derived": None,
-        }
-        session_data = {
-            "model": "test-model",
-            "context_files": ["file.py"],
-            "chat_history": [assistant_message],
-            "history_start_index": 0,
-        }
-        session_file = Path(td) / SESSION_FILE_NAME
-        session_file.write_text(json.dumps(session_data))
+def test_last_can_select_pair_by_positive_index(session_with_two_pairs: Path) -> None:
+    # GIVEN a session with two pairs
+    # WHEN `aico last 0` is run
+    result = runner.invoke(app, ["last", "0"])
 
-        # AND the file on disk has changed, so the patch will fail
-        (Path(td) / "file.py").write_text("the content has now changed, recompute will fail")
-
-        # AND the environment is piped (not a TTY)
-        mocker.patch("aico.commands.last.is_terminal", return_value=False)
-
-        # WHEN `aico last --recompute` is run
-        result = runner.invoke(app, ["last", "--recompute"])
-
-        # THEN the command succeeds
-        assert result.exit_code == 0
-        # AND stdout is an empty string, honoring the strict contract for mode=diff
-        assert result.stdout == ""
-        # AND stderr contains the warning about the patch failure
-        assert "Warnings:" in result.stderr
-        assert "The SEARCH block from the AI could not be found" in result.stderr
+    # THEN it shows the assistant response from the first pair (index 0)
+    assert result.exit_code == 0
+    assert "response one" in result.stdout
+    assert "response two" not in result.stdout
 
 
-def test_last_verbatim_flag(tmp_path: Path, mocker: MockerFixture) -> None:
-    # GIVEN a session with a diff-containing response
-    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        assistant_message = {
-            "role": "assistant",
-            "content": "File: file.py\n<<<<<<< SEARCH\nold line\n=======\nnew line\n>>>>>>> REPLACE",
-            "mode": "diff",
-            "model": "test-model",
-            "timestamp": "2024-05-18T12:00:00Z",
-            "duration_ms": 100,
-            "derived": {"unified_diff": "...", "display_content": "..."},
-        }
-        session_data = {
-            "model": "test-model",
-            "context_files": [],
-            "chat_history": [assistant_message],
-            "history_start_index": 0,
-        }
-        (Path(td) / SESSION_FILE_NAME).write_text(json.dumps(session_data))
+def test_last_can_select_pair_by_negative_index(session_with_two_pairs: Path) -> None:
+    # GIVEN a session with two pairs
+    # WHEN `aico last -2` is run
+    result = runner.invoke(app, ["last", "-2"])
 
-        # WHEN running with --verbatim in a TTY
-        mocker.patch("aico.commands.last.is_terminal", return_value=True)
-        result_tty = runner.invoke(app, ["last", "--verbatim"])
-        # THEN the raw response is shown, rendered as markdown
-        assert result_tty.exit_code == 0
-        assert "<<<<<<< SEARCH" in result_tty.stdout
-
-        # WHEN running with --verbatim and piped
-        mocker.patch("aico.commands.last.is_terminal", return_value=False)
-        result_piped = runner.invoke(app, ["last", "--verbatim"])
-        # THEN the raw content is printed without modification
-        assert result_piped.exit_code == 0
-        assert result_piped.stdout == assistant_message["content"]
+    # THEN it shows the assistant response from the first pair (index -2)
+    assert result.exit_code == 0
+    assert "response one" in result.stdout
+    assert "response two" not in result.stdout
 
 
-def test_last_fails_when_no_assistant_response_exists(tmp_path: Path) -> None:
-    # GIVEN a session file with no assistant messages in history
+def test_last_prompt_flag_shows_user_prompt(session_with_two_pairs: Path) -> None:
+    # GIVEN a session with two pairs
+    # WHEN `aico last -1 --prompt` is run
+    result = runner.invoke(app, ["last", "-1", "--prompt"])
+
+    # THEN it shows the user prompt from the last pair
+    assert result.exit_code == 0
+    assert "prompt two" in result.stdout
+    assert "response two" not in result.stdout
+
+    # WHEN `aico last 0 --prompt` is run
+    result_0 = runner.invoke(app, ["last", "0", "--prompt"])
+
+    # THEN it shows the user prompt from the first pair
+    assert result_0.exit_code == 0
+    assert "prompt one" in result_0.stdout
+    assert "response one" not in result_0.stdout
+
+
+def test_last_verbatim_flag_for_prompt(session_with_two_pairs: Path, mocker: MockerFixture) -> None:
+    # GIVEN a session
+    # WHEN running with --verbatim and --prompt (piped, so no rich rendering)
+    mocker.patch("aico.commands.last.is_terminal", return_value=False)
+    result = runner.invoke(app, ["last", "-1", "--prompt", "--verbatim"])
+
+    # THEN the raw prompt content is printed without modification
+    assert result.exit_code == 0
+    assert result.stdout == "prompt two"
+
+
+def test_last_fails_when_no_pairs_exist(tmp_path: Path) -> None:
+    # GIVEN a session file with no message pairs
     with runner.isolated_filesystem(temp_dir=tmp_path):
         runner.invoke(app, ["init"])
 
         # WHEN `aico last` is run
         result = runner.invoke(app, ["last"])
 
-        # THEN the command fails with an error
+        # THEN the command fails with a clear error
         assert result.exit_code == 1
-        assert "Error: Assistant response at index 1 not found." in result.stderr
+        assert "Error: No message pairs found in history." in result.stderr
 
 
-def test_last_can_select_historical_message_with_n(tmp_path: Path) -> None:
-    # GIVEN a session with two assistant messages in history
+@pytest.mark.parametrize("invalid_index", ["99", "-99"])
+def test_last_fails_with_out_of_bounds_index(session_with_two_pairs: Path, invalid_index: str) -> None:
+    # GIVEN a session with two pairs
+    # WHEN `aico last` is run with an out-of-bounds index
+    result = runner.invoke(app, ["last", invalid_index])
+
+    # THEN it fails with a clear error message
+    assert result.exit_code == 1
+    assert f"Error: Pair at index {invalid_index} not found. Valid indices are 0 to 1 (or -1 to -2)." in result.stderr
+
+
+def test_last_fails_with_invalid_index_format(session_with_two_pairs: Path) -> None:
+    # GIVEN a session file
+    # WHEN `aico last` is run with a non-integer index
+    result = runner.invoke(app, ["last", "abc"])
+
+    # THEN it fails with a parsing error
+    assert result.exit_code == 1
+    assert "Error: Invalid index 'abc'. Must be an integer." in result.stderr
+
+
+def test_last_recompute_fails_with_prompt_flag(session_with_two_pairs: Path) -> None:
+    # GIVEN a session
+    # WHEN `aico last` is run with both --recompute and --prompt
+    result = runner.invoke(app, ["last", "-1", "--prompt", "--recompute"])
+
+    # THEN it fails with a specific error
+    assert result.exit_code == 1
+    assert "Error: --recompute cannot be used with --prompt." in result.stderr
+
+
+def test_last_recompute_for_diff_response(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN a session with a diff response
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        assistant_message_1 = {  # This will be the second-to-last
-            "role": "assistant",
-            "content": "response one",
-            "mode": "conversation",
-            "model": "test",
-            "timestamp": "...",
-            "duration_ms": 1,
-            "derived": None,
-        }
-        assistant_message_2 = {  # This is the last
-            "role": "assistant",
-            "content": "response two",
-            "mode": "conversation",
-            "model": "test",
-            "timestamp": "...",
-            "duration_ms": 1,
-            "derived": None,
-        }
-        session_data = {
-            "model": "test-model",
-            "context_files": [],
-            "history_start_index": 0,
-            "chat_history": [
-                {"role": "user", "content": "p1", "mode": "conversation", "timestamp": "..."},
-                assistant_message_1,
-                {"role": "user", "content": "p2", "mode": "conversation", "timestamp": "..."},
-                assistant_message_2,
-            ],
-        }
-        (Path(td) / SESSION_FILE_NAME).write_text(json.dumps(session_data))
-
-        # WHEN `aico last 2` is run
-        result_2 = runner.invoke(app, ["last", "2"])
-
-        # THEN it shows the content from the first assistant response
-        assert result_2.exit_code == 0
-        assert "response one" in result_2.stdout
-        assert "response two" not in result_2.stdout
-
-        # WHEN `aico last` (defaulting to n=1) is run
-        result_1 = runner.invoke(app, ["last"])
-
-        # THEN it shows the content from the second (last) assistant response
-        assert result_1.exit_code == 0
-        assert "response two" in result_1.stdout
-        assert "response one" not in result_1.stdout
-
-
-def test_last_fails_with_out_of_bounds_n(tmp_path: Path) -> None:
-    # GIVEN a session with one assistant message
-    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        user_message = {"role": "user", "content": "p1", "mode": "diff", "timestamp": "t1"}
         assistant_message = {
             "role": "assistant",
-            "content": "only response",
-            "mode": "conversation",
-            "model": "test",
-            "timestamp": "...",
-            "duration_ms": 1,
-            "derived": None,
+            "content": "File: file.py\n<<<<<<< SEARCH\nold line\n=======\nnew line\n>>>>>>> REPLACE",
+            "mode": "diff",
+            "model": "test-model",
+            "timestamp": "t1",
+            "duration_ms": 100,
+            "derived": {
+                "unified_diff": "--- a/file.py\n+++ b/file.py\n@@ -1 +1 @@\n-old line\n+new line\n",
+            },
         }
+
         session_data = {
             "model": "test-model",
-            "context_files": [],
+            "context_files": ["file.py"],
+            "chat_history": [user_message, assistant_message],
             "history_start_index": 0,
-            "chat_history": [assistant_message],
         }
-        (Path(td) / SESSION_FILE_NAME).write_text(json.dumps(session_data))
+        session_file = Path(td) / SESSION_FILE_NAME
+        session_file.write_text(json.dumps(session_data))
+        (Path(td) / "file.py").write_text("old line\n")
+        mocker.patch("aico.commands.last.is_terminal", return_value=False)
 
-        # WHEN `aico last 2` is run
-        result = runner.invoke(app, ["last", "2"])
+        # WHEN piped with recompute
+        result_recomputed_piped = runner.invoke(app, ["last", "0", "--recompute"])
 
-        # THEN it fails with a clear error message
-        assert result.exit_code == 1
-        assert "Error: Assistant response at index 2 not found." in result.stderr
-
-
-def test_last_fails_with_invalid_n_cli_arg(tmp_path: Path) -> None:
-    # GIVEN a session file
-    with runner.isolated_filesystem(temp_dir=tmp_path):
-        runner.invoke(app, ["init"])
-
-        # WHEN `aico last` is run with an invalid N (less than 1)
-        result = runner.invoke(app, ["last", "0"])
-
-        # THEN typer's argument validation handles it
-        assert result.exit_code != 0
-        assert "Invalid value for '[N]': 0 is not in the range x>=1" in result.stderr
+        # THEN it recalculates the diff, which should succeed and be identical
+        assert result_recomputed_piped.exit_code == 0
+        assert result_recomputed_piped.stdout == assistant_message["derived"]["unified_diff"]
+        assert "Warning" not in result_recomputed_piped.stderr

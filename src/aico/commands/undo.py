@@ -4,58 +4,52 @@ from typing import Annotated
 
 import typer
 
+from aico.index_logic import resolve_pair_index_to_message_indices
 from aico.utils import load_session, save_session
 
 
 def undo(
-    count: Annotated[
-        int,
+    index: Annotated[
+        str,
         typer.Argument(
-            help="Number of conversational pairs (user + assistant) to exclude from context.",
-            min=1,
+            help="The index of the message pair to undo. Use negative numbers to count from the end "
+            + "(e.g., -1 for the last pair).",
         ),
-    ] = 1,
+    ] = "-1",
 ) -> None:
     """
-    Mark the last N message pairs as excluded from future context.
+    Mark a message pair as excluded from future context.
 
-    This command performs a "soft delete". The messages are not removed from the
-    history, but are flagged to be ignored when building the context for the next
-    prompt. This allows you to easily undo recent steps in the conversation without
-    losing the record, which is useful if a recent instruction produced an
-    undesirable result.
+    This command performs a "soft delete" on the pair at the given INDEX.
+    The messages are not removed from the history, but are flagged to be
+    ignored when building the context for the next prompt.
     """
     session_file, session_data = load_session()
-    history = session_data.chat_history
-    history_len = len(history)
-    messages_to_exclude = count * 2
 
-    if history_len == 0:
-        print("Error: Cannot undo, chat history is empty.", file=sys.stderr)
-        raise typer.Exit(code=1)
+    try:
+        index_val = int(index)
+    except ValueError:
+        print(f"Error: Invalid index '{index}'. Must be an integer.", file=sys.stderr)
+        raise typer.Exit(code=1) from None
 
-    if messages_to_exclude > history_len:
-        print(
-            f"Error: Cannot undo {count} pairs ({messages_to_exclude} messages), "
-            + f"history only contains {history_len} messages.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
+    try:
+        pair_indices = resolve_pair_index_to_message_indices(session_data.chat_history, index_val)
+    except IndexError as e:
+        print(str(e), file=sys.stderr)
+        raise typer.Exit(code=1) from None
 
-    excluded_count = 0
-    # Iterate backwards through the history to find messages to exclude
-    for i in range(history_len - 1, -1, -1):
-        if excluded_count >= messages_to_exclude:
-            break
+    user_msg_idx = pair_indices.user_index
+    assistant_msg_idx = pair_indices.assistant_index
 
-        msg = history[i]
-        if not msg.is_excluded:
-            history[i] = replace(msg, is_excluded=True)
-            excluded_count += 1
+    user_msg = session_data.chat_history[user_msg_idx]
+    assistant_msg = session_data.chat_history[assistant_msg_idx]
 
-    if excluded_count == 0:
-        print("No active messages found to exclude.", file=sys.stderr)
-        raise typer.Exit(code=1)
+    if user_msg.is_excluded and assistant_msg.is_excluded:
+        print(f"Pair at index {index_val} is already excluded. No changes made.")
+        return
+
+    session_data.chat_history[user_msg_idx] = replace(user_msg, is_excluded=True)
+    session_data.chat_history[assistant_msg_idx] = replace(assistant_msg, is_excluded=True)
 
     save_session(session_file, session_data)
-    print(f"Marked the last {excluded_count} messages as excluded.")
+    print(f"Marked pair at index {index_val} as excluded.")

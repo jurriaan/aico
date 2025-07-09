@@ -115,7 +115,7 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
    aico last | patch -p1
 
    # Made a mistake? Undo the 3rd to last change by reversing its diff.
-   aico last 3 | patch -p1 -R
+   aico last -3 | patch -p1 -R
    ```
 
 Repeat steps 5 and 6 for each increment of the plan.
@@ -129,15 +129,16 @@ Repeat steps 5 and 6 for each increment of the plan.
 - `aico ask "<instruction>"`: Have a conversation with the AI for planning and discussion.
 - `aico gen | generate-patch "<instruction>"`: Generate code modifications as a unified diff.
 - `aico prompt "<instruction>"`: A power-user command for sending unformatted prompts. Primarily intended for scripting or addons (like `aico commit`). Prefer `ask` or `gen` for general use.
-- `aico last [N]`: Shows the N-th to last response from the AI (defaults to 1).
+- `aico last [index]`: Shows the response from the message pair at the given index (e.g., `0` for the first pair, `-1` for the last). Defaults to `-1`.
+  - `--prompt`: Shows the user's prompt message instead of the AI's response.
   - `--recompute`: Re-applies the original instruction to the current file state. Useful for retrying a command after adding/changing context.
   - `--verbatim`: Prints the original, unprocessed response from the AI.
 - `aico history`: A subcommand group for managing the chat history.
   - `aico history log`: Show a compact log of the active context.
   - `aico history view`: See a summary of the history status.
-  - `aico history set <index>`: Set which message the active history starts from.
+  - `aico history set <index>`: Set which message pair the active history starts from.
   - `aico history reset`: Reset the history to include all messages.
-- `aico undo [N]`: Marks the last N message pairs as excluded from future context (defaults to 1). This "soft delete" is useful for undoing a conversational step if a `gen` or `ask` command produced an undesirable result.
+- `aico undo [index]`: Marks the message pair at the given index as excluded from future context (defaults to `-1`). This "soft delete" is useful for undoing a conversational step if a `gen` or `ask` command produced an undesirable result.
 
 ## Addons: Extending `aico`
 
