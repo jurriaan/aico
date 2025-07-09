@@ -8,11 +8,13 @@ from typer.core import TyperGroup
 
 from aico.addons import register_addon_commands
 from aico.commands.context import add, drop
-from aico.commands.history import history_app
 from aico.commands.init import init
 from aico.commands.last import last
+from aico.commands.log import log
 from aico.commands.prompt import ask, generate_patch, prompt
-from aico.commands.tokens import tokens_app
+from aico.commands.set_history import set_history
+from aico.commands.status import status
+from aico.commands.tokens import tokens
 from aico.commands.undo import undo
 
 
@@ -34,8 +36,10 @@ class AliasGroup(TyperGroup):
 
 
 app = typer.Typer(cls=AliasGroup)
-app.add_typer(history_app, name="history")
-app.add_typer(tokens_app, name="tokens")
+_ = app.command("status")(status)
+_ = app.command("log")(log)
+_ = app.command("set-history", context_settings={"ignore_unknown_options": True})(set_history)
+_ = app.command("tokens")(tokens)
 _ = app.command("ask")(ask)
 _ = app.command("generate-patch | gen")(generate_patch)
 _ = app.command("prompt")(prompt)

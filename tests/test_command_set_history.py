@@ -1,0 +1,220 @@
+# pyright: standard
+
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+from typer.testing import CliRunner
+
+from aico.main import app
+from aico.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
+from aico.utils import (
+    SESSION_FILE_NAME,
+    SessionDataAdapter,
+    get_active_history,
+    save_session,
+)
+
+runner = CliRunner()
+
+
+def test_set_history_with_negative_index_argument(tmp_path: Path) -> None:
+    # GIVEN a session with 10 history messages (5 pairs)
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        history: list[ChatMessageHistoryItem] = []
+        for i in range(5):
+            history.append(UserChatMessage(role="user", content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
+            history.append(
+                AssistantChatMessage(
+                    role="assistant",
+                    content=f"r{i}",
+                    mode=Mode.CONVERSATION,
+                    timestamp=f"t{i}",
+                    model="m",
+                    duration_ms=1,
+                )
+            )
+
+        session_data = SessionData(model="test-model", chat_history=history, context_files=[])
+        session_file = Path(td) / SESSION_FILE_NAME
+        save_session(session_file, session_data)
+
+        # WHEN `aico set-history -2` is run
+        result = runner.invoke(app, ["set-history", "-2"])
+
+        # THEN the command succeeds and reports starting at pair -2
+        assert result.exit_code == 0
+        assert "History context will now start at pair -2." in result.stdout
+
+        # AND the history start index is set to message index 6 (start of pair 3)
+        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        assert updated_session_data.history_start_index == 6
+
+
+def test_set_history_with_positive_pair_index(tmp_path: Path) -> None:
+    # GIVEN a session with 6 history messages (3 pairs)
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        history: list[ChatMessageHistoryItem] = []
+        for i in range(3):
+            history.append(UserChatMessage(role="user", content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
+            history.append(
+                AssistantChatMessage(
+                    role="assistant",
+                    content=f"r{i}",
+                    mode=Mode.CONVERSATION,
+                    timestamp=f"t{i}",
+                    model="m",
+                    duration_ms=1,
+                )
+            )
+
+        session_data = SessionData(model="test-model", chat_history=history, context_files=[])
+        session_file = Path(td) / SESSION_FILE_NAME
+        save_session(session_file, session_data)
+
+        # WHEN `aico set-history 1` is run
+        result = runner.invoke(app, ["set-history", "1"])
+
+        # THEN the command succeeds and reports starting at pair 1
+        assert result.exit_code == 0
+        assert "History context will now start at pair 1." in result.stdout
+
+        # AND the history start index is set to message index 2 (start of pair 1)
+        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        assert updated_session_data.history_start_index == 2
+
+
+def test_set_history_to_clear_context(tmp_path: Path) -> None:
+    # GIVEN a session with 4 history messages (2 pairs)
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        history: list[ChatMessageHistoryItem] = []
+        for i in range(2):
+            history.append(UserChatMessage(role="user", content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
+            history.append(
+                AssistantChatMessage(
+                    role="assistant",
+                    content=f"r{i}",
+                    mode=Mode.CONVERSATION,
+                    timestamp=f"t{i}",
+                    model="m",
+                    duration_ms=1,
+                )
+            )
+
+        session_data = SessionData(model="test-model", chat_history=history, context_files=[])
+        session_file = Path(td) / SESSION_FILE_NAME
+        save_session(session_file, session_data)
+
+        # WHEN `aico set-history 2` is run (where 2 is num_pairs)
+        result = runner.invoke(app, ["set-history", "2"])
+
+        # THEN the command succeeds and confirms the context is cleared
+        assert result.exit_code == 0
+        assert "History context cleared (will start after the last conversation)." in result.stdout
+
+        # AND the history start index is set to 4 (the total number of messages)
+        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        assert updated_session_data.history_start_index == 4
+
+
+@pytest.mark.parametrize(
+    "invalid_input,error_message",
+    [
+        (
+            "4",  # For 3 pairs, index 3 is valid (clear context), so 4 is the first invalid positive index.
+            "Error: Index out of bounds. Valid indices are in the range 0 to 2 (or -1 to -3), or 3 to clear context.",
+        ),
+        (
+            "-4",  # For 3 pairs, -3 is the first valid negative index, so -4 is the first invalid one.
+            "Error: Index out of bounds. Valid indices are in the range 0 to 2 (or -1 to -3), or 3 to clear context.",
+        ),
+        ("abc", "Error: Invalid index 'abc'"),
+    ],
+)
+def test_set_history_fails_with_invalid_index(tmp_path: Path, invalid_input: str, error_message: str) -> None:
+    # GIVEN a session with 6 history messages (3 pairs)
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        history: list[ChatMessageHistoryItem] = []
+        for i in range(3):
+            history.append(UserChatMessage(role="user", content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
+            history.append(
+                AssistantChatMessage(
+                    role="assistant",
+                    content=f"r{i}",
+                    mode=Mode.CONVERSATION,
+                    timestamp=f"t{i}",
+                    model="m",
+                    duration_ms=1,
+                )
+            )
+
+        session_data = SessionData(model="test-model", chat_history=history, context_files=[], history_start_index=1)
+        session_file = Path(td) / SESSION_FILE_NAME
+        save_session(session_file, session_data)
+        original_start_index = session_data.history_start_index
+
+        # WHEN `aico set-history` is run with an invalid index
+        result = runner.invoke(app, ["set-history", invalid_input])
+
+        # THEN the command fails with a specific error
+        assert result.exit_code == 1
+        assert error_message in result.stderr
+
+        # AND the history start index remains unchanged
+        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        assert updated_session_data.history_start_index == original_start_index
+
+
+def test_set_history_fails_without_session(tmp_path: Path) -> None:
+    # GIVEN an empty directory with no session file
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        # WHEN `aico set-history` is run
+        result = runner.invoke(app, ["set-history", "5"])
+
+        # THEN the command fails with a clear error message
+        assert result.exit_code == 1
+        assert f"Error: No session file '{SESSION_FILE_NAME}' found." in result.stderr
+
+
+def test_set_history_with_zero_sets_index_to_zero(tmp_path: Path) -> None:
+    # GIVEN a session with 10 messages (5 pairs) and the history index at 4
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        history: list[ChatMessageHistoryItem] = []
+        for i in range(5):
+            history.append(
+                UserChatMessage(
+                    role="user", content=f"p{i}", mode=Mode.CONVERSATION, timestamp=datetime.now(UTC).isoformat()
+                )
+            )
+            history.append(
+                AssistantChatMessage(
+                    role="assistant",
+                    content=f"r{i}",
+                    mode=Mode.CONVERSATION,
+                    timestamp=datetime.now(UTC).isoformat(),
+                    model="m",
+                    duration_ms=1,
+                )
+            )
+
+        session_data = SessionData(
+            model="test-model",
+            context_files=[],
+            chat_history=history,
+            history_start_index=4,  # Start at pair 2 (message index 4) to test reset
+        )
+        session_file = Path(td) / SESSION_FILE_NAME
+        save_session(session_file, session_data)
+
+        # WHEN `aico set-history 0` is run (replacing `history reset`)
+        result = runner.invoke(app, ["set-history", "0"])
+
+        # THEN the command succeeds and reports the reset
+        assert result.exit_code == 0
+        assert "History context reset. Full chat history is now active." in result.stdout
+
+        # AND the history start index is now 0
+        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        assert updated_session_data.history_start_index == 0
+        active_history = get_active_history(updated_session_data)
+        assert len(active_history) == 10

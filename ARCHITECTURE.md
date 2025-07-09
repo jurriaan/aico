@@ -28,7 +28,7 @@ The application is composed of several distinct components, each with a clear ro
 ### Command & Interaction Layer
 
 -   **Role:** This component defines the public-facing API of the tool—the commands a user can run. Each command is responsible for handling its specific inputs and options and orchestrating calls to the other components to fulfill the user's request.
--   **Implementation:** Commands are organized in the `src/aico/commands/` directory. Each file generally corresponds to a single command (e.g., `last.py`) or a command group (e.g., `history.py`).
+-   **Implementation:** Commands are organized in the `src/aico/commands/` directory. Each file corresponds to a single, top-level command (e.g., `last.py`, `status.py`, `log.py`). The application uses a flat command structure, avoiding nested command groups.
 
 ### Core Business Logic (The "Engines")
 

@@ -23,8 +23,8 @@ def test_aico_session_file_env_var_works(tmp_path: Path, mocker: MockerFixture) 
     with runner.isolated_filesystem(temp_dir=tmp_path):
         mocker.patch.dict("os.environ", {"AICO_SESSION_FILE": str(session_file.resolve())})
 
-        # AND we run aico history view (which needs to find the session file)
-        result = runner.invoke(app, ["history", "view"])
+        # AND we run aico status (which needs to find the session file)
+        result = runner.invoke(app, ["status"])
 
         # THEN the command succeeds and uses the session file from the env var
         assert result.exit_code == 0
@@ -36,8 +36,8 @@ def test_aico_session_file_env_var_fails_for_relative_path(tmp_path: Path, mocke
     with runner.isolated_filesystem(temp_dir=tmp_path):
         mocker.patch.dict("os.environ", {"AICO_SESSION_FILE": "relative/path.json"})
 
-        # WHEN we run aico history view
-        result = runner.invoke(app, ["history", "view"])
+        # WHEN we run aico status
+        result = runner.invoke(app, ["status"])
 
         # THEN the command fails with a clear error
         assert result.exit_code == 1
@@ -51,8 +51,8 @@ def test_aico_session_file_env_var_fails_for_nonexistent_file(tmp_path: Path, mo
     with runner.isolated_filesystem(temp_dir=tmp_path):
         mocker.patch.dict("os.environ", {"AICO_SESSION_FILE": str(nonexistent_file.resolve())})
 
-        # WHEN we run aico history view
-        result = runner.invoke(app, ["history", "view"])
+        # WHEN we run aico status
+        result = runner.invoke(app, ["status"])
 
         # THEN the command fails with a clear error
         assert result.exit_code == 1
@@ -66,8 +66,8 @@ def test_aico_session_file_env_var_not_set_uses_upward_search(tmp_path: Path) ->
         save_session(session_file, SessionData(model="upward-search-model", context_files=[], chat_history=[]))
 
         # AND AICO_SESSION_FILE is not set
-        # WHEN we run aico history view
-        result = runner.invoke(app, ["history", "view"])
+        # WHEN we run aico status
+        result = runner.invoke(app, ["status"])
 
         # THEN the command succeeds and finds the session file via upward search
         assert result.exit_code == 0

@@ -13,7 +13,7 @@
 #    `aico` commands that implicitly use it.
 #
 # 4. DELEGATION: This addon orchestrates multiple `aico` commands (`aico ask`
-#    and `aico history set`) to perform a complex workflow. This is a common
+#    and `aico set-history`) to perform a complex workflow. This is a common
 #    pattern for addons that manage session state.
 
 set -e
@@ -30,7 +30,7 @@ SUMMARY_PROMPT="Generate a comprehensive project summary that can serve as a com
 echo "Generating comprehensive project summary..."
 aico ask "$SUMMARY_PROMPT"
 
-echo "Resetting history to summary..."
-aico history set -2
+echo "Resetting history to start with the summary..."
+aico set-history -2
 
 echo "Done. History now starts with the comprehensive summary."

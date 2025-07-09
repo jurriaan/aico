@@ -9,12 +9,7 @@ from aico.models import TokenInfo, TokenReport
 from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
 from aico.utils import get_active_history, load_session, reconstruct_historical_messages
 
-tokens_app = typer.Typer(
-    help="Commands for inspecting prompt token usage and costs.",
-)
 
-
-@tokens_app.callback(invoke_without_command=True)
 def tokens(
     json_output: Annotated[bool, typer.Option("--json", help="Output the report as JSON.")] = False,
 ) -> None:

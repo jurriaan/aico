@@ -125,7 +125,6 @@ Repeat steps 5 and 6 for each increment of the plan.
 - `aico init`: Creates a `.ai_session.json` file in the current directory.
 - `aico add <files...>`: Adds one or more files to the session context.
 - `aico drop <files...>`: Removes one or more files from the context.
-- `aico tokens`: Shows a breakdown of token usage and estimated cost for the current context.
 - `aico ask "<instruction>"`: Have a conversation with the AI for planning and discussion.
 - `aico gen | generate-patch "<instruction>"`: Generate code modifications as a unified diff.
 - `aico prompt "<instruction>"`: A power-user command for sending unformatted prompts. Primarily intended for scripting or addons (like `aico commit`). Prefer `ask` or `gen` for general use.
@@ -133,12 +132,11 @@ Repeat steps 5 and 6 for each increment of the plan.
   - `--prompt`: Shows the user's prompt message instead of the AI's response.
   - `--recompute`: Re-applies the original instruction to the current file state. Useful for retrying a command after adding/changing context.
   - `--verbatim`: Prints the original, unprocessed response from the AI.
-- `aico history`: A subcommand group for managing the chat history.
-  - `aico history log`: Show a compact log of the active context.
-  - `aico history view`: See a summary of the history status.
-  - `aico history set <index>`: Set which message pair the active history starts from.
-  - `aico history reset`: Reset the history to include all messages.
 - `aico undo [index]`: Marks the message pair at the given index as excluded from future context (defaults to `-1`). This "soft delete" is useful for undoing a conversational step if a `gen` or `ask` command produced an undesirable result.
+- `aico status`: See a summary of the history status and active context.
+- `aico log`: Show a compact `git log`-style view of the entire conversation history.
+- `aico set-history <index>`: Set which message pair the active history starts from. For example, `aico set-history 0` makes the full history active.
+- `aico tokens`: Shows a breakdown of token usage and estimated cost for the current context.
 
 ## Addons: Extending `aico`
 
