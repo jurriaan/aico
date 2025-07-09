@@ -51,7 +51,7 @@ def session_for_log_tests(tmp_path: Path) -> Iterator[Path]:
         yield session_file
 
 
-def test_log_displays_full_history_with_active_marker(session_for_log_tests: Path) -> None:
+def test_log_displays_only_active_history(session_for_log_tests: Path) -> None:
     # GIVEN a session where the active context starts after the first pair
     # WHEN aico log is run
     result = runner.invoke(app, ["log"])
@@ -60,23 +60,25 @@ def test_log_displays_full_history_with_active_marker(session_for_log_tests: Pat
     assert result.exit_code == 0
     output = result.stdout.replace("│", "").replace(" ", "")  # Simplify for robust matching
 
-    assert "ChatHistoryLog" in output
+    assert "ActiveContextLog" in output
 
-    # AND it shows the inactive pair (ID 0) without a marker
-    assert "0userprompt0" in output
-    assert "assistantresp0" in output
-    assert ">0user" not in output
+    # AND it does NOT show the inactive pair (ID 0)
+    assert "prompt0" not in output
+    assert "assistantresp0" not in output
 
-    # AND it shows the active excluded pair (ID 1) with a marker
-    assert ">1userprompt1excluded" in output
+    # AND it shows the active excluded pair (ID 1) without a marker
+    assert "1userprompt1excluded" in output
 
-    # AND it shows the active normal pair (ID 2) with a marker, truncating the prompt
-    assert ">2userprompt2" in output
+    # AND it shows the active normal pair (ID 2) without a marker, truncating the prompt
+    assert "2userprompt2" in output
     assert "secondline" not in output
     assert "assistantresp2" in output
 
-    # AND it shows the dangling message section with ALL dangling messages
-    assert "Danglingmessages" in output
+    # AND no markers are present
+    assert ">" not in output
+
+    # AND it shows the dangling message section for ACTIVE dangling messages
+    assert "Danglingmessagesinactivecontext" in output
     assert "danglingprompt" in output
 
 
@@ -90,7 +92,7 @@ def test_log_with_empty_history(tmp_path: Path) -> None:
 
         # THEN it succeeds and prints a 'no pairs' message
         assert result.exit_code == 0
-        assert "No message pairs found in history." in result.stdout
+        assert "No message pairs found in active history." in result.stdout
         assert "Dangling" not in result.stdout
 
 
@@ -109,8 +111,8 @@ def test_log_with_only_dangling_messages(tmp_path: Path) -> None:
         # THEN it succeeds and reports no pairs and shows the dangling message
         assert result.exit_code == 0
         output = result.stdout
-        assert "No message pairs found in history." in output
-        assert "Dangling messages (not part of a pair):" in output
+        assert "No message pairs found in active history." in output
+        assert "Dangling messages in active context:" in output
         assert "only a prompt" in output
 
 

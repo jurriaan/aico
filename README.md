@@ -134,7 +134,7 @@ Repeat steps 5 and 6 for each increment of the plan.
   - `--verbatim`: Prints the original, unprocessed response from the AI.
 - `aico undo [index]`: Marks the message pair at the given index as excluded from future context (defaults to `-1`). This "soft delete" is useful for undoing a conversational step if a `gen` or `ask` command produced an undesirable result.
 - `aico status`: See a summary of the history status and active context.
-- `aico log`: Show a compact `git log`-style view of the entire conversation history.
+- `aico log`: Show a compact `git log`-style view of the active conversation context.
 - `aico set-history <index>`: Set which message pair the active history starts from. For example, `aico set-history 0` makes the full history active.
 - `aico tokens`: Shows a breakdown of token usage and estimated cost for the current context.
 
