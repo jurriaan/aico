@@ -35,6 +35,18 @@ These records explain the motivation and consequences of key architectural decis
     -   **Structured Persistence:** The `aico last` bug was caused by "stringly-typed" persistence—flattening structured data (like conversational text, diffs, and warnings) into a single string for storage, thereby losing the information needed for correct rendering later. Storing the output as a `list[{"type": ..., "content": ...}]` preserves this structure.
     -   **Backward Compatibility:** The session model for the persistence field (`derived.display_content`) uses the type `list[DisplayItem] | str | None`. This allows the `last` command to correctly render new, structured history while seamlessly falling back to the old rendering behavior for session files created before this change, ensuring a smooth and non-breaking upgrade for users.
 
+### ADR-005: Flat, Verb-Driven CLI Structure
+
+-   **Context:** The CLI initially had nested command groups like `aico history view` and `aico tokens`. This is a common pattern for complex applications, but it was found to hide functionality and add an unnecessary layer of abstraction for a command-line tool.
+-   **Decision:** We dissolved the `history` and `tokens` command groups, promoting their functionality to top-level, verb-driven commands (e.g., `aico status`, `aico log`, `aico tokens`). We also eliminated redundant commands like `history reset` whose functionality was a subset of another command (`set-history 0`).
+-   **Rationale:** This decision was driven by the core philosophy of making `aico` feel like a classic, composable Unix tool (see `CONVENTIONS.md`). A flat structure improves discoverability, as all commands are visible in the top-level `aico --help` output. It simplifies command memorability (e.g., "what's the git status?" -> `git status`; "what's the aico status?" -> `aico status`) and makes the tool feel more direct and less like a "managed application."
+
+### ADR-006: Unified Pair-Based History Indexing
+
+-   **Context:** Commands that interact with the chat history (`last`, `undo`, `set-history`) need a way to reference specific points in the conversation. Different indexing schemes were possible (e.g., by raw message index, by pair index), creating a risk of an inconsistent and confusing user experience.
+-   **Decision:** We explicitly standardized on a **message pair** (one user prompt and its corresponding assistant response) as the atomic unit of the conversation. The `aico log` command was designed to display a clear `ID` for each pair. All other history commands (`last`, `undo`, `set-history`) were unified to consume this exact pair ID as their primary argument.
+-   **Rationale:** This provides a consistent and logical mental model for the user. They learn one concept—the pair ID from `aico log`—and can apply it everywhere, reducing cognitive load. It avoids the ambiguity of a raw message index where a user might accidentally target their own prompt when they meant to target the AI's response or vice-versa. Treating the prompt/response as a single, atomic unit is more intuitive for operations like "undoing" a conversational turn.
+
 ## Project Philosophy & Vision
 
 ### Dependency Rationale: Why `litellm`?
