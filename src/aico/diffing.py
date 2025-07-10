@@ -54,28 +54,54 @@ def _add_no_newline_marker_if_needed(diff_lines: list[str], original_content: st
     """
     Manually injects the '\\ No newline at end of file' marker into a diff list IN-PLACE.
     This is a workaround because `difflib` doesn't add the marker itself when using
-    `splitlines(keepends=True)`, which is necessary to handle files with significant blank lines.
+    `splitlines(keepends=True)`.
 
-    It also ensures the line preceding the marker correctly ends with a newline, as `difflib`
-    omits it for the last line of a file that lacks a trailing newline.
+    The logic is: if the original file lacks a trailing newline, find the last line
+    in the diff that came from the original file (' ' or '-'). If that diff line
+    also lacks a trailing newline, it must be the end of the file, so we add the marker.
     """
     if not (diff_lines and original_content and not original_content.endswith("\n")):
         return
 
-    # Find the last line in the diff hunk that originates from the "from" file.
-    # These lines start with ' ' (context) or '-' (deletion).
-    # We iterate backwards from the end of the diff list.
-    for i in range(len(diff_lines) - 1, 1, -1):  # Stop after headers at index 1
+    # Iterate backwards through the diff to find the last line from the original file
+    for i in range(len(diff_lines) - 1, -1, -1):
         line = diff_lines[i]
-        if line.startswith("-") or line.startswith(" "):
-            # This is the last relevant line from the original file.
-            # If difflib's output for this line lacks a newline, add one.
-            if not diff_lines[i].endswith("\n"):
-                diff_lines[i] += "\n"
 
-            # Insert the marker immediately after this line.
-            diff_lines.insert(i + 1, "\\ No newline at end of file\n")
+        if line.startswith("@@"):
+            # We've reached the start of a hunk without finding a suitable line.
+            # This means the hunk doesn't contain lines from the end of the original file.
             return
+
+        if line.startswith("-") or line.startswith(" "):
+            # This is the last relevant line from the original file within this hunk.
+            # If it doesn't end with a newline, then it must be the end of the file.
+            if not line.endswith("\n"):
+                diff_lines[i] += "\n"
+                diff_lines.insert(i + 1, "\\ No newline at end of file\n")
+            # If it *does* end with a newline, the hunk is not at the end of the file,
+            # so we shouldn't add a marker. In either case, we are done with this hunk.
+            return
+
+
+def _generate_diff_with_no_newline_handling(
+    from_file: str,
+    to_file: str,
+    from_content: str | None,
+    to_content: str | None,
+) -> list[str]:
+    """
+    Generates a unified diff using difflib and applies custom logic to handle
+    the '\\ No newline at end of file' marker, which difflib does not do correctly
+    with splitlines(keepends=True).
+    """
+    from_lines = from_content.splitlines(keepends=True) if from_content is not None else []
+    to_lines = to_content.splitlines(keepends=True) if to_content is not None else []
+
+    diff_lines = list(difflib.unified_diff(from_lines, to_lines, fromfile=from_file, tofile=to_file))
+
+    _add_no_newline_marker_if_needed(diff_lines, from_content)
+
+    return diff_lines
 
 
 def _try_exact_string_patch(original_content: str, search_block: str, replace_block: str) -> str | None:
@@ -275,15 +301,12 @@ def _process_single_diff_block(
         elif not new_content_full:
             to_file = "/dev/null"
 
-        diff_lines = list(
-            difflib.unified_diff(
-                content_before_patch.splitlines(keepends=True),
-                new_content_full.splitlines(keepends=True),
-                fromfile=from_file,
-                tofile=to_file,
-            )
+        diff_lines = _generate_diff_with_no_newline_handling(
+            from_file=from_file,
+            to_file=to_file,
+            from_content=content_before_patch,
+            to_content=new_content_full,
         )
-        _add_no_newline_marker_if_needed(diff_lines, content_before_patch)
 
         diff_string = "".join(diff_lines)
 
@@ -501,11 +524,12 @@ def generate_unified_diff(original_file_contents: FileContents, llm_response: st
         if to_content is None:
             to_file = "/dev/null"
 
-        from_lines = from_content.splitlines(keepends=True) if from_content is not None else []
-        to_lines = to_content.splitlines(keepends=True) if to_content is not None else []
-
-        diff_lines = list(difflib.unified_diff(from_lines, to_lines, fromfile=from_file, tofile=to_file))
-        _add_no_newline_marker_if_needed(diff_lines, from_content)
+        diff_lines = _generate_diff_with_no_newline_handling(
+            from_file=from_file,
+            to_file=to_file,
+            from_content=from_content,
+            to_content=to_content,
+        )
         all_diffs.extend(diff_lines)
 
     return "".join(all_diffs)

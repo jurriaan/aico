@@ -985,3 +985,19 @@ def test_parser_preserves_interstitial_conversation_and_newlines(tmp_path: Path)
     assert "And now for the second file" not in unified_diff
     assert "--- a/file1.py" in unified_diff
     assert "--- a/file2.py" in unified_diff
+
+
+def test_no_newline_marker_not_added_for_hunk_in_middle_of_file(tmp_path: Path) -> None:
+    # GIVEN a file that does not end with a newline
+    original_contents = {"file.py": "line_one\nline_two\nline_three\nfoo\n\nbar"}
+
+    # AND an LLM response that modifies a line in the middle of the file
+    llm_response = "File: file.py\n<<<<<<< SEARCH\nline_two\n=======\nline_two_changed\n>>>>>>> REPLACE"
+
+    # WHEN a diff is generated
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
+
+    # THEN the diff should NOT contain the "No newline" marker, because the
+    # hunk does not include the last line of the file.
+    assert "\\ No newline at end of file" not in diff, "Erroneous 'No newline' marker found"
+    assert "+line_two_changed" in diff  # Sanity check that the diff was otherwise correct
