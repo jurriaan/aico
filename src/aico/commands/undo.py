@@ -4,7 +4,7 @@ from typing import Annotated
 
 import typer
 
-from aico.index_logic import resolve_pair_index_to_message_indices
+from aico.index_logic import find_message_pairs, resolve_pair_index_to_message_indices
 from aico.utils import load_session, save_session
 
 
@@ -25,6 +25,7 @@ def undo(
     ignored when building the context for the next prompt.
     """
     session_file, session_data = load_session()
+    all_pairs = find_message_pairs(session_data.chat_history)
 
     try:
         index_val = int(index)
@@ -44,12 +45,17 @@ def undo(
     user_msg = session_data.chat_history[user_msg_idx]
     assistant_msg = session_data.chat_history[assistant_msg_idx]
 
+    resolved_index = index_val
+    if resolved_index < 0:
+        # This is safe because resolve_pair_index_to_message_indices has already validated the index
+        resolved_index += len(all_pairs)
+
     if user_msg.is_excluded and assistant_msg.is_excluded:
-        print(f"Pair at index {index_val} is already excluded. No changes made.")
+        print(f"Pair at index {resolved_index} is already excluded. No changes made.")
         return
 
     session_data.chat_history[user_msg_idx] = replace(user_msg, is_excluded=True)
     session_data.chat_history[assistant_msg_idx] = replace(assistant_msg, is_excluded=True)
 
     save_session(session_file, session_data)
-    print(f"Marked pair at index {index_val} as excluded.")
+    print(f"Marked pair at index {resolved_index} as excluded.")

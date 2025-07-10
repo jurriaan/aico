@@ -43,8 +43,9 @@ def test_set_history_with_negative_index_argument(tmp_path: Path) -> None:
         result = runner.invoke(app, ["set-history", "-2"])
 
         # THEN the command succeeds and reports starting at pair -2
+        # The resolved index of -2 in a 5-pair list is 3.
         assert result.exit_code == 0
-        assert "History context will now start at pair -2." in result.stdout
+        assert "History context will now start at pair 3." in result.stdout
 
         # AND the history start index is set to message index 6 (start of pair 3)
         updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())

@@ -52,12 +52,13 @@ def test_undo_default_marks_last_pair_excluded(session_with_two_pairs: Path) -> 
     # GIVEN a session with two pairs
     session_file = session_with_two_pairs
 
-    # WHEN `aico undo` is run with no arguments
+    # WHEN `aico undo` is run with no arguments (defaults to -1)
     result = runner.invoke(app, ["undo"])
 
     # THEN the command succeeds and confirms excluding the last pair (-1)
     assert result.exit_code == 0
-    assert "Marked pair at index -1 as excluded." in result.stdout
+    # The resolved index of -1 in a 2-pair list is 1.
+    assert "Marked pair at index 1 as excluded." in result.stdout
 
     # AND only the last pair is excluded
     final_session = _load_session_data(session_file)
@@ -93,9 +94,10 @@ def test_undo_with_negative_index(session_with_two_pairs: Path) -> None:
     # WHEN `aico undo -2` is run
     result = runner.invoke(app, ["undo", "-2"])
 
-    # THEN the command succeeds and confirms excluding the first pair (-2)
+    # THEN the command succeeds and confirms excluding the first pair
+    # The resolved index of -2 in a 2-pair list is 0.
     assert result.exit_code == 0
-    assert "Marked pair at index -2 as excluded." in result.stdout
+    assert "Marked pair at index 0 as excluded." in result.stdout
 
     # AND only the first pair is excluded
     final_session = _load_session_data(session_file)
@@ -133,15 +135,16 @@ def test_undo_on_already_excluded_pair_is_idempotent(session_with_two_pairs: Pat
     # GIVEN a session with two pairs
     # WHEN `aico undo -1` is run the first time
     result1 = runner.invoke(app, ["undo", "-1"])
+    # The resolved index of -1 in a 2-pair list is 1.
     assert result1.exit_code == 0
-    assert "Marked pair at index -1 as excluded." in result1.stdout
+    assert "Marked pair at index 1 as excluded." in result1.stdout
 
     # AND WHEN `aico undo -1` is run a second time
     result2 = runner.invoke(app, ["undo", "-1"])
 
     # THEN it succeeds but reports that no changes were made
     assert result2.exit_code == 0
-    assert "Pair at index -1 is already excluded. No changes made." in result2.stdout
+    assert "Pair at index 1 is already excluded. No changes made." in result2.stdout
 
 
 def test_undo_fails_with_invalid_index_format(session_with_two_pairs: Path) -> None:

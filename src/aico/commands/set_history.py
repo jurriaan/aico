@@ -39,6 +39,7 @@ def set_history(
     pairs = find_message_pairs(chat_history)
     num_pairs = len(pairs)
     target_message_index: int
+    resolved_index = pair_index_val
 
     if num_pairs == 0:
         if pair_index_val == 0:
@@ -48,6 +49,8 @@ def set_history(
             raise typer.Exit(code=1)
     elif -num_pairs <= pair_index_val < num_pairs:
         # Valid positive or negative index for an existing pair
+        if resolved_index < 0:
+            resolved_index += num_pairs
         target_message_index = pairs[pair_index_val].user_index
     elif pair_index_val == num_pairs:
         # Special case: set start index after the last pair, clearing the context
@@ -74,4 +77,4 @@ def set_history(
     elif pair_index_val == num_pairs:
         print("History context cleared (will start after the last conversation).")
     else:
-        print(f"History context will now start at pair {pair_index_val}.")
+        print(f"History context will now start at pair {resolved_index}.")
