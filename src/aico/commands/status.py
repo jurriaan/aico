@@ -1,5 +1,6 @@
 from rich.console import Console
 
+from aico.index_logic import find_message_pairs
 from aico.utils import load_session
 
 
@@ -9,41 +10,56 @@ def status() -> None:
     """
     _, session_data = load_session()
     history = session_data.chat_history
-    history_len = len(history)
 
     console = Console()
 
-    if history_len == 0:
+    if not history:
         console.print("Chat history is empty.")
         return
 
-    # Full history summary
-    total_excluded_count = sum(1 for msg in history if msg.is_excluded)
-    console.print("[bold]Full history summary:[/bold]")
-    console.print(f"Total messages: {history_len} recorded.")
-    console.print(f"Total excluded: {total_excluded_count} (across the entire history).")
+    all_pairs_with_indices = list(enumerate(find_message_pairs(history)))
+    total_pairs = len(all_pairs_with_indices)
+
+    total_excluded_pairs = sum(1 for _, pair in all_pairs_with_indices if history[pair.user_index].is_excluded)
+
+    console.print("[bold]Full History Summary:[/bold]")
+    console.print(f"  Total message pairs: {total_pairs}")
+    if total_excluded_pairs > 0:
+        console.print(f"  Total excluded pairs: {total_excluded_pairs}")
 
     console.print()
 
     # Current context
     start_index = session_data.history_start_index
-    potential_context_slice = history[start_index:]
-    active_window_size = len(potential_context_slice)
-    excluded_in_window = sum(1 for msg in potential_context_slice if msg.is_excluded)
-    messages_to_be_sent = active_window_size - excluded_in_window
+    active_pairs_with_indices = [
+        (pair_idx, pair) for pair_idx, pair in all_pairs_with_indices if pair.user_index >= start_index
+    ]
 
-    console.print("[bold]Current context (for next prompt):[/bold]")
-    console.print(f"Messages to be sent: {messages_to_be_sent}")
+    console.print("[bold]Current Context (for next prompt):[/bold]")
 
-    indices_str_part = ""
-    if active_window_size > 0:
-        end_index = history_len - 1
-        if start_index == end_index:
-            indices_str_part = f" (index {start_index})"
+    if not active_pairs_with_indices:
+        # Check for non-paired messages that might still be sent.
+        potential_context_slice = history[start_index:]
+        sent_messages = [msg for msg in potential_context_slice if not msg.is_excluded]
+
+        if sent_messages:
+            console.print(f"  Context to be sent: {len(sent_messages)} partial or dangling messages")
         else:
-            indices_str_part = f" (indices {start_index}-{end_index})"
+            console.print("  No active context to be sent.")
+        return
 
-    console.print(
-        f"    [italic](From an active window of {active_window_size} messages{indices_str_part}, "
-        + f"with {excluded_in_window} excluded via `aico undo`)[/italic]"
+    active_window_pairs = len(active_pairs_with_indices)
+    active_start_id = active_pairs_with_indices[0][0]
+    active_end_id = active_pairs_with_indices[-1][0]
+    plural_s = "s" if active_window_pairs != 1 else ""
+    window_id_str = (
+        f"ID {active_start_id}" if active_start_id == active_end_id else f"IDs {active_start_id}-{active_end_id}"
     )
+
+    console.print(f"  Active window: {window_id_str} ({active_window_pairs} pair{plural_s})")
+
+    excluded_in_window = sum(1 for _, pair in active_pairs_with_indices if history[pair.user_index].is_excluded)
+    pairs_to_be_sent = active_window_pairs - excluded_in_window
+    excluded_str = f" ({excluded_in_window} are excluded via `aico undo`)" if excluded_in_window else ""
+
+    console.print(f"  Context to be sent: {pairs_to_be_sent} of {active_window_pairs} active pairs{excluded_str}")
