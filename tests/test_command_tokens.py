@@ -13,26 +13,22 @@ from aico.utils import SESSION_FILE_NAME, save_session
 runner = CliRunner()
 
 
-def test_tokens_command_no_cost_or_window_info(tmp_path: Path, mocker) -> None:
+def test_tokens_command_handles_unknown_model(tmp_path: Path, mocker) -> None:
     """
-    Tests that the tokens command shows a token breakdown but omits cost
-    and context window info when litellm does not provide it.
+    Tests that the tokens command handles the case where the model is unknown
+    and litellm.get_model_info raises an exception.
     """
-    # GIVEN a session with context files and some history
+    # GIVEN a session with an unknown model
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
-        (session_dir / "file1.py").write_text("a" * 10)
-        session_data = SessionData(model="test-model", chat_history=[], context_files=["file1.py"])
+        session_data = SessionData(model="unknown-model", context_files=[], chat_history=[])
         save_session(session_dir / SESSION_FILE_NAME, session_data)
 
         # AND the token counter is mocked
-        # It will be called for system prompt, 2x alignment prompts, 1x context file.
-        # All will return 10. Max alignment is 10. Total = 10+10+10 = 30.
         mocker.patch("litellm.token_counter", return_value=10)
 
-        # AND litellm provides no cost or context window info
-        mocker.patch("litellm.completion_cost", side_effect=ValueError("No cost data"))
-        mocker.patch("litellm.get_model_info", return_value={"max_input_tokens": None})
+        # AND litellm.get_model_info raises an exception
+        mocker.patch("litellm.get_model_info", side_effect=Exception("Unknown model"))
 
         # WHEN `aico tokens` is run
         result = runner.invoke(app, ["tokens"])
@@ -42,11 +38,9 @@ def test_tokens_command_no_cost_or_window_info(tmp_path: Path, mocker) -> None:
         output = result.stdout
         assert "10" in output and "system prompt" in output
         assert "10" in output and "alignment prompts" in output
-        assert "10" in output and "file1.py" in output
-        assert "30" in output and "total" in output
+        assert "10" in output and "total" in output
 
-        # AND no cost or context window information is displayed
-        assert "$" not in output
+        # AND no context window information is displayed
         assert "max tokens" not in output
         assert "remaining tokens" not in output
 

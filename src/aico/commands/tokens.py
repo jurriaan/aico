@@ -1,3 +1,4 @@
+import sys
 from typing import Annotated
 
 import typer
@@ -131,7 +132,21 @@ def tokens(
                 total_cost += cost
 
     # Get context window info
-    model_info: litellm.router.ModelInfo = litellm.get_model_info(session_data.model)  # pyright: ignore[reportPrivateImportUsage]
+    try:
+        model_info: litellm.router.ModelInfo = litellm.get_model_info(session_data.model)  # pyright: ignore[reportPrivateImportUsage]
+    except Exception:
+        print(f"Warning: Could not retrieve model info for '{session_data.model}'.", file=sys.stderr)
+        model_info = {
+            "max_input_tokens": None,
+            "key": session_data.model,
+            "max_output_tokens": None,
+            "max_tokens": None,
+            "litellm_provider": "litellm",
+            "supported_openai_params": None,
+            "input_cost_per_token": 0,
+            "output_cost_per_token": 0,
+            "mode": "completion",
+        }
 
     remaining_tokens: int | None = None
     if max_input_tokens := model_info["max_input_tokens"]:
