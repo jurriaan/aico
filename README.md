@@ -77,19 +77,19 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
    aico init --model "openrouter/google/gemini-2.5-pro"
    ```
 
-1. **Add files to the AI's context.**
+2. **Add files to the AI's context.**
 
    ```bash
    aico add src/utils.py src/main.py
    ```
 
-1. **(Optional) Check the context size and cost.** Before sending a complex prompt, you can see how large the context will be and the estimated cost.
+3. **(Optional) Check the context size and cost.** Before sending a complex prompt, you can see how large the context will be and the estimated cost.
 
    ```bash
    aico tokens
    ```
 
-1. **Plan the work. Start a conversation with the AI to create a plan.**
+4. **Plan the work. Start a conversation with the AI to create a plan.**
 
    ```bash
    aico ask "Propose a multi-increment, test-driven plan to refactor the 'hello' function in main.py. It should accept a 'name' argument and print a greeting."
@@ -97,7 +97,7 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
 
    The AI will respond with a numbered plan. This starts a conversation that becomes part of the session history.
 
-1. **Execute one step. Ask the AI to write the code for the first increment.**
+5. **Execute one step. Ask the AI to write the code for the first increment.**
 
    ```bash
    aico gen "Implement Increment 1 of the plan."
@@ -105,7 +105,7 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
 
    `aico` will stream a response, ending with a proposed diff.
 
-1. **Review and apply.**
+6. **Review and apply.**
 
    ```bash
    # Review the diff from the last command with a tool like delta
@@ -119,6 +119,8 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
    ```
 
 Repeat steps 5 and 6 for each increment of the plan.
+
+For more detailed usage examples and scenarios, see [USAGE.feature.md](USAGE.feature.md).
 
 ## Commands Overview
 
