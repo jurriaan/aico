@@ -3,7 +3,8 @@ from typing import Annotated
 
 import typer
 from pydantic import TypeAdapter
-from rich.console import Console
+from rich.console import Console, RenderableType
+from rich.markdown import Markdown
 from rich.table import Table
 
 from aico.models import TokenInfo, TokenReport
@@ -73,7 +74,7 @@ def tokens(
             TokenInfo(
                 description="chat history",
                 tokens=history_tokens,
-                note="(use 'aico history' to manage)",
+                note="(use `aico set-history` / `aico undo` to manage)",
             )
         )
         total_tokens += history_tokens
@@ -92,7 +93,7 @@ def tokens(
                 TokenInfo(
                     description=file_path_str,
                     tokens=file_tokens,
-                    note="(use 'aico drop' to remove)",
+                    note="(use `aico drop` to remove)",
                 )
             )
             total_tokens += file_tokens
@@ -168,7 +169,8 @@ def tokens(
         return
 
     # Display results
-    console.print(f"Approximate context window usage for {token_report.model}, in tokens:\n")
+    console.print(Markdown(f"Approximate context window usage for `{token_report.model}`, in tokens:"))
+    console.print()
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column(justify="right")  # Tokens
     if has_cost_info:
@@ -177,12 +179,12 @@ def tokens(
     table.add_column(style="dim")  # Note
 
     for item in token_report.components:
-        row_items = [f"{item.tokens:,}"]
+        row_items: list[RenderableType] = [f"{item.tokens:,}"]
         if has_cost_info:
             cost = item.cost or 0.0
             row_items.append(f"${cost:.5f}")
         row_items.append(item.description)
-        row_items.append(item.note or "")
+        row_items.append(Markdown(item.note or ""))
         table.add_row(*row_items)
 
     console.print(table)
