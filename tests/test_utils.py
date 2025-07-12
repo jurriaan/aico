@@ -19,6 +19,10 @@ def test_aico_session_file_env_var_works(tmp_path: Path, mocker: MockerFixture) 
     session_file = session_dir / SESSION_FILE_NAME
     save_session(session_file, SessionData(model="test-model", context_files=[], chat_history=[]))
 
+    # AND litellm dependencies are mocked
+    mocker.patch("aico.commands.status._count_tokens", return_value=10)
+    mocker.patch("litellm.get_model_info", return_value=None)
+
     # WHEN AICO_SESSION_FILE is set to that absolute path
     with runner.isolated_filesystem(temp_dir=tmp_path):
         mocker.patch.dict("os.environ", {"AICO_SESSION_FILE": str(session_file.resolve())})
@@ -28,7 +32,7 @@ def test_aico_session_file_env_var_works(tmp_path: Path, mocker: MockerFixture) 
 
         # THEN the command succeeds and uses the session file from the env var
         assert result.exit_code == 0
-        assert "Chat history is empty" in result.stdout
+        assert "test-model" in result.stdout
 
 
 def test_aico_session_file_env_var_fails_for_relative_path(tmp_path: Path, mocker: MockerFixture) -> None:
@@ -59,11 +63,15 @@ def test_aico_session_file_env_var_fails_for_nonexistent_file(tmp_path: Path, mo
         assert "Session file specified in AICO_SESSION_FILE does not exist" in result.stderr
 
 
-def test_aico_session_file_env_var_not_set_uses_upward_search(tmp_path: Path) -> None:
+def test_aico_session_file_env_var_not_set_uses_upward_search(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a session file in the current directory (normal case)
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, SessionData(model="upward-search-model", context_files=[], chat_history=[]))
+
+        # AND litellm dependencies are mocked
+        mocker.patch("aico.commands.status._count_tokens", return_value=10)
+        mocker.patch("litellm.get_model_info", return_value=None)
 
         # AND AICO_SESSION_FILE is not set
         # WHEN we run aico status
@@ -71,7 +79,7 @@ def test_aico_session_file_env_var_not_set_uses_upward_search(tmp_path: Path) ->
 
         # THEN the command succeeds and finds the session file via upward search
         assert result.exit_code == 0
-        assert "Chat history is empty" in result.stdout
+        assert "upward-search-model" in result.stdout
 
 
 def test_get_active_history_filters_and_slices() -> None:

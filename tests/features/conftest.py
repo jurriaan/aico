@@ -148,27 +148,40 @@ def given_llm_will_stream_response(mocker: MockerFixture, docstring: str) -> Non
 
 @given("for this scenario, the token counter will report pre-defined counts")
 def given_mocked_token_counts(mocker: MockerFixture) -> None:
-    # Based on the scenario description for tokens phase 2, we mock the side effects
-    # of litellm.token_counter in the order it's called in commands/tokens.py
-    mock_token_counter = mocker.patch("litellm.token_counter")
+    # Based on the scenario description for the token breakdown, we mock the side effects
+    # of `litellm.token_counter` in the order it's called in `commands/status.py`.
+    mock_token_counter = mocker.patch("aico.commands.status._count_tokens")
     mock_token_counter.side_effect = [
-        100,  # system_prompt
-        40,  # alignment_prompts convo
-        50,  # alignment_prompts diff
-        75,  # chat_history
+        100,  # system prompt
+        40,  # alignment prompt 1
+        50,  # alignment prompt 2
+        75,  # chat history
         200,  # CONVENTIONS.md
     ]
 
 
 @given(parsers.parse('the model "{model_name}" has a known cost per token'))
 def given_model_has_cost(mocker: MockerFixture, model_name: str) -> None:  # pyright: ignore[reportUnusedParameter]
-    # This step mocks both cost calculation and model info retrieval from litellm
-    _ = mocker.patch(
+    # This step mocks both cost calculation and model info retrieval
+    mock_cost = mocker.patch(
         "litellm.completion_cost",
         # Use a simple, predictable cost for testing
         side_effect=lambda completion_response: float(completion_response["usage"]["prompt_tokens"]) * 0.0001,  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     )
-    _ = mocker.patch("litellm.get_model_info", return_value={"max_input_tokens": 8192})
+    mock_model_info = mocker.patch(
+        "litellm.get_model_info", return_value={"max_input_tokens": 8192, "input_cost_per_token": 0.0001}
+    )
+
+    # Make these mocks available to the test case context
+    mocker.patch.dict(
+        "sys.modules",
+        {
+            "litellm": mocker.MagicMock(
+                completion_cost=mock_cost,
+                get_model_info=mock_model_info,
+            )
+        },
+    )
 
 
 # WHEN steps

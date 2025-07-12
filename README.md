@@ -86,7 +86,7 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
 3. **(Optional) Check the context size and cost.** Before sending a complex prompt, you can see how large the context will be and the estimated cost.
 
    ```bash
-   aico tokens
+   aico status
    ```
 
 4. **Plan the work. Start a conversation with the AI to create a plan.**
@@ -135,10 +135,9 @@ For more detailed usage examples and scenarios, see [USAGE.feature.md](USAGE.fea
   - `--recompute`: Re-applies the original instruction to the current file state. Useful for retrying a command after adding/changing context.
   - `--verbatim`: Prints the original, unprocessed response from the AI.
 - `aico undo [index]`: Marks the message pair at the given index as excluded from future context (defaults to `-1`). This "soft delete" is useful for undoing a conversational step if a `gen` or `ask` command produced an undesirable result.
-- `aico status`: See a summary of the history status and active context.
+- `aico status`: Shows a comprehensive summary of the session status, including token usage, estimated cost, and chat history configuration.
 - `aico log`: Show a compact `git log`-style view of the active conversation context.
 - `aico set-history <index>`: Set which message pair the active history starts from. For example, `aico set-history 0` makes the full history active.
-- `aico tokens`: Shows a breakdown of token usage and estimated cost for the current context.
 
 ## Addons: Extending `aico`
 

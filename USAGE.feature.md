@@ -35,27 +35,36 @@ Conversely, you can easily remove files to keep the context lean and focused.
 
 ## Scenario: A user checks the token and cost breakdown for the current context
 
-Understanding context size is crucial for managing API costs and model performance. This scenario shows how the `tokens` command gives you a transparent, real-time breakdown of your token usage, so there are never any surprises.
+Understanding context size is crucial for managing API costs and model performance. This scenario shows how the `status` command gives you a transparent, real-time breakdown of your token usage, so there are never any surprises.
 
 - Given a project with an initialized aico session for model "test-model-with-cost"
 - And the file "CONVENTIONS.md" is in the session context
 - And the chat history contains one user/assistant pair
 - And for this scenario, the token counter will report pre-defined counts
 - And the model "test-model-with-cost" has a known cost per token
-- When I run the command `aico tokens`
+- When I run the command `aico status`
 - Then the output should be:
   ```
-  Approximate context window usage for test-model-with-cost, in tokens:
-
-    100    $0.01000    system prompt
-     50    $0.00500    alignment prompts    (worst-case)
-     75    $0.00750    chat history         (use aico set-history / aico undo to manage)
-    200    $0.02000    CONVENTIONS.md       (use aico drop to remove)
-  ==================================
-    425    $0.04250    total
-
-    8,192    max tokens
-    7,767    remaining tokens (95%)
+  ╭────────────────────────────────────────────────── Status for model ──────────────────────────────────────────────────╮
+  │                                                 test-model-with-cost                                                 │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  
+          Tokens              Cost Component
+  ────────────── ───────────────── ───────────────────────────────────────────────────────────────────────────────────────
+             100          $0.01000 system prompt
+              50          $0.00500 alignment prompts (worst-case)
+              75          $0.00750 chat history
+                                     └─ Active window: 1 pair (ID 0), 1 sent.
+                                        (Use `aico log`, `undo`, and `set-history` to manage)
+  ────────────── ───────────────── ────────────────────────────────── Context Files (1) ──────────────────────────────────
+             200           $0.0200 CONVENTIONS.md
+  ────────────── ───────────────── ───────────────────────────────────────────────────────────────────────────────────────
+             425           $0.0425 Total
+  
+  ╭─────────────────────────────────────────────────── Context Window ───────────────────────────────────────────────────╮
+  │                                         (425 of 8,192 used - 95% remaining)                                          │
+  │ ━━━━━━                                                                                                               │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   ```
 
 # Feature: Core Generative Interaction

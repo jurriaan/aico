@@ -19,7 +19,6 @@ def test_no_command_shows_help() -> None:
     assert " status " in result.stdout
     assert " log " in result.stdout
     assert " set-history " in result.stdout
-    assert " tokens " in result.stdout
     assert " ask " in result.stdout
     assert " generate-patch | gen " in result.stdout
     assert " init " in result.stdout

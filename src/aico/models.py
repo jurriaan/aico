@@ -88,24 +88,6 @@ class SessionData:
     history_start_index: int = 0
 
 
-@dataclass(slots=True)
-class TokenInfo:
-    description: str
-    tokens: int
-    note: str | None = None
-    cost: float | None = None
-
-
-@dataclass(slots=True, frozen=True)
-class TokenReport:
-    model: str
-    components: list[TokenInfo]
-    total_tokens: int
-    total_cost: float | None = None
-    max_input_tokens: int | None = None
-    remaining_tokens: int | None = None
-
-
 @dataclass(slots=True, frozen=True)
 class AIPatch:
     llm_file_path: str

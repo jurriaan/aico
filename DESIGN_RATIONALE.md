@@ -38,7 +38,7 @@ These records explain the motivation and consequences of key architectural decis
 ### ADR-005: Flat, Verb-Driven CLI Structure
 
 -   **Context:** The CLI initially had nested command groups like `aico history view` and `aico tokens`. This is a common pattern for complex applications, but it was found to hide functionality and add an unnecessary layer of abstraction for a command-line tool.
--   **Decision:** We dissolved the `history` and `tokens` command groups, promoting their functionality to top-level, verb-driven commands (e.g., `aico status`, `aico log`, `aico tokens`). We also eliminated redundant commands like `history reset` whose functionality was a subset of another command (`set-history 0`).
+-   **Decision:** We dissolved the `history` and `tokens` command groups, promoting their functionality to top-level, verb-driven commands (e.g., `aico status`, `aico log`). We also eliminated redundant commands like `history reset` whose functionality was a subset of another command (`set-history 0`).
 -   **Rationale:** This decision was driven by the core philosophy of making `aico` feel like a classic, composable Unix tool (see `CONVENTIONS.md`). A flat structure improves discoverability, as all commands are visible in the top-level `aico --help` output. It simplifies command memorability (e.g., "what's the git status?" -> `git status`; "what's the aico status?" -> `aico status`) and makes the tool feel more direct and less like a "managed application."
 
 ### ADR-006: Unified Pair-Based History Indexing
