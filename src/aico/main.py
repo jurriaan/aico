@@ -7,7 +7,8 @@ from click import Context
 from typer.core import TyperGroup
 
 from aico.addons import register_addon_commands
-from aico.commands.context import add, drop
+from aico.commands.add import add
+from aico.commands.drop import drop
 from aico.commands.init import init
 from aico.commands.last import last
 from aico.commands.log import log
