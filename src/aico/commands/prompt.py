@@ -126,7 +126,7 @@ def _handle_unified_streaming(
                         case FileHeader(llm_file_path=path):
                             renderables.append(Markdown(f"File: `{path}`\n"))
                         case ProcessedDiffBlock(unified_diff=diff):
-                            renderables.append(Markdown(f"```diff\n{diff}```\n"))
+                            renderables.append(Markdown(f"`````diff\n{diff}`````\n"))
                         case WarningMessage(text=warning):
                             renderables.append(Markdown(f"⚠️ {warning}\n"))
                         case _:
