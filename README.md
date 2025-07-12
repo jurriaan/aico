@@ -1,8 +1,8 @@
 # aico
 
-A command-line tool for scripting AI-driven code edits.
+`aico` gives you precise, scriptable control over Large Language Models, right from your terminal. It provides a **structured interface to the LLM**, treating it as a command-line utility, not an opaque agent.
 
-`aico` is built to integrate Large Language Models into a traditional, terminal-based development workflow. It reads local files, takes a prompt, and produces a standard diff. It is designed to be a predictable and composable part of your existing toolchain.
+You explicitly manage the context by `add`ing and `drop`ping files, control the conversation history, and receive output as standard text or unified diffs, perfect for piping into `patch`, `delta`, or your own scripts. Built on the philosophy that the developer is always in command, `aico` is designed to be a transparent and composable part of your existing toolchain.
 
 ## Installation
 
