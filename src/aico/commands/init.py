@@ -20,7 +20,7 @@ def init(
     ] = "openrouter/google/gemini-2.5-pro",
 ) -> None:
     """
-    Initializes a new AI session in the current directory.
+    Initialize a new session in the current directory.
     """
     session_file = Path.cwd() / SESSION_FILE_NAME
     if session_file.exists():

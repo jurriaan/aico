@@ -19,7 +19,7 @@ def drop(
     ],
 ) -> None:
     """
-    Drops one or more files from the context for the AI session.
+    Remove file(s) from the session context.
     """
     session_file, session_data = load_session()
     session_root = session_file.parent

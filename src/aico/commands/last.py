@@ -59,7 +59,7 @@ def last(
     ] = False,
 ) -> None:
     """
-    Prints a historical message to standard output.
+    Output the last response or diff to stdout.
 
     By default, it shows the assistant response from the last pair.
     Use INDEX to select a specific pair (e.g., 0 for the first, -1 for the last).

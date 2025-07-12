@@ -20,7 +20,7 @@ def set_history(
     ],
 ) -> None:
     """
-    Sets the history start point to the beginning of a specific message pair.
+    Set the active window of the conversation history.
 
     Use `aico log` to see available pair indices.
 

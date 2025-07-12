@@ -72,8 +72,7 @@ def _count_tokens(model: str, messages: list[LLMChatMessage]) -> int:
 
 def status() -> None:  # noqa: C901
     """
-    Shows a comprehensive summary of the session status, including token usage,
-    estimated cost, and chat history configuration.
+    Show session status and token usage.
     """
     session_file, session_data = load_session()
     session_root = session_file.parent

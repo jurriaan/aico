@@ -8,7 +8,7 @@ from aico.utils import load_session
 
 def log() -> None:
     """
-    Shows a compact log of the active chat history.
+    Display the active conversation log.
     """
     _, session_data = load_session()
     chat_history = session_data.chat_history

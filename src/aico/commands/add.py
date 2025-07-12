@@ -12,7 +12,7 @@ from aico.utils import (
 
 def add(file_paths: list[Path]) -> None:
     """
-    Adds one or more files to the context for the AI session.
+    Add file(s) to the session context.
     """
     session_file, session_data = load_session()
     session_root = session_file.parent

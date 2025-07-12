@@ -377,7 +377,7 @@ def ask(
     model: Annotated[str | None, typer.Option(help="The model to use for this request")] = None,
 ) -> None:
     """
-    Have a conversation with the AI for planning and discussion.
+    Have a conversation for planning and discussion.
     """
     _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.CONVERSATION, passthrough, model)
 
@@ -415,6 +415,6 @@ def prompt(
     model: Annotated[str | None, typer.Option(help="The model to use for this request")] = None,
 ) -> None:
     """
-    Send a raw prompt directly to the AI with minimal formatting.
+    Send a raw prompt to the AI.
     """
     _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.RAW, passthrough, model)

@@ -18,7 +18,7 @@ def undo(
     ] = "-1",
 ) -> None:
     """
-    Mark a message pair as excluded from future context.
+    Exclude a message pair from the context [default: last].
 
     This command performs a "soft delete" on the pair at the given INDEX.
     The messages are not removed from the history, but are flagged to be
