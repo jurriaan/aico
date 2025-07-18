@@ -6,12 +6,10 @@ from typing import Annotated
 
 import typer
 from regex import regex
-from rich.console import Console, Group
+from rich.console import Console
 from rich.live import Live
-from rich.markdown import Markdown
 from rich.prompt import Prompt
 from rich.spinner import Spinner
-from rich.text import Text
 
 from aico.aico_live_render import AicoLiveRender
 from aico.diffing import (
@@ -25,15 +23,12 @@ from aico.models import (
     DerivedContent,
     DisplayItem,
     FileContents,
-    FileHeader,
     LiteLLMChoiceContainer,
     LiteLLMUsage,
     LLMChatMessage,
     Mode,
-    ProcessedDiffBlock,
     SessionData,
     TokenUsage,
-    UnparsedBlock,
     UserChatMessage,
     WarningMessage,
 )
@@ -46,6 +41,7 @@ from aico.utils import (
     is_terminal,
     load_session,
     reconstruct_historical_messages,
+    render_display_items_to_rich,
     save_session,
 )
 
@@ -108,31 +104,10 @@ def _handle_unified_streaming(
             if delta:
                 full_llm_response_buffer += delta
 
-                # Re-process the entire buffer on each chunk to get an updated stream of renderables.
-                # This delegates all complex parsing and stateful logic to the diffing engine.
-                stream_processor = process_llm_response_stream(
-                    original_file_contents, full_llm_response_buffer, session_root
-                )
-                renderables: list[Markdown | Text] = []
+                display_items = generate_display_items(original_file_contents, full_llm_response_buffer, session_root)
+                renderable_group = render_display_items_to_rich(display_items)
 
-                for item in stream_processor:
-                    match item:
-                        case str() as text:
-                            # Render conversational text.
-                            renderables.append(Markdown(text))
-                        case UnparsedBlock(text=block_text):
-                            # Render unparsed/failed blocks as plain text to avoid markdown artifacts.
-                            renderables.append(Text(block_text, no_wrap=True))
-                        case FileHeader(llm_file_path=path):
-                            renderables.append(Markdown(f"File: `{path}`\n"))
-                        case ProcessedDiffBlock(unified_diff=diff):
-                            renderables.append(Markdown(f"`````diff\n{diff}`````\n"))
-                        case WarningMessage(text=warning):
-                            renderables.append(Markdown(f"⚠️ {warning}\n"))
-                        case _:
-                            pass
-
-                live.update(Group(*renderables), refresh=True)
+                live.update(renderable_group, refresh=True)
 
             elif not full_llm_response_buffer and reasoning_content:
                 # If no delta but reasoning content, display the header (bold words) of the reasoning

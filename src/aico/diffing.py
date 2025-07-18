@@ -552,7 +552,7 @@ def generate_display_items(
             case FileHeader(llm_file_path=llm_file_path):
                 items.append({"type": "markdown", "content": f"File: `{llm_file_path}`\n"})
             case ProcessedDiffBlock(unified_diff=diff_string):
-                items.append({"type": "markdown", "content": f"```diff\n{diff_string}```\n"})
+                items.append({"type": "diff", "content": diff_string})
             case WarningMessage(text=warning_text):
                 items.append({"type": "text", "content": f"⚠️ {warning_text}\n"})
             case UnparsedBlock(text=unparsed_text):

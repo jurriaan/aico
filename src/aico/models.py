@@ -47,7 +47,7 @@ class UserChatMessage:
 
 
 class DisplayItem(TypedDict):
-    type: Literal["markdown", "text"]
+    type: Literal["markdown", "text", "diff"]
     content: str
 
 

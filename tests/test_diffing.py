@@ -257,8 +257,8 @@ def test_multi_block_llm_response_with_conversation(tmp_path: Path) -> None:
     assert "Here is the first change" in all_content
     assert "And here is the second change" in all_content
     assert "All done!" in all_content
-    assert "```diff\n--- a/file_one.py" in all_content
-    assert "```diff\n--- a/file_two.py" in all_content
+    assert "--- a/file_one.py" in all_content
+    assert "--- a/file_two.py" in all_content
 
 
 def test_ambiguous_patch_succeeds_on_first_match(tmp_path: Path) -> None:
@@ -546,8 +546,8 @@ def test_generate_display_items_with_conversation(tmp_path: Path) -> None:
     assert len(display_items) == 4
     assert display_items[0] == {"type": "markdown", "content": "Hello! I've made the change you requested.\n\n"}
     assert display_items[1] == {"type": "markdown", "content": "File: `file.py`\n"}
-    assert display_items[2]["type"] == "markdown"
-    assert "```diff" in display_items[2]["content"]
+    assert display_items[2]["type"] == "diff"
+    assert "--- a/" in display_items[2]["content"]
     assert display_items[3] == {"type": "markdown", "content": "\n\nLet me know if you need anything else!"}
 
 
@@ -694,7 +694,7 @@ def test_parser_is_robust_to_formatting_for_display_items(llm_response_template:
     # THEN the items are generated successfully without being treated as an unparsed block
     assert len(result) == 2
     assert result[0] == {"type": "markdown", "content": "File: `file.py`\n"}
-    assert result[1]["type"] == "markdown"
+    assert result[1]["type"] == "diff"
     assert "+new_line" in result[1]["content"]
     assert "-old_line" in result[1]["content"]
 
@@ -816,7 +816,7 @@ def test_multi_patch_with_interstitial_conversation(tmp_path: Path) -> None:
     all_content = "".join(item["content"] for item in display_items)
     assert "Okay, and now for the second part." in all_content
     assert "File: `file.py`" in all_content
-    assert all_content.count("```diff") == 2
+    assert all_content.count("--- a/file.py") == 2
 
 
 def test_complex_multi_file_and_multi_patch_scenario(tmp_path: Path) -> None:
@@ -878,7 +878,7 @@ def test_complex_multi_file_and_multi_patch_scenario(tmp_path: Path) -> None:
     assert "And the second line in that same file." in all_content
     assert "All done." in all_content
 
-    assert sum(1 for item in display_items if item["type"] == "markdown" and "```diff" in item["content"]) == 3
+    assert sum(1 for item in display_items if item["type"] == "diff" and "+++ b/" in item["content"]) == 3
 
 
 def test_generate_diff_with_filesystem_fallback(tmp_path: Path) -> None:

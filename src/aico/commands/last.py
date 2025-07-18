@@ -2,9 +2,8 @@ import sys
 from typing import Annotated
 
 import typer
-from rich.console import Console, Group
+from rich.console import Console
 from rich.markdown import Markdown
-from rich.text import Text
 
 from aico.diffing import (
     generate_display_items,
@@ -13,7 +12,7 @@ from aico.diffing import (
 )
 from aico.index_logic import resolve_pair_index_to_message_indices
 from aico.models import AssistantChatMessage, DisplayItem, Mode
-from aico.utils import build_original_file_contents, is_terminal, load_session
+from aico.utils import build_original_file_contents, is_terminal, load_session, render_display_items_to_rich
 
 
 def _render_content(content: str, use_rich_markdown: bool) -> None:
@@ -131,17 +130,11 @@ def last(
     # Unified rendering logic
     if is_terminal():
         console = Console()
-        renderables: list[Markdown | Text] = []
         match display_content:
             case list() as items:
-                # New, structured path
-                for item in items:
-                    if item["type"] == "markdown":
-                        renderables.append(Markdown(item["content"]))
-                    else:  # "text"
-                        renderables.append(Text(item["content"]))
-                if renderables:
-                    console.print(Group(*renderables))
+                renderable_group = render_display_items_to_rich(items)
+                if renderable_group.renderables:
+                    console.print(renderable_group)
 
             case str() as content_string:
                 # Backward compatibility path: treat the old string as a single Markdown block

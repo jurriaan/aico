@@ -227,7 +227,7 @@ def test_ask_command_with_diff_response_saves_derived_content(tmp_path: Path, mo
         assert assistant_msg.derived.unified_diff == expected_diff
         expected_display_items = [
             {"type": "markdown", "content": "File: `file.py`\n"},
-            {"type": "markdown", "content": f"```diff\n{expected_diff}```\n"},
+            {"type": "diff", "content": expected_diff},
         ]
         assert assistant_msg.derived.display_content == expected_display_items
 

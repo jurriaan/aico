@@ -7,11 +7,15 @@ from tempfile import mkstemp
 
 import typer
 from pydantic import TypeAdapter, ValidationError
-from rich.console import Console
+from rich.console import Console, Group, RenderableType
+from rich.markdown import Markdown
+from rich.syntax import Syntax
+from rich.text import Text
 
 from aico.models import (
     AssistantChatMessage,
     ChatMessageHistoryItem,
+    DisplayItem,
     FileContents,
     LLMChatMessage,
     SessionData,
@@ -139,6 +143,19 @@ def reconstruct_historical_messages(
 
         reconstructed.append(reconstructed_msg)
     return reconstructed
+
+
+def render_display_items_to_rich(items: list[DisplayItem]) -> Group:
+    """Converts a list of DisplayItems into a Rich Group for rendering."""
+    renderables: list[RenderableType] = []
+    for item in items:
+        if item["type"] == "markdown":
+            renderables.append(Markdown(item["content"]))
+        elif item["type"] == "diff":
+            renderables.append(Syntax(item["content"], "diff"))
+        else:
+            renderables.append(Text(item["content"], no_wrap=True))
+    return Group(*renderables)
 
 
 def calculate_and_display_cost(
