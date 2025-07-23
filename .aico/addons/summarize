@@ -31,6 +31,6 @@ echo "Generating comprehensive project summary..."
 aico ask "$SUMMARY_PROMPT"
 
 echo "Resetting history to start with the summary..."
-aico set-history -2
+aico set-history -1
 
 echo "Done. History now starts with the comprehensive summary."
