@@ -158,6 +158,32 @@ def render_display_items_to_rich(items: list[DisplayItem]) -> Group:
     return Group(*renderables)
 
 
+def reconstruct_display_content_for_piping(
+    display_content: list[DisplayItem] | str | None, mode: str, unified_diff: str | None
+) -> str:
+    """
+    Reconstructs the final string content to print to stdout for non-TTY (piped) output,
+    ensuring the contract for each mode is respected.
+    """
+    # Strict Contract: For 'gen' commands, always print the diff.
+    if mode == "diff":
+        return unified_diff or ""
+
+    # Flexible Contract: For 'ask' or other modes, prioritize a valid diff,
+    # but fall back to the display_content for conversations or errors.
+    if unified_diff:
+        return unified_diff
+
+    if display_content:
+        if isinstance(display_content, list):
+            # New format: reconstruct the string from display items
+            return "".join(item["content"] for item in display_content)
+        # Old format: print the string directly
+        return display_content
+
+    return ""
+
+
 def calculate_and_display_cost(
     token_usage: TokenUsage, model_name: str, chat_history: list[ChatMessageHistoryItem]
 ) -> float | None:

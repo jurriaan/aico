@@ -40,6 +40,7 @@ from aico.utils import (
     is_input_terminal,
     is_terminal,
     load_session,
+    reconstruct_display_content_for_piping,
     reconstruct_historical_messages,
     render_display_items_to_rich,
     save_session,
@@ -323,19 +324,8 @@ def _invoke_llm_logic(
         if passthrough:
             print(llm_response_content)
         else:
-            if mode == Mode.DIFF:
-                # Strict Contract: For 'edit', always print the diff, even if empty.
-                # Warnings have already been sent to stderr.
-                print(unified_diff or "", end="")
-            else:  # Mode.CONVERSATION or Mode.RAW
-                # Flexible Contract: For 'ask' and 'prompt', prioritize a valid diff,
-                # but fall back to the display_content for conversations or errors.
-                if unified_diff:
-                    print(unified_diff, end="")
-                elif display_items:
-                    # Reconstruct the string content from the structured items for piping.
-                    full_content = "".join(item["content"] for item in display_items)
-                    print(full_content, end="")
+            output_content = reconstruct_display_content_for_piping(display_items, mode, unified_diff)
+            print(output_content, end="")
 
 
 def ask(

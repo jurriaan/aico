@@ -11,8 +11,14 @@ from aico.diffing import (
     process_patches_sequentially,
 )
 from aico.index_logic import resolve_pair_index_to_message_indices
-from aico.models import AssistantChatMessage, DisplayItem, Mode
-from aico.utils import build_original_file_contents, is_terminal, load_session, render_display_items_to_rich
+from aico.models import AssistantChatMessage, DisplayItem
+from aico.utils import (
+    build_original_file_contents,
+    is_terminal,
+    load_session,
+    reconstruct_display_content_for_piping,
+    render_display_items_to_rich,
+)
 
 
 def _render_content(content: str, use_rich_markdown: bool) -> None:
@@ -141,21 +147,5 @@ def last(
                 if content_string:
                     console.print(Markdown(content_string))
     else:
-        # Non-TTY (piped) output logic is now driven by original intent
-        if target_msg.mode == Mode.DIFF:
-            # Strict Contract: For 'gen' commands, the contract is strict: only ever print the diff.
-            # An empty string is printed if the diff is empty or None.
-            print(unified_diff or "", end="")
-        else:  # Mode.CONVERSATION or Mode.RAW
-            # Flexible Contract: For 'ask' or 'raw' commands, be flexible. Prioritize a valid diff,
-            # but fall back to the display_content for conversations or errors.
-            if unified_diff:
-                print(unified_diff, end="")
-            elif display_content:
-                if isinstance(display_content, list):
-                    # New format: reconstruct the string from display items
-                    full_content = "".join(item["content"] for item in display_content)
-                    print(full_content, end="")
-                else:
-                    # Old format: print the string directly
-                    print(display_content, end="")
+        output_content = reconstruct_display_content_for_piping(display_content, target_msg.mode, unified_diff)
+        print(output_content, end="")
