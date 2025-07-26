@@ -7,8 +7,8 @@ from typing import Literal
 
 from typer import Context, Typer
 
-from aico.models import AddonInfo
-from aico.utils import find_session_file
+from aico.lib.models import AddonInfo
+from aico.lib.session import find_session_file
 
 # Constants for addon directories
 _PROJECT_ADDONS_DIR = ".aico/addons"

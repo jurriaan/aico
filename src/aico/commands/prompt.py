@@ -12,12 +12,12 @@ from rich.prompt import Prompt
 from rich.spinner import Spinner
 
 from aico.aico_live_render import AicoLiveRender
-from aico.diffing import (
+from aico.lib.diffing import (
     generate_display_items,
     generate_unified_diff,
     process_llm_response_stream,
 )
-from aico.models import (
+from aico.lib.models import (
     AssistantChatMessage,
     ChatMessageHistoryItem,
     DerivedContent,
@@ -32,18 +32,20 @@ from aico.models import (
     UserChatMessage,
     WarningMessage,
 )
+from aico.lib.session import (
+    build_original_file_contents,
+    load_session,
+    save_session,
+)
 from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
 from aico.utils import (
-    build_original_file_contents,
     calculate_and_display_cost,
     get_active_history,
     is_input_terminal,
     is_terminal,
-    load_session,
     reconstruct_display_content_for_piping,
     reconstruct_historical_messages,
     render_display_items_to_rich,
-    save_session,
 )
 
 

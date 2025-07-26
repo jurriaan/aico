@@ -5,8 +5,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from aico.lib.session import SESSION_FILE_NAME, complete_files_in_context
 from aico.main import app
-from aico.utils import SESSION_FILE_NAME, complete_files_in_context
 
 runner = CliRunner()
 

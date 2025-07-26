@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from aico.lib.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
+from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter, save_session
 from aico.main import app
-from aico.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
-from aico.utils import SESSION_FILE_NAME, SessionDataAdapter, save_session
 
 runner = CliRunner()
 

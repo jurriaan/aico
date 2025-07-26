@@ -4,7 +4,7 @@ from pathlib import Path
 
 import regex as re
 
-from aico.models import (
+from aico.lib.models import (
     AIPatch,
     DisplayItem,
     FileContents,

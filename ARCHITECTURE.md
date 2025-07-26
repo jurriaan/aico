@@ -18,12 +18,12 @@ The application is composed of several distinct components, each with a clear ro
 ### Data Modeling & Contracts
 
 -   **Role:** This is the application's data backbone. It provides a single source of truth for the shape of all data, including session state, chat history, and internal data structures. It ensures type safety and guarantees that data loaded from files or APIs is valid.
--   **Implementation:** All data structures are defined as Pydantic models in `src/aico/models.py`.
+-   **Implementation:** All data structures are defined as Pydantic models in `src/aico/lib/models.py`.
 
 ### State Persistence Layer
 
 -   **Role:** This layer is responsible for all interactions with the filesystem state, primarily the `.ai_session.json` file. Its duties include locating the session file (via environment variable or upward search), loading its contents into data models, and saving any changes back to the file atomically to prevent corruption.
--   **Implementation:** The core logic for these operations is centralized in `src/aico/utils.py`.
+-   **Implementation:** The core logic for these operations is centralized in `src/aico/lib/session.py`.
 
 ### Command & Interaction Layer
 
@@ -38,7 +38,7 @@ These are specialized components that handle the most complex processing tasks.
     -   **Implementation:** The shared logic for this is located within `src/aico/commands/prompt.py`.
 
 -   **Diff & Patch Engine:** This engine processes the raw text from the LLM to find and parse structured `SEARCH/REPLACE` blocks. It can apply these blocks to in-memory file content to generate both machine-readable unified diffs (for piping) and human-readable, rich-formatted output (for terminal display).
-    -   **Implementation:** This is a dedicated, specialized component located in `src/aico/diffing.py`.
+    -   **Implementation:** This is a dedicated, specialized component located in `src/aico/lib/diffing.py`.
 
 ### Extensibility Hooks (Addons)
 

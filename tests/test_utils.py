@@ -5,9 +5,9 @@ from pathlib import Path
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
+from aico.lib.models import SessionData
+from aico.lib.session import SESSION_FILE_NAME, save_session
 from aico.main import app
-from aico.models import SessionData
-from aico.utils import SESSION_FILE_NAME, save_session
 
 runner = CliRunner()
 
@@ -84,7 +84,7 @@ def test_aico_session_file_env_var_not_set_uses_upward_search(tmp_path: Path, mo
 
 def test_get_active_history_filters_and_slices() -> None:
     # GIVEN a SessionData object with a mix of messages
-    from aico.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
+    from aico.lib.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
     from aico.utils import get_active_history
 
     history = [

@@ -1,14 +1,15 @@
 # pyright: standard
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from pytest_mock import MockerFixture, MockType
 from typer.testing import CliRunner
 
+from aico.lib.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
+from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter, save_session
 from aico.main import app
-from aico.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
-from aico.utils import SESSION_FILE_NAME, SessionDataAdapter
 
 runner = CliRunner()
 
@@ -488,11 +489,8 @@ def test_prompt_with_excluded_history_omits_messages(tmp_path: Path, mocker: Moc
         mock_completion.return_value.__iter__.return_value = iter([_create_mock_stream_chunk("response 3", mocker)])
         runner.invoke(app, ["ask", "prompt 3"])
 
-        from dataclasses import replace
-
         # Exclude the second pair (messages at index 2 and 3)
         session_data = load_final_session(Path(td))
-        from aico.utils import save_session
 
         session_data.chat_history[2] = replace(session_data.chat_history[2], is_excluded=True)
         session_data.chat_history[3] = replace(session_data.chat_history[3], is_excluded=True)

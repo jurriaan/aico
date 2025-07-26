@@ -5,7 +5,7 @@ from typing import Annotated
 import typer
 
 from aico.index_logic import find_message_pairs, resolve_pair_index_to_message_indices
-from aico.utils import load_session, save_session
+from aico.lib.session import load_session, save_session
 
 
 def undo(

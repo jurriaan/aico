@@ -10,9 +10,10 @@ from rich.table import Table
 from rich.text import Text
 
 from aico.index_logic import find_message_pairs
-from aico.models import LLMChatMessage, SessionData
+from aico.lib.models import LLMChatMessage, SessionData
+from aico.lib.session import load_session
 from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
-from aico.utils import get_active_history, load_session, reconstruct_historical_messages
+from aico.utils import get_active_history, reconstruct_historical_messages
 
 
 @dataclass(slots=True)

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import typer
 
-from aico.utils import (
+from aico.lib.session import (
     get_relative_path_or_error,
     load_session,
     save_session,

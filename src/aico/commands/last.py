@@ -5,17 +5,16 @@ import typer
 from rich.console import Console
 from rich.markdown import Markdown
 
-from aico.diffing import (
+from aico.index_logic import resolve_pair_index_to_message_indices
+from aico.lib.diffing import (
     generate_display_items,
     generate_unified_diff,
     process_patches_sequentially,
 )
-from aico.index_logic import resolve_pair_index_to_message_indices
-from aico.models import AssistantChatMessage, DisplayItem
+from aico.lib.models import AssistantChatMessage, DisplayItem
+from aico.lib.session import build_original_file_contents, load_session
 from aico.utils import (
-    build_original_file_contents,
     is_terminal,
-    load_session,
     reconstruct_display_content_for_piping,
     render_display_items_to_rich,
 )

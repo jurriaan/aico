@@ -1,4 +1,4 @@
-from aico.models import (
+from aico.lib.models import (
     AssistantChatMessage,
     ChatMessageHistoryItem,
     MessagePairIndices,

@@ -4,8 +4,8 @@ from typing import Annotated
 
 import typer
 
-from aico.models import SessionData
-from aico.utils import SESSION_FILE_NAME, save_session
+from aico.lib.models import SessionData
+from aico.lib.session import SESSION_FILE_NAME, save_session
 
 
 def init(

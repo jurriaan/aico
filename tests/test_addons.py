@@ -6,8 +6,8 @@ from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
 from aico.addons import discover_addons, execute_addon, register_addon_commands
-from aico.models import AddonInfo, SessionData
-from aico.utils import SESSION_FILE_NAME, save_session
+from aico.lib.models import AddonInfo, SessionData
+from aico.lib.session import SESSION_FILE_NAME, save_session
 
 runner = CliRunner()
 

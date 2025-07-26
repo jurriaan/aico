@@ -15,8 +15,7 @@ from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
 from aico.index_logic import find_message_pairs
-from aico.main import app
-from aico.models import (
+from aico.lib.models import (
     AssistantChatMessage,
     LiteLLMChoiceContainer,
     LiteLLMDelta,
@@ -25,7 +24,8 @@ from aico.models import (
     SessionData,
     UserChatMessage,
 )
-from aico.utils import SESSION_FILE_NAME, SessionDataAdapter, save_session
+from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter, save_session
+from aico.main import app
 
 
 # This file is used to override the default `get_gherkin_document` function so that

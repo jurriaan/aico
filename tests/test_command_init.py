@@ -4,8 +4,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from aico.lib.session import SESSION_FILE_NAME
 from aico.main import app
-from aico.utils import SESSION_FILE_NAME
 
 runner = CliRunner()
 

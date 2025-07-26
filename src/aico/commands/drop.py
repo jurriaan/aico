@@ -4,7 +4,7 @@ from typing import Annotated
 
 import typer
 
-from aico.utils import (
+from aico.lib.session import (
     complete_files_in_context,
     get_relative_path_or_error,
     load_session,

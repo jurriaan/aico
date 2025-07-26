@@ -2,8 +2,8 @@ from rich.console import Console
 from rich.table import Table
 
 from aico.index_logic import find_message_pairs
-from aico.models import UserChatMessage
-from aico.utils import load_session
+from aico.lib.models import UserChatMessage
+from aico.lib.session import load_session
 
 
 def log() -> None:

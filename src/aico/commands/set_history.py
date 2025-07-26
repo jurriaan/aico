@@ -4,7 +4,7 @@ from typing import Annotated
 import typer
 
 from aico.index_logic import find_message_pairs
-from aico.utils import load_session, save_session
+from aico.lib.session import load_session, save_session
 
 
 def set_history(
