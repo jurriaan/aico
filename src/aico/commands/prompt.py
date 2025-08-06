@@ -72,6 +72,7 @@ def _process_chunk(chunk: object) -> tuple[str | None, TokenUsage | None, str | 
 def _handle_unified_streaming(
     model_name: str,
     chat_history: list[ChatMessageHistoryItem],
+    history_start_index: int,
     original_file_contents: FileContents,
     messages: list[LLMChatMessage],
     session_root: Path,
@@ -145,7 +146,7 @@ def _handle_unified_streaming(
 
     message_cost: float | None = None
     if token_usage:
-        message_cost = calculate_and_display_cost(token_usage, model_name, chat_history)
+        message_cost = calculate_and_display_cost(token_usage, model_name, chat_history, history_start_index)
 
     return full_llm_response_buffer, final_display_items or None, token_usage, message_cost
 
@@ -271,7 +272,12 @@ def _invoke_llm_logic(
             token_usage,
             message_cost,
         ) = _handle_unified_streaming(
-            model_name, session_data.chat_history, original_file_contents, messages, session_root=session_root
+            model_name,
+            session_data.chat_history,
+            session_data.history_start_index,
+            original_file_contents,
+            messages,
+            session_root=session_root,
         )
         duration_ms = int((time.monotonic() - start_time) * 1000)
     except Exception as e:

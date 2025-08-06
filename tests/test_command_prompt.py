@@ -91,7 +91,7 @@ def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) ->
 
         # AND it prints token and cost info to stderr
         assert "Tokens: 100 sent, 20 received." in result.stderr
-        assert "Cost: $0.00 message" in result.stderr
+        assert "Cost: $0.00, current chat: $0.00" in result.stderr
 
         # AND the session history is updated correctly
         final_session = load_final_session(Path(td))

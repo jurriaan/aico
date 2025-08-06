@@ -1,5 +1,6 @@
 import contextlib
 import sys
+from collections.abc import Sequence
 
 from rich.console import Console, Group, RenderableType
 from rich.markdown import Markdown
@@ -43,7 +44,7 @@ def get_active_history(session_data: SessionData) -> list[ChatMessageHistoryItem
 
 
 def reconstruct_historical_messages(
-    history: list[ChatMessageHistoryItem],
+    history: Sequence[ChatMessageHistoryItem],
 ) -> list[LLMChatMessage]:
     reconstructed: list[LLMChatMessage] = []
 
@@ -71,7 +72,7 @@ def reconstruct_historical_messages(
     return reconstructed
 
 
-def render_display_items_to_rich(items: list[DisplayItem]) -> Group:
+def render_display_items_to_rich(items: Sequence[DisplayItem]) -> Group:
     """Converts a list of DisplayItems into a Rich Group for rendering."""
     renderables: list[RenderableType] = []
     for item in items:
@@ -111,7 +112,10 @@ def reconstruct_display_content_for_piping(
 
 
 def calculate_and_display_cost(
-    token_usage: TokenUsage, model_name: str, chat_history: list[ChatMessageHistoryItem]
+    token_usage: TokenUsage,
+    model_name: str,
+    chat_history: Sequence[ChatMessageHistoryItem],
+    history_start_index: int,
 ) -> float | None:
     """Calculates the message cost and displays token/cost information."""
     import litellm
@@ -137,11 +141,15 @@ def calculate_and_display_cost(
 
     cost_str: str = ""
     if message_cost is not None:
-        history_cost = sum(
-            msg.cost for msg in chat_history if isinstance(msg, AssistantChatMessage) and msg.cost is not None
+        # "current chat" cost includes all messages from the start index, even excluded ones,
+        # because the cost was already incurred.
+        current_chat_window = chat_history[history_start_index:]
+        window_history_cost = sum(
+            msg.cost for msg in current_chat_window if isinstance(msg, AssistantChatMessage) and msg.cost is not None
         )
-        session_cost = history_cost + message_cost
-        cost_str = f"Cost: ${message_cost:.2f} message, ${session_cost:.2f} session."
+        # The total cost for the current chat window is the historical cost plus the new message cost
+        total_window_cost = window_history_cost + message_cost
+        cost_str = f"Cost: ${message_cost:.2f}, current chat: ${total_window_cost:.2f}"
 
     info_str = f"Tokens: {prompt_tokens_str} sent, {completion_tokens_str} received. {cost_str}"
 
