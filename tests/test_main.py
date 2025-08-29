@@ -25,6 +25,8 @@ def test_no_command_shows_help() -> None:
     assert " add " in result.stdout
     assert " last " in result.stdout
     assert " drop " in result.stdout
+    assert " undo " in result.stdout
+    assert " redo " in result.stdout
     assert " prompt " in result.stdout
     # Check that 'history' is not a top-level command, avoiding matches in help text.
     assert "│ history " not in result.stdout

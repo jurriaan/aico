@@ -13,6 +13,7 @@ from aico.commands.init import init
 from aico.commands.last import last
 from aico.commands.log import log
 from aico.commands.prompt import ask, generate_patch, prompt
+from aico.commands.redo import redo
 from aico.commands.set_history import set_history
 from aico.commands.status import status
 from aico.commands.undo import undo
@@ -47,6 +48,7 @@ _ = app.command("add")(add)
 _ = app.command("drop")(drop)
 _ = app.command("init")(init)
 _ = app.command("undo", context_settings={"ignore_unknown_options": True})(undo)
+_ = app.command("redo", context_settings={"ignore_unknown_options": True})(redo)
 register_addon_commands(app)
 
 

@@ -135,6 +135,7 @@ For more detailed usage examples and scenarios, see [USAGE.feature.md](USAGE.fea
   - `--recompute`: Re-applies the original instruction to the current file state. Useful for retrying a command after adding/changing context.
   - `--verbatim`: Prints the original, unprocessed response from the AI.
 - `aico undo [index]`: Marks the message pair at the given index as excluded from future context (defaults to `-1`). This "soft delete" is useful for undoing a conversational step if a `gen` or `ask` command produced an undesirable result.
+- `aico redo [index]`: Re-includes a previously excluded message pair in future context (defaults to `-1`). This is the direct opposite of `undo`.
 - `aico status`: Shows a comprehensive summary of the session status, including token usage, estimated cost, and chat history configuration.
 - `aico log`: Show a compact `git log`-style view of the active conversation context.
 - `aico set-history <index>`: Set which message pair the active history starts from. For example, `aico set-history 0` makes the full history active.

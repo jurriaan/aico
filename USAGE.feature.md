@@ -209,3 +209,21 @@ If the AI's last response wasn't helpful, `aico undo` removes that interaction f
   ```
   Marked pair at index 0 as excluded.
   ```
+
+## Scenario: A user corrects a conversational turn using undo and redo
+
+The `undo` and `redo` commands provide a simple way to manage the active conversation history. If a generative step goes in the wrong direction, you can `undo` it. If you change your mind, you can `redo` it to bring it back into context.
+
+- Given a project with an initialized aico session for model "test-model"
+- And the chat history contains one user/assistant pair
+- When I run the command `aico undo`
+- Then the output should be:
+  ```
+  Marked pair at index 0 as excluded.
+  ```
+- And the session history should contain 1 user/assistant pair
+- When I run the command `aico redo`
+- Then the output should be:
+  ```
+  Re-included pair at index 0 in context.
+  ```
