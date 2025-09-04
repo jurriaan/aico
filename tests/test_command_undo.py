@@ -1,50 +1,17 @@
 # pyright: standard
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
-from aico.lib.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
-from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter, save_session
+from aico.lib.models import SessionData
+from aico.lib.session import SessionDataAdapter
 from aico.main import app
 
 runner = CliRunner()
 
 
-@pytest.fixture
-def session_with_two_pairs(tmp_path: Path) -> Iterator[Path]:
-    """Creates a session with 2 user/assistant pairs within an isolated filesystem."""
-    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        history = []
-        for i in range(2):
-            history.append(
-                UserChatMessage(
-                    role="user",
-                    content=f"user prompt {i}",
-                    mode=Mode.CONVERSATION,
-                    timestamp=f"ts{i}",
-                    is_excluded=False,
-                )
-            )
-            history.append(
-                AssistantChatMessage(
-                    role="assistant",
-                    content=f"assistant response {i}",
-                    mode=Mode.CONVERSATION,
-                    timestamp=f"ts{i}",
-                    model="test-model",
-                    duration_ms=100,
-                    is_excluded=False,
-                )
-            )
-        session_data = SessionData(model="test", context_files=[], chat_history=history)
-        session_file = Path(td) / SESSION_FILE_NAME
-        save_session(session_file, session_data)
-        yield session_file
-
-
-def _load_session_data(session_file: Path) -> SessionData:
+def load_session_data(session_file: Path) -> SessionData:
     return SessionDataAdapter.validate_json(session_file.read_text())
 
 
@@ -61,7 +28,7 @@ def test_undo_default_marks_last_pair_excluded(session_with_two_pairs: Path) -> 
     assert "Marked pair at index 1 as excluded." in result.stdout
 
     # AND only the last pair is excluded
-    final_session = _load_session_data(session_file)
+    final_session = load_session_data(session_file)
     assert final_session.chat_history[0].is_excluded is False
     assert final_session.chat_history[1].is_excluded is False
     assert final_session.chat_history[2].is_excluded is True
@@ -80,7 +47,7 @@ def test_undo_with_positive_index(session_with_two_pairs: Path) -> None:
     assert "Marked pair at index 0 as excluded." in result.stdout
 
     # AND only the first pair is excluded
-    final_session = _load_session_data(session_file)
+    final_session = load_session_data(session_file)
     assert final_session.chat_history[0].is_excluded is True
     assert final_session.chat_history[1].is_excluded is True
     assert final_session.chat_history[2].is_excluded is False
@@ -100,7 +67,7 @@ def test_undo_with_negative_index(session_with_two_pairs: Path) -> None:
     assert "Marked pair at index 0 as excluded." in result.stdout
 
     # AND only the first pair is excluded
-    final_session = _load_session_data(session_file)
+    final_session = load_session_data(session_file)
     assert final_session.chat_history[0].is_excluded is True
     assert final_session.chat_history[1].is_excluded is True
     assert final_session.chat_history[2].is_excluded is False

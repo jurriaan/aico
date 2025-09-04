@@ -509,16 +509,3 @@ def test_prompt_with_excluded_history_omits_messages(tmp_path: Path, mocker: Moc
         assert "<prompt>\nprompt 2\n</prompt>" not in user_prompts
         assert "<prompt>\nprompt 3\n</prompt>" in user_prompts
         assert "<prompt>\nprompt 4\n</prompt>" in user_prompts
-
-
-def test_old_edit_command_is_removed(tmp_path: Path) -> None:
-    # GIVEN an initialized session
-    with runner.isolated_filesystem(temp_dir=tmp_path):
-        runner.invoke(app, ["init"])
-
-        # WHEN the old `edit` command is run
-        result = runner.invoke(app, ["edit", "a prompt"])
-
-        # THEN it fails with an error indicating the command doesn't exist
-        assert result.exit_code != 0
-        assert "No such command 'edit'." in result.stderr

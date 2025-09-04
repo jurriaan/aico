@@ -1,4 +1,5 @@
 import linecache
+import os
 import shlex
 import subprocess
 from collections.abc import Generator
@@ -114,9 +115,36 @@ def given_history_with_one_pair(project_dir: Path) -> None:
     session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
     session_data.chat_history.extend(
         [
-            UserChatMessage(role="user", content="p1", mode=Mode.CONVERSATION, timestamp="t1"),
+            UserChatMessage(role="user", content="default prompt", mode=Mode.CONVERSATION, timestamp="t1"),
             AssistantChatMessage(
-                role="assistant", content="a1", mode=Mode.CONVERSATION, timestamp="t1", model="m", duration_ms=1
+                role="assistant",
+                content="assistant response",
+                mode=Mode.CONVERSATION,
+                timestamp="t1",
+                model="m",
+                duration_ms=1,
+            ),
+        ]
+    )
+    save_session(session_file, session_data)
+
+
+@given(
+    parsers.parse('the chat history contains one user/assistant pair where the assistant response is "{response_text}"')
+)
+def given_history_with_one_pair_specific_response(project_dir: Path, response_text: str) -> None:
+    session_file = project_dir / SESSION_FILE_NAME
+    session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
+    session_data.chat_history.extend(
+        [
+            UserChatMessage(role="user", content="default user prompt", mode=Mode.CONVERSATION, timestamp="t1"),
+            AssistantChatMessage(
+                role="assistant",
+                content=response_text,
+                mode=Mode.CONVERSATION,
+                timestamp="t1",
+                model="m",
+                duration_ms=1,
             ),
         ]
     )
@@ -187,43 +215,76 @@ def given_model_has_cost(mocker: MockerFixture, model_name: str) -> None:  # pyr
 # WHEN steps
 
 
+@given(parsers.parse('a test helper script named "{script_name}" exists'))
+def given_test_helper_script_exists(project_dir: Path, script_name: str) -> None:
+    script_path = project_dir / script_name
+    script_content = '#!/bin/sh\n# A non-interactive \'editor\' for testing purposes.\necho -n "$NEW_CONTENT" > "$1"\n'
+    _ = script_path.write_text(script_content)
+    # Make the script executable
+    # Add execute permissions for user, group, and others
+    script_path.chmod(script_path.stat().st_mode | 0o111)
+
+
+# WHEN steps
+
+
 @when(parsers.parse("I run the command `{command}`"), target_fixture="command_result")
 def when_run_command(runner: CliRunner, command: str, project_dir: Path) -> dict[str, Result]:
+    # Check for pipe
     if " | " in command:
         left_cmd, right_cmd = command.split(" | ", 1)
-        left_args = shlex.split(left_cmd)[1:]
+        left_args = shlex.split(left_cmd)
+        if left_args[0] == "aico":
+            left_args = left_args[1:]
+
         right_args = shlex.split(right_cmd)
 
-        left_result = runner.invoke(app, left_args, env={"COLUMNS": "120"})
-        assert left_result.exit_code == 0, f"Left side of pipe failed:\n{left_result.stderr}"
+        left_result = runner.invoke(app, left_args, env={"COLUMNS": "120"}, catch_exceptions=False)
+        assert left_result.exit_code == 0, f"Left side of pipe failed:\n{left_result.stdout}\n{left_result.stderr}"
 
-        # Run right command with stdin from left command's stdout
         proc = subprocess.run(
-            right_args,
-            input=left_result.stdout,
-            capture_output=True,
-            text=True,
-            check=False,
-            cwd=project_dir,
+            right_args, input=left_result.stdout, capture_output=True, text=True, check=False, cwd=project_dir
         )
-
-        # Create a Click `Result` object from the subprocess output to ensure
-        # compatibility with subsequent `then` steps.
+        # Create a Click `Result` object from the subprocess output.
         result = Result(
             runner=runner,
-            stdout_bytes=proc.stdout.encode("utf-8"),
-            stderr_bytes=proc.stderr.encode("utf-8"),
-            output_bytes=proc.stdout.encode("utf-8"),
+            output_bytes=proc.stdout.encode(),
+            stdout_bytes=proc.stdout.encode(),
+            stderr_bytes=proc.stderr.encode(),
+            exit_code=proc.returncode,
             exception=None,
             return_value=proc.returncode,
-            exit_code=proc.returncode,
-            exc_info=None,
         )
         return {"result": result}
 
+    # No pipe, simple command
     args = shlex.split(command)
-    result = runner.invoke(app, args[1:], env={"COLUMNS": "120"})
+    if args and args[0] == "aico":
+        args = args[1:]
+    result = runner.invoke(app, args, env={"COLUMNS": "120"}, catch_exceptions=False)
     return {"result": result}
+
+
+@when(parsers.parse("I run the command:"), target_fixture="command_result")
+def when_run_command_from_docstring(runner: CliRunner, docstring: str) -> dict[str, Result]:
+    command_str = docstring.strip()
+    args = shlex.split(command_str)
+
+    env: dict[str, str] = {}
+    while args and "=" in args[0]:
+        key, value = args.pop(0).split("=", 1)
+        if value.startswith('"') and value.endswith('"'):
+            value = value[1:-1]
+        env[key] = value
+
+    if args and args[0] == "aico":
+        args = args[1:]
+
+    result = runner.invoke(app, args, env={**os.environ, **env, "COLUMNS": "120"}, catch_exceptions=False)
+    return {"result": result}
+
+
+# THEN steps
 
 
 # THEN steps
@@ -232,7 +293,7 @@ def when_run_command(runner: CliRunner, command: str, project_dir: Path) -> dict
 @then("the command should succeed")
 def then_command_succeeds(command_result: dict[str, Result]) -> None:
     result = command_result["result"]
-    assert result.exit_code == 0, result.stderr
+    assert result.exit_code == 0, f"Command failed unexpectedly:\n{result.stdout}\n{result.stderr}"
 
 
 @then('a file named ".ai_session.json" should be created')
@@ -292,8 +353,6 @@ def then_file_should_contain(project_dir: Path, filename: str, docstring: str) -
     assert file_path.is_file(), f"File '{filename}' was not found in {project_dir}"
     actual_content = file_path.read_text()
 
-    # Docstrings from Gherkin are dedented.
-    # The `given` step that creates files adds a newline. We must be consistent.
     expected_content = docstring if docstring.endswith("\n") else docstring + "\n"
 
     assert actual_content == expected_content, (
@@ -302,3 +361,16 @@ def then_file_should_contain(project_dir: Path, filename: str, docstring: str) -
         f"--- ACTUAL ---\n{actual_content}\n"
         "--- END OF DIFF ---"
     )
+
+
+@then(parsers.parse('the content of the assistant response at pair index {pair_index:d} should now be "{new_content}"'))
+def then_response_content_is_updated(project_dir: Path, pair_index: int, new_content: str) -> None:
+    session_file = project_dir / SESSION_FILE_NAME
+    session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
+    pairs = find_message_pairs(session_data.chat_history)
+    assert len(pairs) > pair_index, f"Not enough pairs in history to check index {pair_index}"
+
+    pair = pairs[pair_index]
+    assistant_message = session_data.chat_history[pair.assistant_index]
+    assert isinstance(assistant_message, AssistantChatMessage)
+    assert assistant_message.content == new_content

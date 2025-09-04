@@ -227,3 +227,23 @@ The `undo` and `redo` commands provide a simple way to manage the active convers
   ```
   Re-included pair at index 0 in context.
   ```
+
+## Scenario: A user edits a previous assistant response using `aico edit`
+
+Sometimes you need to manually fix or refine an AI's response in the session history. The `edit` command opens a message in your default editor ($EDITOR), allowing you to make changes. On save, the session file is updated.
+
+(This feature is tested non-interactively by setting the EDITOR to a helper script).
+
+- Given a project with an initialized aico session for model "test-model"
+- And the chat history contains one user/assistant pair where the assistant response is "This is the orginal response."
+- And a test helper script named "fake_editor.sh" exists
+- When I run the command:
+  """
+  EDITOR=./fake_editor.sh NEW_CONTENT="This is the corrected response." aico edit
+  """
+- Then the command should succeed
+- And the output should be:
+  ```
+  Updated response for message pair 0.
+  ```
+- And the content of the assistant response at pair index 0 should now be "This is the corrected response."

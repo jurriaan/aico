@@ -1,0 +1,107 @@
+import os
+import shlex
+import subprocess
+import sys
+import tempfile
+from dataclasses import replace
+from pathlib import Path
+from typing import Annotated
+
+import typer
+
+from aico.index_logic import find_message_pairs, resolve_pair_index_to_message_indices
+from aico.lib.models import AssistantChatMessage
+from aico.lib.session import load_session, save_session
+
+
+def edit(
+    index: Annotated[
+        str,
+        typer.Argument(
+            help="Index of the message pair to edit (e.g., -1 for last).",
+        ),
+    ] = "-1",
+    prompt: Annotated[
+        bool,
+        typer.Option(
+            "--prompt",
+            help="Edit the user prompt instead of the assistant response.",
+        ),
+    ] = False,
+) -> None:
+    """
+    Open a message in your default editor ($EDITOR) to make corrections.
+    """
+    session_file, session_data = load_session()
+
+    try:
+        pair_index_int = int(index)
+    except ValueError:
+        print(f"Error: Invalid index '{index}'. Must be an integer.", file=sys.stderr)
+        raise typer.Exit(code=1) from None
+
+    try:
+        pair = resolve_pair_index_to_message_indices(session_data.chat_history, pair_index_int)
+    except IndexError as e:
+        print(str(e), file=sys.stderr)
+        raise typer.Exit(code=1) from e
+
+    message_type: str
+    target_message_index: int
+    if prompt:
+        message_type = "prompt"
+        target_message_index = pair.user_index
+    else:
+        message_type = "response"
+        target_message_index = pair.assistant_index
+
+    target_message = session_data.chat_history[target_message_index]
+    original_content = target_message.content
+
+    resolved_pair_index = pair_index_int
+    if resolved_pair_index < 0:
+        resolved_pair_index += len(find_message_pairs(session_data.chat_history))
+
+    fd, temp_file_path_str = tempfile.mkstemp(suffix=".txt", text=True)
+    temp_file_path = Path(temp_file_path_str)
+    try:
+        with os.fdopen(fd, "w") as f:
+            _ = f.write(original_content)
+
+        editor_cmd_str = os.environ.get("EDITOR", "vi")
+        editor_cmd_parts = shlex.split(editor_cmd_str)
+        full_command = editor_cmd_parts + [str(temp_file_path)]
+
+        try:
+            proc = subprocess.run(full_command, check=False)
+        except FileNotFoundError:
+            print(
+                f"Error: Editor command not found: '{editor_cmd_parts[0]}'. "
+                + "Please set the $EDITOR environment variable.",
+                file=sys.stderr,
+            )
+            raise typer.Exit(code=1) from None
+
+        if proc.returncode != 0:
+            print("Editor closed with non-zero exit code. Aborting.", file=sys.stderr)
+            raise typer.Exit(code=1)
+
+        new_content = temp_file_path.read_text()
+
+        if new_content == original_content:
+            print("No changes detected. Aborting.")
+            raise typer.Exit(code=0)
+
+        updated_message = replace(target_message, content=new_content)
+
+        # Invalidate derived content if editing an assistant response
+        if isinstance(updated_message, AssistantChatMessage):
+            updated_message = replace(updated_message, derived=None)
+
+        session_data.chat_history[target_message_index] = updated_message
+        save_session(session_file, session_data)
+
+        print(f"Updated {message_type} for message pair {resolved_pair_index}.")
+
+    finally:
+        temp_file_path.unlink(missing_ok=True)

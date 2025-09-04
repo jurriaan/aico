@@ -9,6 +9,7 @@ from typer.core import TyperGroup
 from aico.addons import register_addon_commands
 from aico.commands.add import add
 from aico.commands.drop import drop
+from aico.commands.edit import edit
 from aico.commands.init import init
 from aico.commands.last import last
 from aico.commands.log import log
@@ -44,6 +45,7 @@ _ = app.command("ask")(ask)
 _ = app.command("generate-patch | gen")(generate_patch)
 _ = app.command("prompt")(prompt)
 _ = app.command("last", context_settings={"ignore_unknown_options": True})(last)
+_ = app.command("edit")(edit)
 _ = app.command("add")(add)
 _ = app.command("drop")(drop)
 _ = app.command("init")(init)
