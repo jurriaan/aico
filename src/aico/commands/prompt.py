@@ -103,6 +103,7 @@ def _handle_unified_streaming(
     )
 
     if live:
+        reasoning_buffer = ""
         for chunk in stream:
             delta, token_usage, reasoning_content = _process_chunk(chunk)
             if delta:
@@ -114,10 +115,13 @@ def _handle_unified_streaming(
                 live.update(renderable_group, refresh=True)
 
             elif not full_llm_response_buffer and reasoning_content:
-                # If no delta but reasoning content, display the header (bold words) of the reasoning
-                header = regex.search(r"^\*\*(.*?)\*\*", reasoning_content, regex.MULTILINE)
-                if header and header.group(1):
-                    rich_spinner.update(text=header.group(1))
+                # Buffer reasoning content and update spinner with the last found header.
+                reasoning_buffer += reasoning_content
+                headers = list(regex.finditer(r"^\*\*(.*?)\*\*", reasoning_buffer, regex.MULTILINE))
+                if headers:
+                    last_header_text = headers[-1].group(1)
+                    if last_header_text:
+                        rich_spinner.update(text=last_header_text)
         live.stop()
     else:
         for chunk in stream:
