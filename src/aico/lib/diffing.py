@@ -94,8 +94,8 @@ def _generate_diff_with_no_newline_handling(
     the '\\ No newline at end of file' marker, which difflib does not do correctly
     with splitlines(keepends=True).
     """
-    from_lines = from_content.splitlines(keepends=True) if from_content is not None else []
-    to_lines = to_content.splitlines(keepends=True) if to_content is not None else []
+    from_lines = (from_content or "").splitlines(keepends=True)
+    to_lines = (to_content or "").splitlines(keepends=True)
 
     diff_lines = list(difflib.unified_diff(from_lines, to_lines, fromfile=from_file, tofile=to_file))
 
@@ -128,10 +128,7 @@ def _try_exact_string_patch(original_content: str, search_block: str, replace_bl
 
 
 def _get_consistent_indentation(lines: list[str]) -> str:
-    for line in lines:
-        if line.strip():
-            return line[: len(line) - len(line.lstrip())]
-    return ""
+    return next((line[: len(line) - len(line.lstrip())] for line in lines if line.strip()), "")
 
 
 def _try_whitespace_flexible_patch(original_content: str, search_block: str, replace_block: str) -> str | None:
@@ -150,13 +147,11 @@ def _try_whitespace_flexible_patch(original_content: str, search_block: str, rep
         # for flexible patching. The exact patcher should handle it if it's an exact match.
         return None
 
-    matching_block_start_indices: list[int] = []
-    for i in range(len(original_lines) - len(search_lines) + 1):
-        original_lines_chunk = original_lines[i : i + len(search_lines)]
-        stripped_original_lines_chunk = [line.strip() for line in original_lines_chunk]
-
-        if stripped_original_lines_chunk == stripped_search_lines:
-            matching_block_start_indices.append(i)
+    matching_block_start_indices = [
+        i
+        for i in range(len(original_lines) - len(search_lines) + 1)
+        if [line.strip() for line in original_lines[i : i + len(search_lines)]] == stripped_search_lines
+    ]
 
     if not matching_block_start_indices:
         return None
@@ -265,6 +260,13 @@ def _create_patch_failed_error(file_path: str) -> str:
     return error_message
 
 
+def _get_diff_paths(file_path: str, from_content: str | None, to_content: str | None) -> tuple[str, str]:
+    """Generates the 'from' and 'to' file paths for a diff header."""
+    from_file = "/dev/null" if from_content is None else f"a/{file_path}"
+    to_file = "/dev/null" if to_content is None else f"b/{file_path}"
+    return from_file, to_file
+
+
 def _process_single_diff_block(
     parsed_block: AIPatch,
     content_before_patch: str,
@@ -294,13 +296,11 @@ def _process_single_diff_block(
         # difflib.unified_diff returns an empty string for this case, so we must construct the diff header manually.
         diff_string = f"--- /dev/null\n+++ b/{actual_file_path}\n"
     else:
-        from_file = f"a/{actual_file_path}"
-        to_file = f"b/{actual_file_path}"
-        if is_new_file:
-            from_file = "/dev/null"
-        elif not new_content_full:
-            to_file = "/dev/null"
-
+        from_file, to_file = _get_diff_paths(
+            actual_file_path,
+            content_before_patch if not is_new_file else None,
+            new_content_full,
+        )
         diff_lines = _generate_diff_with_no_newline_handling(
             from_file=from_file,
             to_file=to_file,
@@ -417,9 +417,8 @@ def process_llm_response_stream(
         next_match_start = len(llm_response)
         # Peek ahead to find the start of the next file block
         next_header_iter = _FILE_HEADER_REGEX.finditer(llm_response, pos=block_content_start)
-        next_header_match = next(next_header_iter, None)
-        if next_header_match:
-            next_match_start = next_header_match.start()
+        if next_match := next(next_header_iter, None):
+            next_match_start = next_match.start()
 
         block_content = llm_response[block_content_start:next_match_start]
         block_last_end = 0
@@ -462,10 +461,10 @@ def process_llm_response_stream(
                 result = _process_single_diff_block(parsed_block, content_before_patch, is_new_file, actual_file_path)
 
                 if result:
-                    if not result.new_content and actual_file_path in current_file_contents:
-                        del current_file_contents[actual_file_path]
-                    else:
+                    if result.new_content or actual_file_path not in current_file_contents:
                         current_file_contents[actual_file_path] = result.new_content
+                    else:  # Handles deletion
+                        del current_file_contents[actual_file_path]
                     yield result.diff_block
                 else:
                     error_text = _create_patch_failed_error(actual_file_path)
@@ -517,13 +516,7 @@ def generate_unified_diff(original_file_contents: FileContents, llm_response: st
             all_diffs.append(f"--- /dev/null\n+++ b/{file_path}\n")
             continue
 
-        from_file = f"a/{file_path}"
-        to_file = f"b/{file_path}"
-        if from_content is None:
-            from_file = "/dev/null"
-        if to_content is None:
-            to_file = "/dev/null"
-
+        from_file, to_file = _get_diff_paths(file_path, from_content, to_content)
         diff_lines = _generate_diff_with_no_newline_handling(
             from_file=from_file,
             to_file=to_file,
