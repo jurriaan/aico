@@ -1,9 +1,16 @@
+import sys
+from pathlib import Path
+
+import typer
+
 from aico.lib.models import (
     AssistantChatMessage,
     ChatMessageHistoryItem,
     MessagePairIndices,
+    SessionData,
     UserChatMessage,
 )
+from aico.lib.session import load_session
 
 
 def find_message_pairs(chat_history: list[ChatMessageHistoryItem]) -> list[MessagePairIndices]:
@@ -64,3 +71,38 @@ def resolve_pair_index_to_message_indices(
 
         valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
         raise IndexError(f"Error: Pair at index {pair_index} not found. Valid indices are {valid_range_str}.") from None
+
+
+def load_session_and_resolve_indices(
+    index_str: str,
+) -> tuple[Path, SessionData, MessagePairIndices, int]:
+    """
+    Loads session, parses index string, and resolves message pair indices.
+
+    Handles all common errors and exits on failure.
+
+    Returns:
+        A tuple of (session_file, session_data, pair_indices, resolved_index).
+    """
+    session_file, session_data = load_session()
+
+    try:
+        pair_index_int = int(index_str)
+    except ValueError:
+        print(f"Error: Invalid index '{index_str}'. Must be an integer.", file=sys.stderr)
+        raise typer.Exit(code=1) from None
+
+    try:
+        pair_indices = resolve_pair_index_to_message_indices(session_data.chat_history, pair_index_int)
+    except IndexError as e:
+        print(str(e), file=sys.stderr)
+        raise typer.Exit(code=1) from e
+
+    resolved_index = pair_index_int
+    if resolved_index < 0:
+        # We need to calculate the positive index for user feedback
+        # This is safe because resolve_pair_index_to_message_indices has already validated the index
+        all_pairs = find_message_pairs(session_data.chat_history)
+        resolved_index += len(all_pairs)
+
+    return session_file, session_data, pair_indices, resolved_index

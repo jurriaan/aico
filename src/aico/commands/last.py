@@ -5,14 +5,14 @@ import typer
 from rich.console import Console
 from rich.markdown import Markdown
 
-from aico.index_logic import resolve_pair_index_to_message_indices
+from aico.index_logic import load_session_and_resolve_indices
 from aico.lib.diffing import (
     generate_display_items,
     generate_unified_diff,
     process_patches_sequentially,
 )
 from aico.lib.models import AssistantChatMessage, DisplayItem
-from aico.lib.session import build_original_file_contents, load_session
+from aico.lib.session import build_original_file_contents
 from aico.utils import (
     is_terminal,
     reconstruct_display_content_for_piping,
@@ -70,19 +70,7 @@ def last(
     Use --prompt to see the user's prompt instead of the AI's response.
     Use --recompute to re-apply an AI's instructions to the current file state.
     """
-    session_file, session_data = load_session()
-
-    try:
-        index_val = int(index)
-    except ValueError:
-        print(f"Error: Invalid index '{index}'. Must be an integer.", file=sys.stderr)
-        raise typer.Exit(code=1) from None
-
-    try:
-        pair_indices = resolve_pair_index_to_message_indices(session_data.chat_history, index_val)
-    except IndexError as e:
-        print(str(e), file=sys.stderr)
-        raise typer.Exit(code=1) from None
+    session_file, session_data, pair_indices, _ = load_session_and_resolve_indices(index)
 
     if prompt:
         if recompute:

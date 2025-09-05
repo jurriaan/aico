@@ -9,9 +9,9 @@ from typing import Annotated
 
 import typer
 
-from aico.index_logic import find_message_pairs, resolve_pair_index_to_message_indices
+from aico.index_logic import load_session_and_resolve_indices
 from aico.lib.models import AssistantChatMessage
-from aico.lib.session import load_session, save_session
+from aico.lib.session import save_session
 
 
 def edit(
@@ -32,35 +32,19 @@ def edit(
     """
     Open a message in your default editor ($EDITOR) to make corrections.
     """
-    session_file, session_data = load_session()
-
-    try:
-        pair_index_int = int(index)
-    except ValueError:
-        print(f"Error: Invalid index '{index}'. Must be an integer.", file=sys.stderr)
-        raise typer.Exit(code=1) from None
-
-    try:
-        pair = resolve_pair_index_to_message_indices(session_data.chat_history, pair_index_int)
-    except IndexError as e:
-        print(str(e), file=sys.stderr)
-        raise typer.Exit(code=1) from e
+    session_file, session_data, pair_indices, resolved_pair_index = load_session_and_resolve_indices(index)
 
     message_type: str
     target_message_index: int
     if prompt:
         message_type = "prompt"
-        target_message_index = pair.user_index
+        target_message_index = pair_indices.user_index
     else:
         message_type = "response"
-        target_message_index = pair.assistant_index
+        target_message_index = pair_indices.assistant_index
 
     target_message = session_data.chat_history[target_message_index]
     original_content = target_message.content
-
-    resolved_pair_index = pair_index_int
-    if resolved_pair_index < 0:
-        resolved_pair_index += len(find_message_pairs(session_data.chat_history))
 
     fd, temp_file_path_str = tempfile.mkstemp(suffix=".txt", text=True)
     temp_file_path = Path(temp_file_path_str)
