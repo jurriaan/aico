@@ -2,7 +2,7 @@ from typing import Annotated
 
 import typer
 
-from aico.index_logic import load_session_and_resolve_indices
+from aico.index_logic import is_pair_excluded, load_session_and_resolve_indices, set_pair_excluded
 from aico.lib.session import save_session
 
 
@@ -14,17 +14,11 @@ def redo(
     """
     session_file, session_data, pair_indices, resolved_index = load_session_and_resolve_indices(index)
 
-    user_message = session_data.chat_history[pair_indices.user_index]
-    assistant_message = session_data.chat_history[pair_indices.assistant_index]
-
-    if not user_message.is_excluded or not assistant_message.is_excluded:
+    if not is_pair_excluded(session_data, pair_indices):
         print(f"Pair at index {resolved_index} is already active. No changes made.")
         raise typer.Exit(code=0)
 
-    from dataclasses import replace
-
-    session_data.chat_history[pair_indices.user_index] = replace(user_message, is_excluded=False)
-    session_data.chat_history[pair_indices.assistant_index] = replace(assistant_message, is_excluded=False)
+    _ = set_pair_excluded(session_data, pair_indices, False)
 
     save_session(session_file, session_data)
 

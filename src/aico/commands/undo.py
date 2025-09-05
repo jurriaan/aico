@@ -1,9 +1,8 @@
-from dataclasses import replace
 from typing import Annotated
 
 import typer
 
-from aico.index_logic import load_session_and_resolve_indices
+from aico.index_logic import is_pair_excluded, load_session_and_resolve_indices, set_pair_excluded
 from aico.lib.session import save_session
 
 
@@ -25,18 +24,11 @@ def undo(
     """
     session_file, session_data, pair_indices, resolved_index = load_session_and_resolve_indices(index)
 
-    user_msg_idx = pair_indices.user_index
-    assistant_msg_idx = pair_indices.assistant_index
-
-    user_msg = session_data.chat_history[user_msg_idx]
-    assistant_msg = session_data.chat_history[assistant_msg_idx]
-
-    if user_msg.is_excluded and assistant_msg.is_excluded:
+    if is_pair_excluded(session_data, pair_indices):
         print(f"Pair at index {resolved_index} is already excluded. No changes made.")
         return
 
-    session_data.chat_history[user_msg_idx] = replace(user_msg, is_excluded=True)
-    session_data.chat_history[assistant_msg_idx] = replace(assistant_msg, is_excluded=True)
+    _ = set_pair_excluded(session_data, pair_indices, True)
 
     save_session(session_file, session_data)
     print(f"Marked pair at index {resolved_index} as excluded.")

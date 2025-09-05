@@ -9,7 +9,7 @@ from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
-from aico.index_logic import find_message_pairs
+from aico.index_logic import find_message_pairs, is_pair_excluded
 from aico.lib.models import LLMChatMessage, SessionData
 from aico.lib.session import load_session
 from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
@@ -38,7 +38,7 @@ def _get_history_summary_text(session_data: SessionData) -> Text | None:
         return None
 
     active_window_pairs = len(active_pairs_with_indices)
-    excluded_in_window = sum(1 for _, pair in active_pairs_with_indices if history[pair.user_index].is_excluded)
+    excluded_in_window = sum(1 for _, pair in active_pairs_with_indices if is_pair_excluded(session_data, pair))
     pairs_to_be_sent = active_window_pairs - excluded_in_window
 
     plural_s = "s" if active_window_pairs != 1 else ""
