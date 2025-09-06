@@ -111,6 +111,7 @@ def status() -> None:  # noqa: C901
 
     # 4. Context Files
     file_components: list[_TokenInfo] = []
+    skipped_files = []
     for file_path_str in session_data.context_files:
         try:
             file_path = session_root / file_path_str
@@ -120,7 +121,11 @@ def status() -> None:  # noqa: C901
             file_components.append(_TokenInfo(description=file_path_str, tokens=file_tokens))
             total_tokens += file_tokens
         except FileNotFoundError:
-            pass
+            skipped_files.append(file_path_str)
+
+    if skipped_files:
+        skipped_list = " ".join(sorted(skipped_files))
+        console.print(f"[yellow]Warning: Context files not found, skipped: {skipped_list}[/yellow]")
 
     # 5. Cost Calculation
     import litellm

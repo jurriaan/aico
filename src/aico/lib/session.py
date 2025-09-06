@@ -106,14 +106,12 @@ def build_original_file_contents(context_files: list[str], session_root: Path) -
     original_file_contents: FileContents = {
         relative_path_str: abs_path.read_text()
         for relative_path_str in context_files
-        if (abs_path := session_root / relative_path_str).exists()
+        if (abs_path := session_root / relative_path_str).is_file()
     }
 
-    missing_files = original_file_contents.keys() - set(context_files)
-    for relative_path_str in missing_files:
-        print(
-            f"Warning: Context file not found, skipping: {relative_path_str}",
-            file=sys.stderr,
-        )
+    missing_files = set(context_files) - original_file_contents.keys()
+    if missing_files:
+        missing_list = " ".join(sorted(list(missing_files)))
+        print(f"Warning: Context files not found, skipping: {missing_list}", file=sys.stderr)
 
     return original_file_contents
