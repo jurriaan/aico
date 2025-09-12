@@ -215,3 +215,36 @@ def test_set_history_with_zero_sets_index_to_zero(tmp_path: Path) -> None:
         assert updated_session_data.history_start_index == 0
         active_history = get_active_history(updated_session_data)
         assert len(active_history) == 10
+
+
+def test_set_history_with_clear_keyword(tmp_path: Path) -> None:
+    # GIVEN a session with 4 history messages (2 pairs)
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        history: list[ChatMessageHistoryItem] = []
+        for i in range(2):
+            history.append(UserChatMessage(role="user", content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
+            history.append(
+                AssistantChatMessage(
+                    role="assistant",
+                    content=f"r{i}",
+                    mode=Mode.CONVERSATION,
+                    timestamp=f"t{i}",
+                    model="m",
+                    duration_ms=1,
+                )
+            )
+
+        session_data = SessionData(model="test-model", chat_history=history, context_files=[])
+        session_file = Path(td) / SESSION_FILE_NAME
+        save_session(session_file, session_data)
+
+        # WHEN `aico set-history clear` is run
+        result = runner.invoke(app, ["set-history", "clear"])
+
+        # THEN the command succeeds and confirms the context is cleared
+        assert result.exit_code == 0
+        assert "History context cleared (will start after the last conversation)." in result.stdout
+
+        # AND the history start index is set to 4 (the total number of messages)
+        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        assert updated_session_data.history_start_index == 4

@@ -14,7 +14,7 @@ def set_history(
             help="The pair index to set as the start of the active context. "
             + "Use 0 to make the full history active. "
             + "Use negative numbers to count from the end. "
-            + "Use the total number of pairs to clear the context.",
+            + "Use the 'clear' to clear the context.",
         ),
     ],
 ) -> None:
@@ -24,10 +24,15 @@ def set_history(
     Use `aico log` to see available pair indices.
 
     - `aico set-history 0` makes the full history active.
-    - `aico set-history <num_pairs>` clears the context for the next prompt.
+    - `aico set-history clear` clears the context for the next prompt.
     """
     session_file, session_data = load_session()
     chat_history = session_data.chat_history
+
+    # Handle the 'clear' keyword before numeric resolution
+    if pair_index_str.lower() == "clear":
+        num_pairs = len(find_message_pairs(chat_history))
+        pair_index_str = str(num_pairs)
 
     target_message_index, resolved_index = resolve_history_start_index(chat_history, pair_index_str)
 
