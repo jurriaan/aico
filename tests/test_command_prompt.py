@@ -509,3 +509,41 @@ def test_prompt_with_excluded_history_omits_messages(tmp_path: Path, mocker: Moc
         assert "<prompt>\nprompt 2\n</prompt>" not in user_prompts
         assert "<prompt>\nprompt 3\n</prompt>" in user_prompts
         assert "<prompt>\nprompt 4\n</prompt>" in user_prompts
+
+
+def test_prompt_no_history_flag_omits_history_from_llm_call(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN a session with existing history
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        # Create initial history: one user/assistant pair
+        _ = setup_prompt_test(mocker, Path(td), "initial response")
+        runner.invoke(app, ["ask", "initial prompt"])
+
+        # Re-mock for the second call
+        mock_completion_second = mocker.patch("litellm.completion")
+        mock_chunk = _create_mock_stream_chunk("no-history response", mocker=mocker)
+        mock_stream = mocker.MagicMock()
+        mock_stream.__iter__.return_value = iter([mock_chunk])
+        mock_completion_second.return_value = mock_stream
+        mocker.patch("litellm.completion_cost", return_value=0.001)
+
+        # WHEN `aico ask` is run with the --no-history flag
+        result = runner.invoke(app, ["ask", "--no-history", "no-history prompt"])
+
+        # THEN the command succeeds
+        assert result.exit_code == 0, result.stderr
+
+        # AND the LLM was called without the historical messages
+        mock_completion_second.assert_called_once()
+        messages = mock_completion_second.call_args.kwargs["messages"]
+        # Expected: sys, align_user, align_asst, user_prompt_2
+        assert len(messages) == 4
+        message_contents = [m["content"] for m in messages]
+        assert not any("initial prompt" in c for c in message_contents)
+
+        # AND the session file now contains both pairs of messages
+        final_session = load_final_session(Path(td))
+        assert len(final_session.chat_history) == 4
+        assert "initial prompt" in final_session.chat_history[0].content
+        assert "initial response" in final_session.chat_history[1].content
+        assert "no-history prompt" in final_session.chat_history[2].content
+        assert "no-history response" in final_session.chat_history[3].content

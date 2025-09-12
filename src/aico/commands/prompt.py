@@ -163,10 +163,11 @@ def _build_messages(
     mode: Mode,
     original_file_contents: FileContents,
     passthrough: bool,
+    no_history: bool,
 ) -> list[LLMChatMessage]:
     messages: list[LLMChatMessage] = []
 
-    active_history = get_active_history(session_data)
+    active_history = [] if no_history else get_active_history(session_data)
 
     if passthrough:
         if system_prompt:
@@ -212,6 +213,7 @@ def _invoke_llm_logic(
     system_prompt: str,
     mode: Mode,
     passthrough: bool,
+    no_history: bool,
     model: str | None,
 ) -> None:
     """
@@ -260,6 +262,7 @@ def _invoke_llm_logic(
         mode=mode,
         original_file_contents=original_file_contents,
         passthrough=passthrough,
+        no_history=no_history,
     )
 
     llm_response_content: str = ""
@@ -351,12 +354,19 @@ def ask(
             help="Send a raw prompt, bypassing all context and formatting.",
         ),
     ] = False,
+    no_history: Annotated[
+        bool,
+        typer.Option(
+            "--no-history",
+            help="Do not include chat history in the prompt for this request.",
+        ),
+    ] = False,
     model: Annotated[str | None, typer.Option(help="The model to use for this request")] = None,
 ) -> None:
     """
     Have a conversation for planning and discussion.
     """
-    _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.CONVERSATION, passthrough, model)
+    _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.CONVERSATION, passthrough, no_history, model)
 
 
 def generate_patch(
@@ -370,12 +380,19 @@ def generate_patch(
             help="Send a raw prompt, bypassing all context and formatting.",
         ),
     ] = False,
+    no_history: Annotated[
+        bool,
+        typer.Option(
+            "--no-history",
+            help="Do not include chat history in the prompt for this request.",
+        ),
+    ] = False,
     model: Annotated[str | None, typer.Option(help="The model to use for this request")] = None,
 ) -> None:
     """
     Generate code modifications as a unified diff.
     """
-    _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.DIFF, passthrough, model)
+    _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.DIFF, passthrough, no_history, model)
 
 
 def prompt(
@@ -389,9 +406,16 @@ def prompt(
             help="Send a raw prompt, bypassing all context and formatting.",
         ),
     ] = False,
+    no_history: Annotated[
+        bool,
+        typer.Option(
+            "--no-history",
+            help="Do not include chat history in the prompt for this request.",
+        ),
+    ] = False,
     model: Annotated[str | None, typer.Option(help="The model to use for this request")] = None,
 ) -> None:
     """
     Send a raw prompt to the AI.
     """
-    _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.RAW, passthrough, model)
+    _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.RAW, passthrough, no_history, model)
