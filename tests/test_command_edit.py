@@ -5,15 +5,38 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
-from aico.lib.models import AssistantChatMessage, DerivedContent
-from aico.lib.session import save_session
+from aico.lib.models import (
+    AssistantChatMessage,
+    DerivedContent,
+    Mode,
+    SessionData,
+    UserChatMessage,
+)
+from aico.lib.session import SESSION_FILE_NAME, save_session
 from aico.main import app
 from tests.test_command_undo import load_session_data
 
 runner = CliRunner()
+
+
+@pytest.fixture
+def session_with_context_file(tmp_path: Path) -> Path:
+    """Creates a session file in a temporary directory with one file in context."""
+    session_dir = tmp_path
+    os.chdir(session_dir)
+    (session_dir / "code.py").write_text("def hello(): pass")
+    session_file = session_dir / SESSION_FILE_NAME
+    session_data = SessionData(
+        model="test-model",
+        context_files=["code.py"],
+        chat_history=[],
+    )
+    save_session(session_file, session_data)
+    return session_file
 
 
 def mock_editor(new_content: str, return_code: int = 0) -> MagicMock:
@@ -80,7 +103,7 @@ def test_edit_response_and_invalidate_derived_content(session_with_two_pairs: Pa
     final_response = final_session.chat_history[-1]
     assert final_response.content == "Updated response content"
 
-    # AND the derived content is invalidated (set to None)
+    # AND the derived content is recomputed but is None because the new content is just conversational
     assert isinstance(final_response, AssistantChatMessage)
     assert final_response.derived is None
 
@@ -154,3 +177,64 @@ def test_edit_fails_if_editor_not_found(session_with_two_pairs: Path, mocker: Mo
     assert result.exit_code == 1
     assert "Error: Editor command not found" in result.stderr
     assert "Please set the $EDITOR environment variable." in result.stderr
+
+
+def test_edit_response_recomputes_derived_content_on_change(
+    session_with_context_file: Path, mocker: MockerFixture
+) -> None:
+    # GIVEN a session with a file in context and one message pair
+    session_file = session_with_context_file
+    session_data = load_session_data(session_file)
+
+    user_msg = UserChatMessage(role="user", content="prompt", mode=Mode.CONVERSATION, timestamp="ts")
+    assistant_msg = AssistantChatMessage(
+        role="assistant",
+        content="Initial conversational response.",
+        mode=Mode.CONVERSATION,
+        timestamp="ts",
+        model="test-model",
+        duration_ms=100,
+    )
+    session_data.chat_history = [user_msg, assistant_msg]
+    save_session(session_file, session_data)
+
+    # AND a mocked editor that will provide a valid patch
+    new_patch_content = (
+        "File: code.py\n<<<<<<< SEARCH\ndef hello(): pass\n=======\ndef greeting(): print('hello')\n>>>>>>> REPLACE"
+    )
+    mock_run = mocker.patch("subprocess.run", new=mock_editor(new_patch_content))
+
+    # WHEN `aico edit` is run with default arguments (last response)
+    result = runner.invoke(app, ["edit"])
+
+    # THEN the command succeeds
+    assert result.exit_code == 0, result.stderr
+    assert "Updated response for message pair 0." in result.stdout
+
+    # AND the response content is updated
+    final_session = load_session_data(session_file)
+    final_response = final_session.chat_history[-1]
+    assert isinstance(final_response, AssistantChatMessage)
+    assert final_response.content == new_patch_content
+
+    # AND the derived content is recomputed and contains the new diff
+    assert final_response.derived is not None
+    assert isinstance(final_response.derived, DerivedContent)
+
+    expected_diff = (
+        "--- a/code.py\n"
+        "+++ b/code.py\n"
+        "@@ -1 +1 @@\n"
+        "-def hello(): pass\n"
+        "\\ No newline at end of file\n"
+        "+def greeting(): print('hello')\n"
+    )
+    assert final_response.derived.unified_diff == expected_diff
+
+    # AND the display content is also correct
+    expected_display_items = [
+        {"type": "markdown", "content": "File: `code.py`\n"},
+        {"type": "diff", "content": expected_diff},
+    ]
+    assert final_response.derived.display_content == expected_display_items
+    mock_run.assert_called_once()

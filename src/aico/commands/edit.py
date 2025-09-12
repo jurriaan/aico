@@ -10,6 +10,7 @@ from typing import Annotated
 import typer
 
 from aico.index_logic import load_session_and_resolve_indices
+from aico.lib.diffing import recompute_derived_content
 from aico.lib.models import AssistantChatMessage
 from aico.lib.session import save_session
 
@@ -80,7 +81,13 @@ def edit(
 
         # Invalidate derived content if editing an assistant response
         if isinstance(updated_message, AssistantChatMessage):
-            updated_message = replace(updated_message, derived=None)
+            session_root = session_file.parent
+            new_derived_content = recompute_derived_content(
+                assistant_content=new_content,
+                context_files=session_data.context_files,
+                session_root=session_root,
+            )
+            updated_message = replace(updated_message, derived=new_derived_content)
 
         session_data.chat_history[target_message_index] = updated_message
         save_session(session_file, session_data)

@@ -6,6 +6,7 @@ import regex as re
 
 from aico.lib.models import (
     AIPatch,
+    DerivedContent,
     DisplayItem,
     FileContents,
     FileHeader,
@@ -17,6 +18,7 @@ from aico.lib.models import (
     UnparsedBlock,
     WarningMessage,
 )
+from aico.lib.session import build_original_file_contents
 
 # This regex is the core of the parser. It finds a complete `File:` block.
 # It uses named capture groups and backreferences to be robust.
@@ -554,3 +556,26 @@ def generate_display_items(
                 pass  # Ignore final state object in display
 
     return items
+
+
+def recompute_derived_content(
+    assistant_content: str, context_files: list[str], session_root: Path
+) -> DerivedContent | None:
+    """
+    Recomputes the derived content (diffs, display items) for an assistant message.
+
+    This function takes the raw content from an assistant, compares it against the
+    current state of files on disk, and generates a new `DerivedContent` object.
+    It returns None if no meaningful derived content (like a diff) can be produced.
+    """
+    original_file_contents = build_original_file_contents(context_files, session_root)
+
+    unified_diff = generate_unified_diff(original_file_contents, assistant_content, session_root)
+    display_items = generate_display_items(original_file_contents, assistant_content, session_root)
+
+    # Logic from prompt.py: only create derived content if there's a diff or if
+    # the display items are more than just the raw content (e.g., have warnings).
+    if unified_diff or (display_items and "".join(item["content"] for item in display_items) != assistant_content):
+        return DerivedContent(unified_diff=unified_diff, display_content=display_items)
+
+    return None

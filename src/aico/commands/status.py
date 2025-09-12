@@ -111,7 +111,7 @@ def status() -> None:  # noqa: C901
 
     # 4. Context Files
     file_components: list[_TokenInfo] = []
-    skipped_files = []
+    skipped_files: list[str] = []
     for file_path_str in session_data.context_files:
         try:
             file_path = session_root / file_path_str
@@ -121,7 +121,7 @@ def status() -> None:  # noqa: C901
             file_components.append(_TokenInfo(description=file_path_str, tokens=file_tokens))
             total_tokens += file_tokens
         except FileNotFoundError:
-            skipped_files.append(file_path_str)
+            _ = skipped_files.append(file_path_str)
 
     if skipped_files:
         skipped_list = " ".join(sorted(skipped_files))

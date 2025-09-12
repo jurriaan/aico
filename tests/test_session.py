@@ -36,9 +36,7 @@ def test_build_original_file_contents_only_includes_existing_and_warns_for_missi
     # AND warnings are printed to stderr for each missing or non-file path
     captured = capsys.readouterr()
     err_output = captured.err
-    assert "Warning: Context file not found, skipping: missing.txt" in err_output
-    assert "Warning: Context file not found, skipping: sub/also_missing.md" in err_output
-    assert "Warning: Context file not found, skipping: dir_in_ctx" in err_output
+    assert "Warning: Context files not found, skipping: dir_in_ctx missing.txt sub/also_missing.md" in err_output
     assert "existing.py" not in err_output
     assert "another.py" not in err_output
 

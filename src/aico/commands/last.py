@@ -9,7 +9,6 @@ from aico.index_logic import load_session_and_resolve_indices
 from aico.lib.diffing import (
     generate_display_items,
     generate_unified_diff,
-    process_patches_sequentially,
 )
 from aico.lib.models import AssistantChatMessage, DisplayItem
 from aico.lib.session import build_original_file_contents
@@ -102,15 +101,8 @@ def last(
         original_file_contents = build_original_file_contents(
             context_files=session_data.context_files, session_root=session_root
         )
-        _, _, warnings = process_patches_sequentially(original_file_contents, target_msg.content, session_root)
         unified_diff = generate_unified_diff(original_file_contents, target_msg.content, session_root)
         display_content = generate_display_items(original_file_contents, target_msg.content, session_root)
-
-        if warnings:
-            console = Console(stderr=True)
-            console.print("[yellow]Warnings:[/yellow]")
-            for warning in warnings:
-                console.print(f"[yellow]{warning.text}[/yellow]")
     else:
         # Use stored data
         if target_msg.derived:
