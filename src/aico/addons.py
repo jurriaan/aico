@@ -75,6 +75,12 @@ def execute_addon(addon: AddonInfo, args: list[str]) -> None:
     if session_file:
         env["AICO_SESSION_FILE"] = str(session_file.resolve())
 
+    # Propagate the parent's sys.path to the addon's PYTHONPATH. This ensures
+    # the addon has the same module resolution environment as the main `aico`
+    # process, allowing it to import `aico` library modules even when
+    # running from a source checkout.
+    env["PYTHONPATH"] = os.pathsep.join(sys.path)
+
     try:
         # The second argument to execvpe is the `argv` for the new process.
         # aico's argv: ['/path/to/aico', 'my-addon', 'arg1']
