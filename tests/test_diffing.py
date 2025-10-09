@@ -147,6 +147,22 @@ def test_generate_diff_for_file_deletion(tmp_path: Path) -> None:
     assert "-line 2" in diff
 
 
+def test_generate_diff_for_filename_with_spaces(tmp_path: Path) -> None:
+    # GIVEN original content for a file with spaces in its name
+    filename_with_space = "my test file.py"
+    original_contents = {filename_with_space: "old content"}
+    llm_response = f"File: {filename_with_space}\n<<<<<<< SEARCH\nold content\n=======\nnew content\n>>>>>>> REPLACE"
+
+    # WHEN the diff is generated
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
+
+    # THEN the diff headers should have quoted filenames
+    assert f'--- "a/{filename_with_space}"' in diff
+    assert f'+++ "b/{filename_with_space}"' in diff
+    assert "-old content" in diff
+    assert "+new content" in diff
+
+
 @pytest.mark.parametrize(
     "indentation",
     ["\t ", "  \t ", "\t", " \t  ", "  "],

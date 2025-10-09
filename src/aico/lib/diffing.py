@@ -52,6 +52,11 @@ _FILE_BLOCK_REGEX = re.compile(
 # It's more robust than simple string checking.
 
 
+def _quote_filename_if_needed(filename: str) -> str:
+    """Quotes a filename if it contains spaces, for use in a diff header."""
+    return f'"{filename}"' if " " in filename else filename
+
+
 def _add_no_newline_marker_if_needed(diff_lines: list[str], original_content: str | None) -> None:
     """
     Manually injects the '\\ No newline at end of file' marker into a diff list IN-PLACE.
@@ -99,7 +104,14 @@ def _generate_diff_with_no_newline_handling(
     from_lines = (from_content or "").splitlines(keepends=True)
     to_lines = (to_content or "").splitlines(keepends=True)
 
-    diff_lines = list(difflib.unified_diff(from_lines, to_lines, fromfile=from_file, tofile=to_file))
+    diff_lines = list(
+        difflib.unified_diff(
+            from_lines,
+            to_lines,
+            fromfile=_quote_filename_if_needed(from_file),
+            tofile=_quote_filename_if_needed(to_file),
+        )
+    )
 
     _add_no_newline_marker_if_needed(diff_lines, from_content)
 
