@@ -12,7 +12,7 @@ from rich.text import Text
 from aico.index_logic import find_message_pairs, is_pair_excluded
 from aico.lib.models import LLMChatMessage, SessionData
 from aico.lib.session import load_session
-from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
+from aico.prompts import ALIGNMENT_PROMPTS, DEFAULT_SYSTEM_PROMPT, DIFF_MODE_INSTRUCTIONS
 from aico.utils import get_active_history, reconstruct_historical_messages
 
 
@@ -84,7 +84,7 @@ def status() -> None:  # noqa: C901
     total_tokens = 0
 
     # 1. System Prompt
-    system_prompt = "You are an expert pair programmer." + DIFF_MODE_INSTRUCTIONS
+    system_prompt = DEFAULT_SYSTEM_PROMPT + DIFF_MODE_INSTRUCTIONS
     system_prompt_tokens = _count_tokens(session_data.model, [{"role": "system", "content": system_prompt}])
     components.append(_TokenInfo(description="system prompt", tokens=system_prompt_tokens))
     total_tokens += system_prompt_tokens

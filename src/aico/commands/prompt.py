@@ -37,7 +37,7 @@ from aico.lib.session import (
     load_session,
     save_session,
 )
-from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
+from aico.prompts import ALIGNMENT_PROMPTS, DEFAULT_SYSTEM_PROMPT, DIFF_MODE_INSTRUCTIONS
 from aico.utils import (
     calculate_and_display_cost,
     get_active_history,
@@ -200,6 +200,10 @@ def _build_messages(
 
     messages.extend(reconstruct_historical_messages(active_history))
 
+    # Inject alignment prompts to enforce mode-specific behavior.
+    # Note: These are always injected for `ask` and `gen` modes (unless --passthrough is used),
+    # even if a custom system prompt is provided. This ensures the AI adheres to the
+    # intended conversational or code-generation role.
     if mode in ALIGNMENT_PROMPTS:
         messages.extend([{"role": msg.role, "content": msg.content} for msg in ALIGNMENT_PROMPTS[mode]])
 
@@ -345,9 +349,7 @@ def _invoke_llm_logic(
 
 def ask(
     cli_prompt_text: Annotated[str | None, typer.Argument(help="The user's instruction for the AI.")] = None,
-    system_prompt: Annotated[
-        str, typer.Option(help="The system prompt to guide the AI.")
-    ] = "You are an expert pair programmer.",
+    system_prompt: Annotated[str, typer.Option(help="The system prompt to guide the AI.")] = DEFAULT_SYSTEM_PROMPT,
     passthrough: Annotated[
         bool,
         typer.Option(
@@ -371,9 +373,7 @@ def ask(
 
 def generate_patch(
     cli_prompt_text: Annotated[str | None, typer.Argument(help="The user's instruction for the AI.")] = None,
-    system_prompt: Annotated[
-        str, typer.Option(help="The system prompt to guide the AI.")
-    ] = "You are an expert pair programmer.",
+    system_prompt: Annotated[str, typer.Option(help="The system prompt to guide the AI.")] = DEFAULT_SYSTEM_PROMPT,
     passthrough: Annotated[
         bool,
         typer.Option(
@@ -397,9 +397,7 @@ def generate_patch(
 
 def prompt(
     cli_prompt_text: Annotated[str | None, typer.Argument(help="The user's instruction for the AI.")] = None,
-    system_prompt: Annotated[
-        str, typer.Option(help="The system prompt to guide the AI.")
-    ] = "You are an expert pair programmer.",
+    system_prompt: Annotated[str, typer.Option(help="The system prompt to guide the AI.")] = DEFAULT_SYSTEM_PROMPT,
     passthrough: Annotated[
         bool,
         typer.Option(
