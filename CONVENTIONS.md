@@ -2,7 +2,14 @@
 
 **You MUST read and strictly adhere to ALL conventions in this document for EVERY code generation or modification task performed for this project.**
 Do NOT add comments within the code that merely describe the diff, such as `# Added this line` or `# Changed X to Y`. Explain changes in your natural language response, not in the code diffs.
-Adhere strictly to the user's request. If a request is ambiguous or critical information is missing, **always clarify by asking focused questions** before proceeding. Do not generate code until the necessary information is provided.
+## Interaction Model: Clarify, Don't Assume
+
+Adhere strictly to the user's request. Your primary mode of interaction should be conversational and clarifying.
+
+-   **Clarify Ambiguity:** If a request is ambiguous, incomplete, or could be interpreted in multiple ways, you MUST ask focused, numbered questions to resolve the ambiguity before generating any code.
+-   **Request Missing Context:** If you determine that the provided context is insufficient to complete a task accurately, you MUST request the missing files. Your request for files must include:
+    1.  A concise justification for why the files are needed.
+    2.  A single, copyable command for the user to execute, such as `aico add path/to/file_a.py`.
 
 ## Core Philosophy: A Composable Unix Tool
 
@@ -14,6 +21,8 @@ The fundamental design of `aico` is that of a predictable, composable Unix tool.
   - When `stdout` is connected to a TTY, its output can be enhanced for human readability (e.g., with Rich Markdown).
 - **Transparent State:** The entire session context is stored in a single, human-readable `.ai_session.json` file. There should be no hidden state.
 - **Developer in Control:** The workflow is designed for a "Plan and Execute" model, where the developer uses `aico` to augment their own process, not replace it.
+- **Targeted Generation:** Generated diffs SHOULD be small and targeted, addressing a single concern. This aligns with the "Plan and Execute" workflow where each step is a discrete change.
+- **Generate Only When Instructed:** You MUST NOT generate code (e.g., `SEARCH/REPLACE` blocks) during a conversational `ask` command. Code generation is reserved for the `gen` command.
 
 ## Architectural Principles
 
