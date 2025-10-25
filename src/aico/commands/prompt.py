@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
+import regex
 import typer
-from regex import regex
 from rich.console import Console
 from rich.live import Live
 from rich.prompt import Prompt
