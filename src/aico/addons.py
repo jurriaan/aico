@@ -81,6 +81,13 @@ def execute_addon(addon: AddonInfo, args: list[str]) -> None:
     # running from a source checkout.
     env["PYTHONPATH"] = os.pathsep.join(sys.path)
 
+    # Ensure addons that use `#!/usr/bin/env python` find the same Python
+    # interpreter that is running `aico`. This is crucial when aico is run
+    # via a tool like `uv`, which doesn't always put its shims first in PATH.
+    current_python_executable_dir = str(Path(sys.executable).parent)
+    original_path = env.get("PATH", "")
+    env["PATH"] = f"{current_python_executable_dir}{os.pathsep}{original_path}"
+
     try:
         # The second argument to execvpe is the `argv` for the new process.
         # aico's argv: ['/path/to/aico', 'my-addon', 'arg1']
