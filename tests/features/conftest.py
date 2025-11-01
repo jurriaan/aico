@@ -151,6 +151,30 @@ def given_history_with_one_pair_specific_response(project_dir: Path, response_te
     save_session(session_file, session_data)
 
 
+@given(
+    parsers.parse(
+        'the chat history contains one user/assistant pair with content "{user_prompt}" and "{assistant_response}"'
+    )
+)
+def given_history_with_specific_content(project_dir: Path, user_prompt: str, assistant_response: str) -> None:
+    session_file = project_dir / SESSION_FILE_NAME
+    session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
+    session_data.chat_history.extend(
+        [
+            UserChatMessage(role="user", content=user_prompt, mode=Mode.CONVERSATION, timestamp="t1"),
+            AssistantChatMessage(
+                role="assistant",
+                content=assistant_response,
+                mode=Mode.CONVERSATION,
+                timestamp="t1",
+                model="m",
+                duration_ms=1,
+            ),
+        ]
+    )
+    save_session(session_file, session_data)
+
+
 @given(parsers.parse("for this scenario, the LLM will stream the response:"))
 def given_llm_will_stream_response(mocker: MockerFixture, docstring: str) -> None:
     mock_completion = mocker.patch("litellm.completion", autospec=True)

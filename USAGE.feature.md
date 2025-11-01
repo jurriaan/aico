@@ -228,6 +228,22 @@ The `undo` and `redo` commands provide a simple way to manage the active convers
   Re-included pair at index 0 in context.
   ```
 
+## Scenario: A user exports the active history for scripting
+
+The `dump-history` command provides a machine-readable export of the active conversation log, which is ideal for scripting and creating complex addon workflows.
+
+- Given a project with an initialized aico session for model "test-model"
+- And the chat history contains one user/assistant pair with content "User prompt" and "Assistant response"
+- When I run the command `aico dump-history`
+- Then the output should be:
+  ```
+  <!-- llm-role: user -->
+  User prompt
+
+  <!-- llm-role: assistant -->
+  Assistant response
+  ```
+
 ## Scenario: A user edits a previous assistant response using `aico edit`
 
 Sometimes you need to manually fix or refine an AI's response in the session history. The `edit` command opens a message in your default editor ($EDITOR), allowing you to make changes. On save, the session file is updated.

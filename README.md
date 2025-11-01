@@ -129,7 +129,8 @@ For more detailed usage examples and scenarios, see [USAGE.feature.md](USAGE.fea
 - `aico drop <files...>`: Removes one or more files from the context.
 - `aico ask "<instruction>"`: Have a conversation with the AI for planning and discussion.
 - `aico gen | generate-patch "<instruction>"`: Generate code modifications as a unified diff.
-- `aico prompt "<instruction>"`: A power-user command for sending unformatted prompts. Primarily intended for scripting or addons (like `aico commit`). Prefer `ask` or `gen` for general use.
+- `aico prompt "<instruction>"`: A power-user command for sending unformatted prompts. Primarily intended for scripting or addons. Prefer `ask` or `gen` for general use.
+- `aico dump-history`: Exports the active chat history to `stdout` in a machine-readable format. Useful for scripting and addons.
 - `aico last [index]`: Shows the response from the message pair at the given index (e.g., `0` for the first pair, `-1` for the last). Defaults to `-1`.
   - `--prompt`: Shows the user's prompt message instead of the AI's response.
   - `--recompute`: Re-applies the original instruction to the current file state. Useful for retrying a command after adding/changing context.
@@ -159,5 +160,5 @@ The best way to learn how to write an addon is to inspect the examples provided 
 
 The repository includes two addons that serve as practical examples:
 
-- [`commit`](.aico/addons/commit): Generates a Conventional Commit message for staged changes by piping your `git diff` into `aico prompt`.
+- [`commit`](.aico/addons/commit): Generates a Conventional Commit message for staged changes, using both your `git diff` and the `aico` conversation log for context.
 - [`summarize`](.aico/addons/summarize): Uses `aico` to first generate a comprehensive project summary, and then resets the session history to that summary. This is a useful technique for managing context length and cost.
