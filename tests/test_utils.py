@@ -7,10 +7,10 @@ from pathlib import Path
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
-from aico.lib.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, TokenUsage
+from aico.lib.models import AssistantChatMessage, ChatMessageHistoryItem, LLMChatMessage, Mode, SessionData, TokenUsage
 from aico.lib.session import SESSION_FILE_NAME, save_session
 from aico.main import app
-from aico.utils import calculate_and_display_cost
+from aico.utils import calculate_and_display_cost, count_tokens_for_messages
 
 runner = CliRunner()
 
@@ -23,7 +23,7 @@ def test_aico_session_file_env_var_works(tmp_path: Path, mocker: MockerFixture) 
     save_session(session_file, SessionData(model="test-model", context_files=[], chat_history=[]))
 
     # AND litellm dependencies are mocked
-    mocker.patch("aico.commands.status._count_tokens", return_value=10)
+    mocker.patch("aico.utils.count_tokens_for_messages", return_value=10)
     mocker.patch("litellm.get_model_info", return_value=None)
 
     # WHEN AICO_SESSION_FILE is set to that absolute path
@@ -73,7 +73,7 @@ def test_aico_session_file_env_var_not_set_uses_upward_search(tmp_path: Path, mo
         save_session(session_file, SessionData(model="upward-search-model", context_files=[], chat_history=[]))
 
         # AND litellm dependencies are mocked
-        mocker.patch("aico.commands.status._count_tokens", return_value=10)
+        mocker.patch("aico.utils.count_tokens_for_messages", return_value=10)
         mocker.patch("litellm.get_model_info", return_value=None)
 
         # AND AICO_SESSION_FILE is not set
@@ -175,3 +175,19 @@ def test_calculate_and_display_cost_logic(mocker: MockerFixture) -> None:
     # Total current chat cost = 3.0 (history) + 0.5 (new message) = 3.50
     expected_info_str = "Tokens: 100 sent, 50 received. Cost: $0.50, current chat: $3.50"
     mock_print.assert_called_with(expected_info_str, file=sys.stderr)
+
+
+def test_count_tokens_for_messages(mocker: MockerFixture) -> None:
+    # GIVEN a mocked litellm.token_counter
+    mock_litellm_counter = mocker.patch("litellm.token_counter", return_value=123)
+
+    # WHEN calling count_tokens_for_messages
+    messages: list[LLMChatMessage] = [{"role": "user", "content": "hello world"}]
+    model = "test-model"
+    token_count = count_tokens_for_messages(model, messages)
+
+    # THEN litellm.token_counter is called with the correct arguments
+    mock_litellm_counter.assert_called_once_with(model=model, messages=messages)
+
+    # AND the result is returned
+    assert token_count == 123

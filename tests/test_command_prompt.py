@@ -170,9 +170,12 @@ def test_prompt_command_raw_mode_no_alignment(tmp_path: Path, mocker: MockerFixt
         assert not any("conversational assistant" in c for c in message_contents)
 
 
-def test_ask_command_with_diff_response_renders_live_diff(tmp_path: Path, mocker: MockerFixture) -> None:
-    # GIVEN a TTY-enabled environment and a session with a context file
-    mocker.patch("aico.commands.prompt.is_terminal", return_value=True)
+def test_ask_command_with_diff_response_outputs_diff_non_tty(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN a non-TTY environment and a session with a context file
+    # Note: We test the non-TTY path because CliRunner does not capture `rich.Live` TTY output.
+    # This still validates the core parsing and diff generation logic.
+    mocker.patch("aico.core.llm_executor.is_terminal", return_value=False)
+    mocker.patch("aico.commands.prompt.is_terminal", return_value=False)
     llm_diff_response = (
         "File: code.py\n"
         "<<<<<<< SEARCH\n"
@@ -190,10 +193,10 @@ def test_ask_command_with_diff_response_renders_live_diff(tmp_path: Path, mocker
         # THEN the command succeeds
         assert result.exit_code == 0
 
-        # AND the live display was updated with rendered diff content
+        # AND the stdout in non-TTY mode contains the final unified diff
         assert "<<<<<<< SEARCH" not in result.stdout
         assert "--- a/code.py" in result.stdout
-        assert "+def hello(name: str):" in result.stdout
+        assert "+def hello(name: str): print(f'Hello, {name}!')" in result.stdout
 
         # AND the session file still correctly records that mode was `conversation`
         final_session = load_final_session(Path(td))
@@ -453,7 +456,7 @@ def test_prompt_passthrough_mode_bypasses_context_and_formatting(tmp_path: Path,
     prompt_text = "some raw prompt"
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         mock_completion = setup_prompt_test(mocker, Path(td), "raw response", context_files={"file.py": "some content"})
-        mock_build_contents = mocker.patch("aico.commands.prompt.build_original_file_contents")
+        mock_build_contents = mocker.patch("aico.core.llm_executor.build_original_file_contents")
 
         # WHEN `aico prompt --passthrough` is invoked
         result = runner.invoke(app, ["prompt", "--passthrough", prompt_text])

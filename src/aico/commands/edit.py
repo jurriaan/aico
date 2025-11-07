@@ -9,10 +9,9 @@ from typing import Annotated
 
 import typer
 
-from aico.index_logic import load_session_and_resolve_indices
+from aico.core.session_persistence import get_persistence, load_session_and_resolve_indices
 from aico.lib.diffing import recompute_derived_content
 from aico.lib.models import AssistantChatMessage
-from aico.lib.session import save_session
 
 
 def edit(
@@ -33,7 +32,10 @@ def edit(
     """
     Open a message in your default editor ($EDITOR) to make corrections.
     """
-    session_file, session_data, pair_indices, resolved_pair_index = load_session_and_resolve_indices(index)
+    persistence = get_persistence()
+    session_file, session_data, pair_indices, resolved_pair_index = load_session_and_resolve_indices(
+        index, persistence=persistence
+    )
 
     message_type: str
     target_message_index: int
@@ -90,7 +92,7 @@ def edit(
             updated_message = replace(updated_message, derived=new_derived_content)
 
         session_data.chat_history[target_message_index] = updated_message
-        save_session(session_file, session_data)
+        persistence.save(session_file, session_data)
 
         print(f"Updated {message_type} for message pair {resolved_pair_index}.")
 

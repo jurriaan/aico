@@ -4,8 +4,9 @@ from typing import Annotated
 
 import typer
 
+from aico.core.session_persistence import get_persistence
 from aico.lib.models import SessionData
-from aico.lib.session import SESSION_FILE_NAME, save_session
+from aico.lib.session import SESSION_FILE_NAME
 
 
 def init(
@@ -30,7 +31,8 @@ def init(
         )
         raise typer.Exit(code=1)
 
-    new_session = SessionData(model=model, chat_history=[], context_files=[])
-    save_session(session_file, new_session)
+    new_session = SessionData(model=model)
+    persistence = get_persistence()
+    persistence.save(session_file, new_session)
 
     print(f"Initialized session file: {session_file}")

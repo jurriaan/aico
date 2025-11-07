@@ -22,8 +22,12 @@ The application is composed of several distinct components, each with a clear ro
 
 ### State Persistence Layer
 
--   **Role:** This layer is responsible for all interactions with the filesystem state, primarily the `.ai_session.json` file. Its duties include locating the session file (via environment variable or upward search), loading its contents into data models, and saving any changes back to the file atomically to prevent corruption.
--   **Implementation:** The core logic for these operations is centralized in `src/aico/lib/session.py`.
+-   **Role:** This layer abstracts the loading and saving of session state. It provides a consistent interface for all commands, regardless of the underlying storage format. It supports both the legacy single-file `.ai_session.json` and the next-generation `historystore` architecture (sharded history + lightweight session pointers).
+-   **Implementation:** The core logic is centralized in `src/aico/core/session_persistence.py`.
+    -   A `SessionPersistence` protocol defines the `load()` and `save()` interface.
+    -   A factory function, `get_persistence()`, inspects `.ai_session.json` to determine the storage format and returns the correct persistence backend.
+    -   `LegacyJsonPersistence` handles the traditional single-file JSON format.
+    -   `SharedHistoryPersistence` supports the new `historystore` format. Its `load()` reconstructs a legacy-compatible `SessionData` from a session view and sharded records. Its `save()` supports write operations (append, single-edit, exclusions, history start, context/model updates) by default.
 
 ### Command & Interaction Layer
 
@@ -34,8 +38,8 @@ The application is composed of several distinct components, each with a clear ro
 
 These are specialized components that handle the most complex processing tasks.
 
--   **LLM Interaction Engine:** This engine is responsible for all communication with the Large Language Model. It builds the final prompt (including system instructions, file context, and chat history), sends it to the API, and processes the response as a stream for real-time user feedback.
-    -   **Implementation:** The shared logic for this is located within `src/aico/commands/prompt.py`.
+-   **LLM Interaction Engine:** This is the single entry point for all communication with the Large Language Model. It builds the full prompt (including system instructions, file context, and chat history), sends the request to the `litellm` library, and processes the response as a stream for real-time user feedback. It is also responsible for coordinating with the Diff & Patch Engine.
+    -   **Implementation:** This logic is located in `src/aico/core/llm_executor.py`.
 
 -   **Diff & Patch Engine:** This engine processes the raw text from the LLM to find and parse structured `SEARCH/REPLACE` blocks. It can apply these blocks to in-memory file content to generate both machine-readable unified diffs (for piping) and human-readable, rich-formatted output (for terminal display).
     -   **Implementation:** This is a dedicated, specialized component located in `src/aico/lib/diffing.py`.

@@ -55,7 +55,9 @@ For a complete list of supported providers and the environment variables they re
   aico last | delta
   ```
 
-- **Transparent State.** There is no hidden state or magic. The entire session—context files, chat history, and model configuration—is stored in a single, human-readable `.ai_session.json` file in your project's root. You can inspect it, edit it, or even version-control it.
+- **Transparent State.** There is no hidden state or magic. `aico` supports two human-readable session formats:
+  - Legacy: a single `.ai_session.json` file in your project's root containing the entire session.
+  - Shared-history: a tiny pointer file (`.ai_session.json`) that references a lightweight session view (`.aico/sessions/*.json`) and a sharded, append-only history log (`.aico/history/`). This enables git-like branching via views while keeping all data inspectable and versionable.
 
 - **Focused on Code Modification.** The `aico gen` (`generate-patch`) command is optimized to produce standard unified diffs, making it ideal for refactoring, adding features, or fixing bugs directly from your terminal.
 
@@ -66,6 +68,10 @@ For a complete list of supported providers and the environment variables they re
 - **History Control:** Easily manage how much of the conversation history is included in the next prompt to balance context-awareness with cost.
 - **Cost and Token Tracking:** See token usage and estimated cost for each interaction.
 - **Editor-Agnostic:** Because it's a CLI tool, `aico` works with any code editor, from Vim to VSCode.
+
+## Shared-History Sessions
+
+The shared-history format uses a pointer file plus sharded history to support branching workflows. All commands, including mutating ones (e.g., `ask`, `gen`, `edit`, `undo/redo`, `set-history`, and context/model updates), work seamlessly on shared-history sessions by default.
 
 ## Recommended Workflow: Plan and Execute
 
@@ -141,6 +147,10 @@ For more detailed usage examples and scenarios, see [USAGE.feature.md](USAGE.fea
 - `aico status`: Shows a comprehensive summary of the session status, including token usage, estimated cost, and chat history configuration.
 - `aico log`: Show a compact `git log`-style view of the active conversation context.
 - `aico set-history <index>`: Set which message pair the active history starts from. For example, `aico set-history 0` makes the full history active.
+- `aico session-list`: List available session branches (shared-history only).
+- `aico session-switch <name>`: Switch the active branch (shared-history only).
+- `aico session-fork <name>`: Create a new branch from the current one (shared-history only).
+- `aico migrate-shared-history`: Convert a legacy single-file session to the shared-history format (creates history shards, a session view, and repoints `.ai_session.json`).
 
 ## Addons: Extending `aico`
 

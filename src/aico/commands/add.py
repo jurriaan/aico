@@ -3,18 +3,16 @@ from pathlib import Path
 
 import typer
 
-from aico.lib.session import (
-    get_relative_path_or_error,
-    load_session,
-    save_session,
-)
+from aico.core.session_persistence import get_persistence
+from aico.lib.session import get_relative_path_or_error
 
 
 def add(file_paths: list[Path]) -> None:
     """
     Add file(s) to the session context.
     """
-    session_file, session_data = load_session()
+    persistence = get_persistence()
+    session_file, session_data = persistence.load()
     session_root = session_file.parent
 
     files_were_added = False
@@ -41,7 +39,7 @@ def add(file_paths: list[Path]) -> None:
 
     if files_were_added:
         session_data.context_files.sort()
-        save_session(session_file, session_data)
+        persistence.save(session_file, session_data)
 
     if errors_found:
         raise typer.Exit(code=1)

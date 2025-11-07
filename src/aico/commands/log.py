@@ -1,25 +1,30 @@
 from rich.console import Console
 from rich.table import Table
 
-from aico.index_logic import find_message_pairs
+from aico.core.session_context import active_message_indices, find_message_pairs
+from aico.core.session_persistence import get_persistence
 from aico.lib.models import UserChatMessage
-from aico.lib.session import load_session
 
 
 def log() -> None:
     """
     Display the active conversation log.
     """
-    _, session_data = load_session()
+    persistence = get_persistence()
+    _, session_data = persistence.load()
     chat_history = session_data.chat_history
-    start_index = session_data.history_start_index
     console = Console()
 
     all_pairs = find_message_pairs(chat_history)
     all_pairs_with_indices = list(enumerate(all_pairs))
 
+    # Determine active indices using centralized helper
+    active_indices_set = set(active_message_indices(session_data, include_dangling=True))
+
+    # Determine active pairs using pair-centric start if available
+    start_pair = getattr(session_data, "history_start_pair", 0)
     active_pairs_with_indices = [
-        (pair_idx, pair) for pair_idx, pair in all_pairs_with_indices if pair.user_index >= start_index
+        (pair_idx, pair) for pair_idx, pair in all_pairs_with_indices if pair_idx >= start_pair
     ]
 
     if active_pairs_with_indices:
@@ -28,12 +33,19 @@ def log() -> None:
         table.add_column("Role")
         table.add_column("Message Snippet", overflow="ellipsis", min_width=20)
 
+        excluded_set = set(getattr(session_data, "excluded_pairs", []) or [])
+
         for i, (pair_index, pair) in enumerate(active_pairs_with_indices):
             user_msg = chat_history[pair.user_index]
             asst_msg = chat_history[pair.assistant_index]
 
-            user_row_style = "dim" if user_msg.is_excluded else ""
-            asst_row_style = "dim" if asst_msg.is_excluded else ""
+            # Prefer pair-centric exclusion if available
+            if getattr(session_data, "excluded_pairs", None) is not None:
+                pair_excluded = pair_index in excluded_set
+            else:
+                pair_excluded = user_msg.is_excluded and asst_msg.is_excluded
+            user_row_style = "dim" if pair_excluded else ""
+            asst_row_style = "dim" if pair_excluded else ""
 
             user_lines = user_msg.content.strip().splitlines()
             user_snippet = user_lines[0] if user_lines else ""
@@ -60,8 +72,10 @@ def log() -> None:
         console.print("No message pairs found in active history.")
 
     all_paired_indices = {idx for _, pair in all_pairs_with_indices for idx in (pair.user_index, pair.assistant_index)}
+
+    # Dangling messages are active if in active_indices_set and not part of a pair
     active_dangling_messages = [
-        msg for i, msg in enumerate(chat_history) if i not in all_paired_indices and i >= start_index
+        msg for i, msg in enumerate(chat_history) if i not in all_paired_indices and i in active_indices_set
     ]
 
     if active_dangling_messages:

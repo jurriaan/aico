@@ -1,17 +1,20 @@
 import contextlib
 import sys
 from collections.abc import Sequence
+from typing import Literal, cast
 
 from rich.console import Console, Group, RenderableType
 from rich.markdown import Markdown
 from rich.syntax import Syntax
 from rich.text import Text
 
+from aico.core.session_context import active_message_indices
 from aico.lib.models import (
     AssistantChatMessage,
     ChatMessageHistoryItem,
     DisplayItem,
     LLMChatMessage,
+    Mode,
     SessionData,
     TokenUsage,
     UserChatMessage,
@@ -37,10 +40,10 @@ def is_input_terminal() -> bool:
 
 def get_active_history(session_data: SessionData) -> list[ChatMessageHistoryItem]:
     """
-    Returns the active slice of chat history based on the start index and excluded messages.
+    Returns the active slice of chat history based on pair-centric and legacy boundaries.
     """
-    potential_context_slice = session_data.chat_history[session_data.history_start_index :]
-    return [msg for msg in potential_context_slice if not msg.is_excluded]
+    indices = active_message_indices(session_data, include_dangling=True)
+    return [session_data.chat_history[i] for i in indices]
 
 
 def reconstruct_historical_messages(
@@ -103,26 +106,27 @@ def render_display_items_to_rich(items: Sequence[DisplayItem]) -> Group:
 
 
 def reconstruct_display_content_for_piping(
-    display_content: list[DisplayItem] | str | None, mode: str, unified_diff: str | None
+    display_content: list[DisplayItem] | str | None,
+    mode: Mode | Literal["diff", "conversation", "raw"],
+    unified_diff: str | None,
 ) -> str:
     """
     Reconstructs the final string content to print to stdout for non-TTY (piped) output,
     ensuring the contract for each mode is respected.
     """
-    # Strict Contract: For 'gen' commands, always print the diff.
-    if mode == "diff":
+    mode_value: str = mode.value if isinstance(mode, Mode) else str(mode)
+
+    # Strict contract for 'gen' (diff) mode: only print the unified diff; otherwise empty.
+    if mode_value == "diff":
         return unified_diff or ""
 
-    # Flexible Contract: For 'ask' or other modes, prioritize a valid diff,
-    # but fall back to the display_content for conversations or errors.
+    # Flexible contract for other modes: prefer a valid diff, else fall back to display content.
     if unified_diff:
         return unified_diff
 
     if display_content:
         if isinstance(display_content, list):
-            # New format: reconstruct the string from display items
             return "".join(item["content"] for item in display_content)
-        # Old format: print the string directly
         return display_content
 
     return ""
@@ -177,3 +181,13 @@ def calculate_and_display_cost(
         print(info_str, file=sys.stderr)
 
     return message_cost
+
+
+def count_tokens_for_messages(model: str, messages: list[LLMChatMessage]) -> int:
+    """
+    Counts the total number of tokens in a list of messages.
+    Each message is expected to be a dictionary with 'role' and 'content' keys.
+    """
+    import litellm
+
+    return cast(int, litellm.token_counter(model=model, messages=messages))  # pyright: ignore[reportPrivateImportUsage,  reportUnknownMemberType, reportUnnecessaryCast]

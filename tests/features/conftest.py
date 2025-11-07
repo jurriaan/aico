@@ -15,7 +15,7 @@ from pytest_bdd import exceptions, gherkin_parser, given, parsers, then, when
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
-from aico.index_logic import find_message_pairs
+from aico.core.session_context import find_message_pairs
 from aico.lib.models import (
     AssistantChatMessage,
     LiteLLMChoiceContainer,
@@ -200,9 +200,8 @@ def given_llm_will_stream_response(mocker: MockerFixture, docstring: str) -> Non
 
 @given("for this scenario, the token counter will report pre-defined counts")
 def given_mocked_token_counts(mocker: MockerFixture) -> None:
-    # Based on the scenario description for the token breakdown, we mock the side effects
-    # of `litellm.token_counter` in the order it's called in `commands/status.py`.
-    mock_token_counter = mocker.patch("aico.commands.status._count_tokens")
+    # Mock the centralized token counting helper used by `status`
+    mock_token_counter = mocker.patch("aico.utils.count_tokens_for_messages")
     mock_token_counter.side_effect = [
         100,  # system prompt
         40,  # alignment prompt 1

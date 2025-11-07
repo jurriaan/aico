@@ -1,9 +1,9 @@
 from collections.abc import Mapping, Sequence
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Literal, Protocol, TypedDict, runtime_checkable
+from typing import Literal, Protocol, TypedDict, runtime_checkable
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic.dataclasses import dataclass
 
 
@@ -57,6 +57,11 @@ class DerivedContent:
     display_content: list[DisplayItem] | str | None = None
 
 
+class UserDerivedMeta(BaseModel):
+    passthrough: bool = False
+    piped_content: str | None = None
+
+
 @dataclass(slots=True, frozen=True)
 class AssistantChatMessage:
     role: Literal["assistant"]
@@ -80,12 +85,13 @@ class MessagePairIndices:
     assistant_index: int
 
 
-@dataclass(slots=True)
-class SessionData:
+class SessionData(BaseModel):
     model: str
-    context_files: Annotated[list[str], Field(default_factory=list)]
-    chat_history: Annotated[list[ChatMessageHistoryItem], Field(default_factory=list)]
+    context_files: list[str] = Field(default_factory=list)
+    chat_history: list[ChatMessageHistoryItem] = Field(default_factory=list)
     history_start_index: int = 0
+    history_start_pair: int = 0
+    excluded_pairs: list[int] = Field(default_factory=list)
 
 
 @dataclass(slots=True, frozen=True)
@@ -177,3 +183,13 @@ class AddonInfo:
     path: Path
     help_text: str
     source: Literal["project", "user"]
+
+
+@dataclass(slots=True, frozen=True)
+class InteractionResult:
+    content: str
+    display_items: list[DisplayItem] | None
+    token_usage: TokenUsage | None
+    cost: float | None
+    duration_ms: int
+    unified_diff: str | None

@@ -14,8 +14,12 @@ from aico.commands.edit import edit
 from aico.commands.init import init
 from aico.commands.last import last
 from aico.commands.log import log
+from aico.commands.migrate_shared_history import migrate_shared_history
 from aico.commands.prompt import ask, generate_patch, prompt
 from aico.commands.redo import redo
+from aico.commands.session_fork import session_fork
+from aico.commands.session_list import session_list
+from aico.commands.session_switch import session_switch
 from aico.commands.set_history import set_history
 from aico.commands.status import status
 from aico.commands.undo import undo
@@ -53,6 +57,10 @@ _ = app.command("drop")(drop)
 _ = app.command("init")(init)
 _ = app.command("undo", context_settings={"ignore_unknown_options": True})(undo)
 _ = app.command("redo", context_settings={"ignore_unknown_options": True})(redo)
+_ = app.command("session-list")(session_list)
+_ = app.command("session-switch")(session_switch)
+_ = app.command("session-fork")(session_fork)
+_ = app.command("migrate-shared-history")(migrate_shared_history)
 register_addon_commands(app)
 
 

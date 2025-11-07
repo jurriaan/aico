@@ -2,8 +2,8 @@ from typing import Annotated
 
 import typer
 
-from aico.index_logic import is_pair_excluded, load_session_and_resolve_indices, set_pair_excluded
-from aico.lib.session import save_session
+from aico.core.session_context import is_pair_excluded, set_pair_excluded
+from aico.core.session_persistence import get_persistence, load_session_and_resolve_indices
 
 
 def undo(
@@ -22,13 +22,16 @@ def undo(
     The messages are not removed from the history, but are flagged to be
     ignored when building the context for the next prompt.
     """
-    session_file, session_data, pair_indices, resolved_index = load_session_and_resolve_indices(index)
+    persistence = get_persistence()
+    session_file, session_data, pair_indices, resolved_index = load_session_and_resolve_indices(
+        index, persistence=persistence
+    )
 
     if is_pair_excluded(session_data, pair_indices):
         print(f"Pair at index {resolved_index} is already excluded. No changes made.")
-        return
+        raise typer.Exit(code=0)
 
     _ = set_pair_excluded(session_data, pair_indices, True)
 
-    save_session(session_file, session_data)
+    persistence.save(session_file, session_data)
     print(f"Marked pair at index {resolved_index} as excluded.")

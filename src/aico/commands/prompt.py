@@ -1,215 +1,24 @@
 import sys
-import time
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Annotated
 
-import regex
 import typer
-from rich.console import Console
-from rich.live import Live
 from rich.prompt import Prompt
-from rich.spinner import Spinner
 
-from aico.aico_live_render import AicoLiveRender
-from aico.lib.diffing import (
-    generate_display_items,
-    generate_unified_diff,
-    process_llm_response_stream,
-)
+from aico.core.llm_executor import execute_interaction
+from aico.core.session_persistence import get_persistence
 from aico.lib.models import (
     AssistantChatMessage,
-    ChatMessageHistoryItem,
     DerivedContent,
-    DisplayItem,
-    FileContents,
-    LiteLLMChoiceContainer,
-    LiteLLMUsage,
-    LLMChatMessage,
     Mode,
-    SessionData,
-    TokenUsage,
     UserChatMessage,
-    WarningMessage,
 )
-from aico.lib.session import (
-    build_original_file_contents,
-    load_session,
-    save_session,
-)
-from aico.prompts import ALIGNMENT_PROMPTS, DEFAULT_SYSTEM_PROMPT, DIFF_MODE_INSTRUCTIONS
+from aico.prompts import DEFAULT_SYSTEM_PROMPT
 from aico.utils import (
-    calculate_and_display_cost,
-    get_active_history,
     is_input_terminal,
     is_terminal,
     reconstruct_display_content_for_piping,
-    reconstruct_historical_messages,
-    render_display_items_to_rich,
 )
-
-
-def _build_token_usage(usage: LiteLLMUsage) -> TokenUsage | None:
-    """
-    Converts a litellm usage object to our TokenUsage model.
-    """
-    return TokenUsage(
-        prompt_tokens=usage.prompt_tokens,
-        completion_tokens=usage.completion_tokens,
-        total_tokens=usage.total_tokens,
-    )
-
-
-def _process_chunk(chunk: object) -> tuple[str | None, TokenUsage | None, str | None]:
-    token_usage: TokenUsage | None = None
-    if (usage := getattr(chunk, "usage", None)) and isinstance(usage, LiteLLMUsage):
-        token_usage = _build_token_usage(usage)
-    if isinstance(chunk, LiteLLMChoiceContainer) and chunk.choices and (delta := chunk.choices[0].delta):
-        return delta.content, token_usage, getattr(delta, "reasoning_content", None)
-    return None, token_usage, None
-
-
-def _handle_unified_streaming(
-    model_name: str,
-    chat_history: list[ChatMessageHistoryItem],
-    history_start_index: int,
-    original_file_contents: FileContents,
-    messages: list[LLMChatMessage],
-    session_root: Path,
-) -> tuple[str, list[DisplayItem] | None, TokenUsage | None, float | None]:
-    """
-    Handles the streaming logic for all modes, attempting to render diffs live,
-    and collecting all warnings to display at the end.
-    """
-    import litellm
-
-    full_llm_response_buffer: str = ""
-    token_usage: TokenUsage | None = None
-    live: Live | None = None
-
-    rich_spinner: Spinner = Spinner("dots", "Generating response...")
-    if is_terminal():
-        live = Live(console=Console(), auto_refresh=True)
-        # Scrolling to the end automatically by using a custom LiveRender
-        live._live_render = AicoLiveRender(live.get_renderable())  # pyright: ignore[reportPrivateUsage]
-        live.start()
-        live.update(rich_spinner, refresh=True)
-
-    stream = litellm.completion(  # pyright: ignore[reportUnknownMemberType]
-        model=model_name,
-        messages=messages,
-        stream=True,
-        stream_options={"include_usage": True},
-    )
-
-    if live:
-        reasoning_buffer = ""
-        for chunk in stream:
-            delta, token_usage, reasoning_content = _process_chunk(chunk)
-            if delta:
-                full_llm_response_buffer += delta
-
-                display_items = generate_display_items(original_file_contents, full_llm_response_buffer, session_root)
-                renderable_group = render_display_items_to_rich(display_items)
-
-                live.update(renderable_group, refresh=True)
-
-            elif not full_llm_response_buffer and reasoning_content:
-                # Buffer reasoning content and update spinner with the last found header.
-                reasoning_buffer += reasoning_content
-                headers = list(regex.finditer(r"^\*\*(.*?)\*\*", reasoning_buffer, regex.MULTILINE))
-                if headers:
-                    last_header_text = headers[-1].group(1)
-                    if last_header_text:
-                        rich_spinner.update(text=last_header_text)
-        live.stop()
-    else:
-        for chunk in stream:
-            delta, token_usage, _ = _process_chunk(chunk)
-            if delta:
-                full_llm_response_buffer += delta
-
-    if (usage := getattr(stream, "usage", None)) and not token_usage and isinstance(usage, LiteLLMUsage):
-        token_usage = _build_token_usage(usage)
-
-    # Process the final response to collect and display warnings
-    if full_llm_response_buffer:
-        # The stream processor is now self-contained for state, so we can call it directly.
-        processed_stream = process_llm_response_stream(original_file_contents, full_llm_response_buffer, session_root)
-        warnings_to_display = [item.text for item in processed_stream if isinstance(item, WarningMessage)]
-        if warnings_to_display:
-            # Add a newline to separate from live content if necessary
-            if is_terminal():
-                print()
-            console = Console(stderr=True)
-            console.print("[yellow]Warnings:[/yellow]")
-            for warning in warnings_to_display:
-                console.print(f"[yellow]{warning}[/yellow]")
-
-    final_display_items = generate_display_items(original_file_contents, full_llm_response_buffer, session_root)
-
-    message_cost: float | None = None
-    if token_usage:
-        message_cost = calculate_and_display_cost(token_usage, model_name, chat_history, history_start_index)
-
-    return full_llm_response_buffer, final_display_items or None, token_usage, message_cost
-
-
-def _build_messages(
-    session_data: SessionData,
-    system_prompt: str,
-    prompt_text: str,
-    piped_content: str | None,
-    mode: Mode,
-    original_file_contents: FileContents,
-    passthrough: bool,
-    no_history: bool,
-) -> list[LLMChatMessage]:
-    messages: list[LLMChatMessage] = []
-
-    active_history = [] if no_history else get_active_history(session_data)
-
-    if passthrough:
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-
-        messages.extend(reconstruct_historical_messages(active_history))
-        messages.append({"role": "user", "content": prompt_text})
-        return messages
-
-    # --- Standard (non-passthrough) logic ---
-    if mode == Mode.DIFF:
-        system_prompt += DIFF_MODE_INSTRUCTIONS
-
-    user_prompt_parts: list[str] = []
-    if original_file_contents:
-        context_str = "<context>\n"
-        for relative_path_str, content in original_file_contents.items():
-            context_str += f'  <file path="{relative_path_str}">\n{content}\n</file>\n'
-        context_str += "</context>\n"
-        user_prompt_parts.append(context_str)
-
-    if piped_content:
-        user_prompt_parts.append(f"<stdin_content>\n{piped_content}\n</stdin_content>\n")
-
-    user_prompt_parts.append(f"<prompt>\n{prompt_text}\n</prompt>")
-    user_prompt_xml = "".join(user_prompt_parts)
-
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-
-    messages.extend(reconstruct_historical_messages(active_history))
-
-    # Inject alignment prompts to enforce mode-specific behavior.
-    # Note: These are always injected for `ask` and `gen` modes (unless --passthrough is used),
-    # even if a custom system prompt is provided. This ensures the AI adheres to the
-    # intended conversational or code-generation role.
-    if mode in ALIGNMENT_PROMPTS:
-        messages.extend([{"role": msg.role, "content": msg.content} for msg in ALIGNMENT_PROMPTS[mode]])
-
-    messages.append({"role": "user", "content": user_prompt_xml})
-
-    return messages
 
 
 def _invoke_llm_logic(
@@ -223,10 +32,10 @@ def _invoke_llm_logic(
     """
     Core logic for invoking the LLM that can be shared by all command wrappers.
     """
-    session_file, session_data = load_session()
+    persistence = get_persistence()
+    session_file, session_data = persistence.load()
     session_root = session_file.parent
     timestamp = datetime.now(UTC).isoformat()
-    model_name = model or session_data.model
 
     primary_prompt: str
     secondary_piped_content: str | None = None
@@ -250,65 +59,34 @@ def _invoke_llm_logic(
             print("Error: Prompt is required.", file=sys.stderr)
             raise typer.Exit(code=1)
 
-    original_file_contents: FileContents
-    if passthrough:
-        original_file_contents = {}
-    else:
-        original_file_contents = build_original_file_contents(
-            context_files=session_data.context_files, session_root=session_root
-        )
-
-    messages = _build_messages(
-        session_data=session_data,
-        system_prompt=system_prompt,
-        prompt_text=primary_prompt,
-        piped_content=secondary_piped_content,
-        mode=mode,
-        original_file_contents=original_file_contents,
-        passthrough=passthrough,
-        no_history=no_history,
-    )
-
-    llm_response_content: str = ""
-    display_items: list[DisplayItem] | None = None
-    token_usage: TokenUsage | None = None
-    message_cost: float | None = None
-    duration_ms: int = -1
-
     try:
-        start_time = time.monotonic()
-        (
-            llm_response_content,
-            display_items,
-            token_usage,
-            message_cost,
-        ) = _handle_unified_streaming(
-            model_name,
-            session_data.chat_history,
-            session_data.history_start_index,
-            original_file_contents,
-            messages,
+        interaction_result = execute_interaction(
+            session_data=session_data,
+            system_prompt=system_prompt,
+            prompt_text=primary_prompt,
+            piped_content=secondary_piped_content,
+            mode=mode,
+            passthrough=passthrough,
+            no_history=no_history,
             session_root=session_root,
+            model_override=model,
         )
-        duration_ms = int((time.monotonic() - start_time) * 1000)
     except Exception as e:
-        # Specific error handling can be improved in handlers if needed
         print(f"Error calling LLM API: {e}", file=sys.stderr)
         raise typer.Exit(code=1) from e
 
-    # 6. Process Output for Storage and Non-TTY
-    # The `display_content` is now a structured list generated by the streaming handler.
-    # We only need to generate the `unified_diff` for saving and non-TTY output.
-    unified_diff = generate_unified_diff(original_file_contents, llm_response_content, session_root)
-
-    # 7. Update State & Save
     assistant_response_timestamp = datetime.now(UTC).isoformat()
     derived_content: DerivedContent | None = None
 
     # Only create derived content if there is a meaningful diff, or if the structured
     # display items are different from the raw LLM response (e.g., contain warnings or diffs).
-    if unified_diff or (display_items and "".join(item["content"] for item in display_items) != llm_response_content):
-        derived_content = DerivedContent(unified_diff=unified_diff, display_content=display_items)
+    if interaction_result.unified_diff or (
+        interaction_result.display_items
+        and "".join(item["content"] for item in interaction_result.display_items) != interaction_result.content
+    ):
+        derived_content = DerivedContent(
+            unified_diff=interaction_result.unified_diff, display_content=interaction_result.display_items
+        )
 
     session_data.chat_history.append(
         UserChatMessage(
@@ -323,27 +101,26 @@ def _invoke_llm_logic(
     session_data.chat_history.append(
         AssistantChatMessage(
             role="assistant",
-            content=llm_response_content,
+            content=interaction_result.content,
             mode=mode,
-            token_usage=token_usage,
-            cost=message_cost,
-            model=model_name,
+            token_usage=interaction_result.token_usage,
+            cost=interaction_result.cost,
+            model=model or session_data.model,
             timestamp=assistant_response_timestamp,
-            duration_ms=duration_ms,
+            duration_ms=interaction_result.duration_ms,
             derived=derived_content,
         )
     )
 
-    save_session(session_file, session_data)
+    persistence.save(session_file, session_data)
 
-    # 8. Print Final Output
-    # This phase handles non-interactive output. All interactive output is handled
-    # by the streaming functions.
     if not is_terminal():
         if passthrough:
-            print(llm_response_content)
+            print(interaction_result.content)
         else:
-            output_content = reconstruct_display_content_for_piping(display_items, mode, unified_diff)
+            output_content = reconstruct_display_content_for_piping(
+                interaction_result.display_items, mode, interaction_result.unified_diff
+            )
             print(output_content, end="")
 
 

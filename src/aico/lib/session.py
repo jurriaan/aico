@@ -56,7 +56,7 @@ def load_session() -> tuple[Path, SessionData]:
 
     except (ValidationError, JSONDecodeError) as e:
         print("Error: Session file is corrupt or has an invalid format", file=sys.stderr)
-        print(e, sys.stderr)
+        print(e, file=sys.stderr)
         raise typer.Exit(code=1) from e
 
     return session_file, session_data

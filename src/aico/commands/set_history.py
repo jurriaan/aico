@@ -2,8 +2,8 @@ from typing import Annotated
 
 import typer
 
-from aico.index_logic import find_message_pairs, resolve_history_start_index
-from aico.lib.session import load_session, save_session
+from aico.core.session_context import find_message_pairs, resolve_history_start_index
+from aico.core.session_persistence import get_persistence
 
 
 def set_history(
@@ -26,7 +26,8 @@ def set_history(
     - `aico set-history 0` makes the full history active.
     - `aico set-history clear` clears the context for the next prompt.
     """
-    session_file, session_data = load_session()
+    persistence = get_persistence()
+    session_file, session_data = persistence.load()
     chat_history = session_data.chat_history
 
     # Handle the 'clear' keyword before numeric resolution
@@ -37,7 +38,11 @@ def set_history(
     target_message_index, resolved_index = resolve_history_start_index(chat_history, pair_index_str)
 
     session_data.history_start_index = target_message_index
-    save_session(session_file, session_data)
+    # Also set pair-centric field for canonical state
+    session_data.history_start_pair = (
+        resolved_index if target_message_index != len(chat_history) else len(find_message_pairs(chat_history))
+    )
+    persistence.save(session_file, session_data)
 
     # Determine the appropriate success message without re-validating input
     pairs = find_message_pairs(chat_history)

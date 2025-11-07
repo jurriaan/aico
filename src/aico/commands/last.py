@@ -5,7 +5,7 @@ import typer
 from rich.console import Console
 from rich.markdown import Markdown
 
-from aico.index_logic import load_session_and_resolve_indices
+from aico.core.session_persistence import load_session_and_resolve_indices
 from aico.lib.diffing import (
     generate_display_items,
     generate_unified_diff,

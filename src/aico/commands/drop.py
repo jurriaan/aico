@@ -4,11 +4,10 @@ from typing import Annotated
 
 import typer
 
+from aico.core.session_persistence import get_persistence
 from aico.lib.session import (
     complete_files_in_context,
     get_relative_path_or_error,
-    load_session,
-    save_session,
 )
 
 
@@ -21,7 +20,8 @@ def drop(
     """
     Remove file(s) from the session context.
     """
-    session_file, session_data = load_session()
+    persistence = get_persistence()
+    session_file, session_data = persistence.load()
     session_root = session_file.parent
 
     files_were_dropped = False
@@ -46,7 +46,7 @@ def drop(
 
     if files_were_dropped:
         session_data.context_files = sorted(new_context_files)
-        save_session(session_file, session_data)
+        persistence.save(session_file, session_data)
 
     if errors_found:
         raise typer.Exit(code=1)

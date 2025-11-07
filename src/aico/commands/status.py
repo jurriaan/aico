@@ -1,6 +1,5 @@
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import cast
 
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -9,11 +8,11 @@ from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
-from aico.index_logic import find_message_pairs, is_pair_excluded
-from aico.lib.models import LLMChatMessage, SessionData
-from aico.lib.session import load_session
+from aico.core.session_context import summarize_active_window
+from aico.core.session_persistence import get_persistence
+from aico.lib.models import SessionData
 from aico.prompts import ALIGNMENT_PROMPTS, DEFAULT_SYSTEM_PROMPT, DIFF_MODE_INSTRUCTIONS
-from aico.utils import get_active_history, reconstruct_historical_messages
+import aico.utils as utils
 
 
 @dataclass(slots=True)
@@ -24,60 +23,38 @@ class _TokenInfo:
 
 
 def _get_history_summary_text(session_data: SessionData) -> Text | None:
-    history = session_data.chat_history
-    if not history:
+    summary = summarize_active_window(session_data)
+    if summary is None:
         return None
-
-    all_pairs_with_indices = list(enumerate(find_message_pairs(history)))
-    start_index = session_data.history_start_index
-    active_pairs_with_indices = [(pidx, p) for pidx, p in all_pairs_with_indices if p.user_index >= start_index]
-
-    if not active_pairs_with_indices:
-        if get_active_history(session_data):
-            return Text("  └─ Active context contains partial/dangling messages.", style="dim")
-        return None
-
-    active_window_pairs = len(active_pairs_with_indices)
-    excluded_in_window = sum(1 for _, pair in active_pairs_with_indices if is_pair_excluded(session_data, pair))
-    pairs_to_be_sent = active_window_pairs - excluded_in_window
-
-    plural_s = "s" if active_window_pairs != 1 else ""
-    active_start_id = active_pairs_with_indices[0][0]
-    active_end_id = active_pairs_with_indices[-1][0]
+    if summary.active_pairs == 0 and summary.has_active_dangling:
+        return Text("  └─ Active context contains partial/dangling messages.", style="dim")
+    plural_s = "s" if summary.active_pairs != 1 else ""
     window_id_str = (
-        f"ID {active_start_id}" if active_start_id == active_end_id else f"IDs {active_start_id}-{active_end_id}"
+        f"ID {summary.active_start_id}"
+        if summary.active_start_id == summary.active_end_id
+        else f"IDs {summary.active_start_id}-{summary.active_end_id}"
     )
-
-    excluded_str = f" ({excluded_in_window} excluded via `aico undo`)" if excluded_in_window else ""
-
+    excluded_str = f" ({summary.excluded_in_window} excluded via `aico undo`)" if summary.excluded_in_window else ""
     return Text.assemble(
         ("  └─ ", "dim"),
         (
-            f"Active window: {active_window_pairs} pair{plural_s} ({window_id_str}), "
-            + f"{pairs_to_be_sent} sent{excluded_str}.\n",
+            (
+                f"Active window: {summary.active_pairs} pair{plural_s} ({window_id_str}), "
+                f"{summary.pairs_sent} sent{excluded_str}.\n"
+            ),
             "dim",
         ),
         ("     (Use `aico log`, `undo`, and `set-history` to manage)", "dim italic"),
     )
 
 
-def _count_tokens(model: str, messages: list[LLMChatMessage]) -> int:
-    """
-    Counts the total number of tokens in a list of messages.
-    Each message is expected to be a dictionary with 'role' and 'content' keys.
-    """
-    import litellm
-
-    return cast(int, litellm.token_counter(model=model, messages=messages))  # pyright: ignore[reportPrivateImportUsage,  reportUnknownMemberType, reportUnnecessaryCast]
-
-
 def status() -> None:  # noqa: C901
     """
     Show session status and token usage.
     """
-    session_file, session_data = load_session()
+    persistence = get_persistence()
+    session_file, session_data = persistence.load()
     session_root = session_file.parent
-    console = Console()
     console = Console()
 
     components: list[_TokenInfo] = []
@@ -85,7 +62,9 @@ def status() -> None:  # noqa: C901
 
     # 1. System Prompt
     system_prompt = DEFAULT_SYSTEM_PROMPT + DIFF_MODE_INSTRUCTIONS
-    system_prompt_tokens = _count_tokens(session_data.model, [{"role": "system", "content": system_prompt}])
+    system_prompt_tokens = utils.count_tokens_for_messages(
+        session_data.model, [{"role": "system", "content": system_prompt}]
+    )
     components.append(_TokenInfo(description="system prompt", tokens=system_prompt_tokens))
     total_tokens += system_prompt_tokens
 
@@ -93,7 +72,9 @@ def status() -> None:  # noqa: C901
     alignment_prompts_tokens = 0
     if ALIGNMENT_PROMPTS:
         alignment_prompts_tokens = max(
-            _count_tokens(session_data.model, list({"role": msg.role, "content": msg.content} for msg in ps))
+            utils.count_tokens_for_messages(
+                session_data.model, list({"role": msg.role, "content": msg.content} for msg in ps)
+            )
             for ps in ALIGNMENT_PROMPTS.values()
         )
     if alignment_prompts_tokens > 0:
@@ -101,11 +82,11 @@ def status() -> None:  # noqa: C901
         total_tokens += alignment_prompts_tokens
 
     # 3. Chat History
-    active_history = get_active_history(session_data)
+    active_history = utils.get_active_history(session_data)
     history_tokens = 0
     if active_history:
-        history_messages = reconstruct_historical_messages(active_history)
-        history_tokens = _count_tokens(session_data.model, history_messages)
+        history_messages = utils.reconstruct_historical_messages(active_history)
+        history_tokens = utils.count_tokens_for_messages(session_data.model, history_messages)
     history_component = _TokenInfo(description="chat history", tokens=history_tokens)
     total_tokens += history_tokens
 
@@ -117,7 +98,9 @@ def status() -> None:  # noqa: C901
             file_path = session_root / file_path_str
             content = file_path.read_text()
             file_prompt_wrapper = f'<file path="{file_path_str}">\n{content}\n</file>\n'
-            file_tokens = _count_tokens(session_data.model, [{"role": "user", "content": file_prompt_wrapper}])
+            file_tokens = utils.count_tokens_for_messages(
+                session_data.model, [{"role": "user", "content": file_prompt_wrapper}]
+            )
             file_components.append(_TokenInfo(description=file_path_str, tokens=file_tokens))
             total_tokens += file_tokens
         except FileNotFoundError:

@@ -45,7 +45,9 @@ def session_for_log_tests(tmp_path: Path) -> Iterator[Path]:
             ),
         ]
         # Set start index to 2, so the first pair is inactive
-        session_data = SessionData(model="test-model", chat_history=history, context_files=[], history_start_index=2)
+        session_data = SessionData(
+            model="test-model", chat_history=history, context_files=[], history_start_index=2, history_start_pair=1
+        )
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, session_data)
         yield session_file
