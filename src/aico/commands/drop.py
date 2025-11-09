@@ -46,7 +46,7 @@ def drop(
 
     if files_were_dropped:
         session_data.context_files = sorted(new_context_files)
-        persistence.save(session_file, session_data)
+        persistence.update_view_metadata(context_files=session_data.context_files)
 
     if errors_found:
         raise typer.Exit(code=1)

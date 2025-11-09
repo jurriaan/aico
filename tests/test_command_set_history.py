@@ -43,9 +43,9 @@ def test_set_history_with_negative_index_argument(tmp_path: Path) -> None:
         assert result.exit_code == 0
         assert "History context will now start at pair 3." in result.stdout
 
-        # AND the history start index is set to message index 6 (start of pair 3)
+        # AND the history start pair is set to index 3
         updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
-        assert updated_session_data.history_start_index == 6
+        assert updated_session_data.history_start_pair == 3
 
 
 def test_set_history_with_positive_pair_index(tmp_path: Path) -> None:
@@ -76,9 +76,9 @@ def test_set_history_with_positive_pair_index(tmp_path: Path) -> None:
         assert result.exit_code == 0
         assert "History context will now start at pair 1." in result.stdout
 
-        # AND the history start index is set to message index 2 (start of pair 1)
+        # AND the history start pair is set to index 1
         updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
-        assert updated_session_data.history_start_index == 2
+        assert updated_session_data.history_start_pair == 1
 
 
 def test_set_history_to_clear_context(tmp_path: Path) -> None:
@@ -109,9 +109,9 @@ def test_set_history_to_clear_context(tmp_path: Path) -> None:
         assert result.exit_code == 0
         assert "History context cleared (will start after the last conversation)." in result.stdout
 
-        # AND the history start index is set to 4 (the total number of messages)
+        # AND the history start pair is set to 2 (num_pairs)
         updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
-        assert updated_session_data.history_start_index == 4
+        assert updated_session_data.history_start_pair == 2
 
 
 @pytest.mark.parametrize(
@@ -145,10 +145,12 @@ def test_set_history_fails_with_invalid_index(tmp_path: Path, invalid_input: str
                 )
             )
 
-        session_data = SessionData(model="test-model", chat_history=history, context_files=[], history_start_index=1)
+        session_data = SessionData(
+            model="test-model", chat_history=history, context_files=[], history_start_index=1, history_start_pair=1
+        )
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, session_data)
-        original_start_index = session_data.history_start_index
+        original_start_pair = session_data.history_start_pair
 
         # WHEN `aico set-history` is run with an invalid index
         result = runner.invoke(app, ["set-history", invalid_input])
@@ -157,9 +159,9 @@ def test_set_history_fails_with_invalid_index(tmp_path: Path, invalid_input: str
         assert result.exit_code == 1
         assert error_message in result.stderr
 
-        # AND the history start index remains unchanged
+        # AND the history start pair remains unchanged
         updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
-        assert updated_session_data.history_start_index == original_start_index
+        assert updated_session_data.history_start_pair == original_start_pair
 
 
 def test_set_history_fails_without_session(tmp_path: Path) -> None:
@@ -198,7 +200,7 @@ def test_set_history_with_zero_sets_index_to_zero(tmp_path: Path) -> None:
             model="test-model",
             context_files=[],
             chat_history=history,
-            history_start_index=4,  # Start at pair 2 (message index 4) to test reset
+            history_start_pair=2,  # Start at pair 2 to test reset
         )
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, session_data)
@@ -210,9 +212,11 @@ def test_set_history_with_zero_sets_index_to_zero(tmp_path: Path) -> None:
         assert result.exit_code == 0
         assert "History context reset. Full chat history is now active." in result.stdout
 
-        # AND the history start index is now 0
+        # AND the history start pair is now 0
         updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
-        assert updated_session_data.history_start_index == 0
+        assert updated_session_data.history_start_pair == 0
+        # Re-derive the in-memory index to accurately test get_active_history
+        updated_session_data.history_start_index = 0
         active_history = get_active_history(updated_session_data)
         assert len(active_history) == 10
 
@@ -245,6 +249,6 @@ def test_set_history_with_clear_keyword(tmp_path: Path) -> None:
         assert result.exit_code == 0
         assert "History context cleared (will start after the last conversation)." in result.stdout
 
-        # AND the history start index is set to 4 (the total number of messages)
+        # AND the history start pair is set to 2 (the total number of pairs)
         updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
-        assert updated_session_data.history_start_index == 4
+        assert updated_session_data.history_start_pair == 2

@@ -39,7 +39,7 @@ def add(file_paths: list[Path]) -> None:
 
     if files_were_added:
         session_data.context_files.sort()
-        persistence.save(session_file, session_data)
+        persistence.update_view_metadata(context_files=session_data.context_files)
 
     if errors_found:
         raise typer.Exit(code=1)

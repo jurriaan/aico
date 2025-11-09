@@ -8,11 +8,11 @@ from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
+import aico.utils as utils
 from aico.core.session_context import summarize_active_window
 from aico.core.session_persistence import get_persistence
 from aico.lib.models import SessionData
 from aico.prompts import ALIGNMENT_PROMPTS, DEFAULT_SYSTEM_PROMPT, DIFF_MODE_INSTRUCTIONS
-import aico.utils as utils
 
 
 @dataclass(slots=True)

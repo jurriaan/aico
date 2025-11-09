@@ -80,6 +80,7 @@ def edit(
             raise typer.Exit(code=0)
 
         updated_message = replace(target_message, content=new_content)
+        new_asst_metadata: AssistantChatMessage | None = None
 
         # Invalidate derived content if editing an assistant response
         if isinstance(updated_message, AssistantChatMessage):
@@ -90,9 +91,9 @@ def edit(
                 session_root=session_root,
             )
             updated_message = replace(updated_message, derived=new_derived_content)
+            new_asst_metadata = updated_message
 
-        session_data.chat_history[target_message_index] = updated_message
-        persistence.save(session_file, session_data)
+        persistence.edit_message(target_message_index, new_content, new_asst_metadata)
 
         print(f"Updated {message_type} for message pair {resolved_pair_index}.")
 

@@ -23,7 +23,7 @@ def undo(
     ignored when building the context for the next prompt.
     """
     persistence = get_persistence()
-    session_file, session_data, pair_indices, resolved_index = load_session_and_resolve_indices(
+    _session_file, session_data, pair_indices, resolved_index = load_session_and_resolve_indices(
         index, persistence=persistence
     )
 
@@ -33,5 +33,5 @@ def undo(
 
     _ = set_pair_excluded(session_data, pair_indices, True)
 
-    persistence.save(session_file, session_data)
+    persistence.update_view_metadata(excluded_pairs=session_data.excluded_pairs)
     print(f"Marked pair at index {resolved_index} as excluded.")

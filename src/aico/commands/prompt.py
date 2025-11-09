@@ -88,31 +88,27 @@ def _invoke_llm_logic(
             unified_diff=interaction_result.unified_diff, display_content=interaction_result.display_items
         )
 
-    session_data.chat_history.append(
-        UserChatMessage(
-            role="user",
-            content=primary_prompt,
-            piped_content=secondary_piped_content,
-            mode=mode,
-            timestamp=timestamp,
-            passthrough=passthrough,
-        )
+    user_msg = UserChatMessage(
+        role="user",
+        content=primary_prompt,
+        piped_content=secondary_piped_content,
+        mode=mode,
+        timestamp=timestamp,
+        passthrough=passthrough,
     )
-    session_data.chat_history.append(
-        AssistantChatMessage(
-            role="assistant",
-            content=interaction_result.content,
-            mode=mode,
-            token_usage=interaction_result.token_usage,
-            cost=interaction_result.cost,
-            model=model or session_data.model,
-            timestamp=assistant_response_timestamp,
-            duration_ms=interaction_result.duration_ms,
-            derived=derived_content,
-        )
+    asst_msg = AssistantChatMessage(
+        role="assistant",
+        content=interaction_result.content,
+        mode=mode,
+        token_usage=interaction_result.token_usage,
+        cost=interaction_result.cost,
+        model=model or session_data.model,
+        timestamp=assistant_response_timestamp,
+        duration_ms=interaction_result.duration_ms,
+        derived=derived_content,
     )
 
-    persistence.save(session_file, session_data)
+    persistence.append_pair(user_msg, asst_msg)
 
     if not is_terminal():
         if passthrough:

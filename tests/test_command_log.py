@@ -15,7 +15,7 @@ runner = CliRunner()
 
 @pytest.fixture
 def session_for_log_tests(tmp_path: Path) -> Iterator[Path]:
-    # GIVEN a session with 3 pairs, a dangling message, and start_index > 0
+    # GIVEN a session with 3 pairs, a dangling message after the active window start, and start_index > 0
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         history: list[ChatMessageHistoryItem] = [
             # Pair 0 (inactive)
@@ -23,8 +23,6 @@ def session_for_log_tests(tmp_path: Path) -> Iterator[Path]:
             AssistantChatMessage(
                 role="assistant", content="resp 0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=1
             ),
-            # Dangling user message (active)
-            UserChatMessage(role="user", content="dangling prompt", mode=Mode.CONVERSATION, timestamp="t1"),
             # Pair 1 (active, excluded)
             UserChatMessage(
                 role="user", content="prompt 1 excluded", mode=Mode.CONVERSATION, timestamp="t2", is_excluded=True
@@ -43,6 +41,8 @@ def session_for_log_tests(tmp_path: Path) -> Iterator[Path]:
             AssistantChatMessage(
                 role="assistant", content="resp 2", mode=Mode.CONVERSATION, timestamp="t3", model="m", duration_ms=1
             ),
+            # Dangling user message (active, after start)
+            UserChatMessage(role="user", content="dangling prompt", mode=Mode.CONVERSATION, timestamp="t4"),
         ]
         # Set start index to 2, so the first pair is inactive
         session_data = SessionData(
@@ -68,20 +68,17 @@ def test_log_displays_only_active_history(session_for_log_tests: Path) -> None:
     assert "prompt0" not in output
     assert "assistantresp0" not in output
 
-    # AND it shows the active excluded pair (ID 1) without a marker
+    # AND it shows the active excluded pair (ID 1)
     assert "1userprompt1excluded" in output
 
-    # AND it shows the active normal pair (ID 2) without a marker, truncating the prompt
+    # AND it shows the active normal pair (ID 2), truncating the prompt
     assert "2userprompt2" in output
     assert "secondline" not in output
     assert "assistantresp2" in output
 
-    # AND no markers are present
-    assert ">" not in output
-
     # AND it shows the dangling message section for ACTIVE dangling messages
-    assert "Danglingmessagesinactivecontext" in output
-    assert "danglingprompt" in output
+    assert "Danglingmessagesinactivecontext:" in output
+    assert "user:danglingprompt" in output
 
 
 def test_log_with_empty_history(tmp_path: Path) -> None:

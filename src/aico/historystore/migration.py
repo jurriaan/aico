@@ -181,6 +181,9 @@ def to_legacy_session(store: HistoryStore, view: SessionView) -> dict[str, objec
         excluded_pairs=list(view.excluded_pairs),
     )
 
-    # Dump the complete SessionData model to a dictionary that matches the old format
+    # Dump the complete SessionData model to a dictionary that matches the old format.
+    # We must manually add back `history_start_index` because it's excluded from serialization by default
+    # in the SessionData model for forward compatibility.
     legacy_dict: dict[str, object] = session_data.model_dump(exclude={"history_start_pair", "excluded_pairs"})
+    legacy_dict["history_start_index"] = history_start_index
     return legacy_dict

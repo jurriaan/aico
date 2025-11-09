@@ -43,7 +43,7 @@ class UserChatMessage:
     timestamp: str
     piped_content: str | None = None
     passthrough: bool = False
-    is_excluded: bool = False
+    is_excluded: bool = False  # Legacy flag; kept for in-memory compatibility
 
 
 class DisplayItem(TypedDict):
@@ -73,7 +73,7 @@ class AssistantChatMessage:
     derived: DerivedContent | None = None
     token_usage: TokenUsage | None = None
     cost: float | None = None
-    is_excluded: bool = False
+    is_excluded: bool = False  # Legacy flag; kept for in-memory compatibility
 
 
 type ChatMessageHistoryItem = UserChatMessage | AssistantChatMessage
@@ -89,7 +89,7 @@ class SessionData(BaseModel):
     model: str
     context_files: list[str] = Field(default_factory=list)
     chat_history: list[ChatMessageHistoryItem] = Field(default_factory=list)
-    history_start_index: int = 0
+    history_start_index: int = Field(default=0, exclude=True)  # Legacy field, not for serialization
     history_start_pair: int = 0
     excluded_pairs: list[int] = Field(default_factory=list)
 

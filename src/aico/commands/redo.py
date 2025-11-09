@@ -13,7 +13,7 @@ def redo(
     Re-include a message pair in context.
     """
     persistence = get_persistence()
-    session_file, session_data, pair_indices, resolved_index = load_session_and_resolve_indices(
+    _session_file, session_data, pair_indices, resolved_index = load_session_and_resolve_indices(
         index, persistence=persistence
     )
 
@@ -23,6 +23,6 @@ def redo(
 
     _ = set_pair_excluded(session_data, pair_indices, False)
 
-    persistence.save(session_file, session_data)
+    persistence.update_view_metadata(excluded_pairs=session_data.excluded_pairs)
 
     print(f"Re-included pair at index {resolved_index} in context.")

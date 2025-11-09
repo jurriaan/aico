@@ -27,7 +27,7 @@ def set_history(
     - `aico set-history clear` clears the context for the next prompt.
     """
     persistence = get_persistence()
-    session_file, session_data = persistence.load()
+    _session_file, session_data = persistence.load()
     chat_history = session_data.chat_history
 
     # Handle the 'clear' keyword before numeric resolution
@@ -42,7 +42,7 @@ def set_history(
     session_data.history_start_pair = (
         resolved_index if target_message_index != len(chat_history) else len(find_message_pairs(chat_history))
     )
-    persistence.save(session_file, session_data)
+    persistence.update_view_metadata(history_start_pair=session_data.history_start_pair)
 
     # Determine the appropriate success message without re-validating input
     pairs = find_message_pairs(chat_history)

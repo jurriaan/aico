@@ -1,5 +1,6 @@
 import copy
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -14,11 +15,13 @@ from aico.core.session_context import (
 from aico.historystore import (
     HistoryStore,
     append_pair_to_view,
-    edit_message,
     find_message_pairs_in_view,
     load_view,
     reconstruct_chat_history,
     save_view,
+)
+from aico.historystore import (
+    edit_message as edit_message_historystore,
 )
 from aico.historystore.models import HistoryRecord, UserMetaEnvelope
 from aico.historystore.pointer import SessionPointer
@@ -48,33 +51,129 @@ class SessionPersistence(Protocol):
     def save(self, session_file: Path, session_data: SessionData) -> None: ...
 
 
+@runtime_checkable
+class StatefulSessionPersistence(SessionPersistence, Protocol):
+    def append_pair(self, user_msg: UserChatMessage, asst_msg: AssistantChatMessage) -> None: ...
+
+    def edit_message(
+        self,
+        message_index: int,
+        new_content: str,
+        new_metadata: AssistantChatMessage | None = None,
+    ) -> None: ...
+
+    def update_view_metadata(
+        self,
+        *,
+        context_files: list[str] | None = None,
+        model: str | None = None,
+        history_start_pair: int | None = None,
+        excluded_pairs: list[int] | None = None,
+    ) -> None: ...
+
+
 class LegacyJsonPersistence:
+    """
+    Manages session state for the legacy single-file JSON format.
+
+    This class is stateless. Each write operation performs a full load-mutate-save cycle.
+    """
+
     def load(self) -> tuple[Path, SessionData]:
         session_file, session_data = legacy_load_session()
-
-        # --- In-memory upgrade for backward compatibility ---
-        # Derive pair-centric fields from legacy message-centric fields to align
-        # with new logic in `log`, `status`, and `get_active_history`.
         chat_history = session_data.chat_history
-        pairs = find_message_pairs(chat_history)
 
-        # Derive excluded_pairs from per-message flags
-        excluded_from_messages = [
-            idx
-            for idx, p in enumerate(pairs)
-            if chat_history[p.user_index].is_excluded and chat_history[p.assistant_index].is_excluded
-        ]
-        session_data.excluded_pairs = excluded_from_messages
+        # One-way, in-memory upgrade for backward compatibility.
+        # This function derives the canonical pair-centric fields (`excluded_pairs`, `history_start_pair`)
+        # from their legacy counterparts (`is_excluded`, `history_start_index`) if they are present.
+        # It also computes the legacy `history_start_index` from the canonical `history_start_pair`
+        # for in-memory use by other parts of the application.
 
-        # Derive history_start_pair from history_start_index
-        session_data.history_start_pair = map_history_start_index_to_pair(
-            chat_history, session_data.history_start_index
-        )
+        # 1. Derive `excluded_pairs` from legacy `is_excluded` flags if `excluded_pairs` is empty.
+        has_legacy_exclusions = any(msg.is_excluded for msg in chat_history)
+        if not session_data.excluded_pairs and has_legacy_exclusions:
+            pairs = find_message_pairs(chat_history)
+            session_data.excluded_pairs = [
+                idx
+                for idx, p in enumerate(pairs)
+                if chat_history[p.user_index].is_excluded and chat_history[p.assistant_index].is_excluded
+            ]
+
+        # 2. Derive `history_start_pair` from `history_start_index` ONLY if `history_start_pair` is at its
+        # default value, to avoid overwriting a value from a modern session file.
+        if session_data.history_start_pair == 0 and session_data.history_start_index > 0:
+            session_data.history_start_pair = map_history_start_index_to_pair(
+                chat_history, session_data.history_start_index
+            )
+
+        # 3. If history_start_index is not set (i.e., loading a modern session), derive it
+        # from the canonical history_start_pair for in-memory use by legacy logic.
+        if session_data.history_start_index == 0 and session_data.history_start_pair > 0:
+            pairs = find_message_pairs(chat_history)
+            if session_data.history_start_pair < len(pairs):
+                session_data.history_start_index = pairs[session_data.history_start_pair].user_index
+            else:
+                session_data.history_start_index = len(chat_history)
 
         return session_file, session_data
 
     def save(self, session_file: Path, session_data: SessionData) -> None:
+        """Saves session data. Used by `init`."""
         legacy_save_session(session_file, session_data)
+
+    def append_pair(self, user_msg: UserChatMessage, asst_msg: AssistantChatMessage) -> None:
+        session_file, session_data = self.load()
+        session_data.chat_history.append(user_msg)
+        session_data.chat_history.append(asst_msg)
+        legacy_save_session(session_file, session_data)
+
+    def edit_message(
+        self,
+        message_index: int,
+        new_content: str,
+        new_metadata: AssistantChatMessage | None = None,
+    ) -> None:
+        session_file, session_data = self.load()
+
+        if new_metadata:
+            session_data.chat_history[message_index] = new_metadata
+        else:
+            target_message = session_data.chat_history[message_index]
+            updated_message = replace(target_message, content=new_content)
+            session_data.chat_history[message_index] = updated_message
+
+        legacy_save_session(session_file, session_data)
+
+    def update_view_metadata(
+        self,
+        *,
+        context_files: list[str] | None = None,
+        model: str | None = None,
+        history_start_pair: int | None = None,
+        excluded_pairs: list[int] | None = None,
+    ) -> None:
+        session_file, session_data = self.load()
+
+        changed = False
+        if context_files is not None:
+            sorted_files = sorted(context_files)
+            if session_data.context_files != sorted_files:
+                session_data.context_files = sorted_files
+                changed = True
+        if model is not None and session_data.model != model:
+            session_data.model = model
+            changed = True
+        if history_start_pair is not None and session_data.history_start_pair != history_start_pair:
+            session_data.history_start_pair = history_start_pair
+            changed = True
+        if excluded_pairs is not None:
+            sorted_excluded = sorted(excluded_pairs)
+            if sorted(session_data.excluded_pairs) != sorted_excluded:
+                session_data.excluded_pairs = sorted_excluded
+                changed = True
+
+        if changed:
+            legacy_save_session(session_file, session_data)
 
 
 class SharedHistoryPersistence:
@@ -152,135 +251,149 @@ class SharedHistoryPersistence:
         self._original_session = copy.deepcopy(session_data)
         return self._pointer_file, session_data
 
-    # ---------- Save (Phase C logic) ----------
+    def append_pair(self, user_msg: UserChatMessage, asst_msg: AssistantChatMessage) -> None:
+        if not self.writable or self._view_path_abs is None:
+            self._fail("Shared-history session is not in a writable state.")
+        assert self._view_path_abs is not None
+
+        store = HistoryStore(self._history_root)
+        view = load_view(self._view_path_abs)
+
+        user_record = self._to_history_record_user(user_msg)
+        assistant_record = self._to_history_record_assistant(asst_msg)
+        _ = append_pair_to_view(store, view, user_record, assistant_record)
+
+        save_view(self._view_path_abs, view)
+
+        # Update internal state to prevent old save method from tripping on length changes
+        if self._original_session:
+            self._original_session.chat_history.append(user_msg)
+            self._original_session.chat_history.append(asst_msg)
+
+    def edit_message(
+        self,
+        message_index: int,
+        new_content: str,
+        new_metadata: AssistantChatMessage | None = None,
+    ) -> None:
+        if not self.writable or self._view_path_abs is None:
+            self._fail("Shared-history session is not in a writable state.")
+        assert self._view_path_abs is not None
+
+        store = HistoryStore(self._history_root)
+        view = load_view(self._view_path_abs)
+
+        if not (0 <= message_index < len(view.message_indices)):
+            self._fail("Edited message index out of bounds for current view.")
+
+        if new_metadata:
+            _ = edit_message_historystore(
+                store,
+                view,
+                message_index,
+                new_content,
+                model=new_metadata.model,
+                derived=new_metadata.derived,
+                token_usage=new_metadata.token_usage,
+                cost=new_metadata.cost,
+                duration_ms=new_metadata.duration_ms,
+            )
+        else:
+            _ = edit_message_historystore(store, view, message_index, new_content)
+
+        save_view(self._view_path_abs, view)
+
+        if self._original_session:
+            original_message = self._original_session.chat_history[message_index]
+            updated_message = replace(original_message, content=new_content)
+            if new_metadata and isinstance(updated_message, AssistantChatMessage):
+                updated_message = replace(
+                    updated_message,
+                    model=new_metadata.model,
+                    derived=new_metadata.derived,
+                    token_usage=new_metadata.token_usage,
+                    cost=new_metadata.cost,
+                    duration_ms=new_metadata.duration_ms,
+                )
+            self._original_session.chat_history[message_index] = updated_message
+
+    def update_view_metadata(
+        self,
+        *,
+        context_files: list[str] | None = None,
+        model: str | None = None,
+        history_start_pair: int | None = None,
+        excluded_pairs: list[int] | None = None,
+    ) -> None:
+        if not self.writable or self._view_path_abs is None:
+            self._fail("Shared-history session is not in a writable state.")
+        assert self._view_path_abs is not None
+
+        view = load_view(self._view_path_abs)
+        changed = False
+
+        if context_files is not None and view.context_files != context_files:
+            view.context_files = sorted(context_files)
+            changed = True
+        if model is not None and view.model != model:
+            view.model = model
+            changed = True
+        if history_start_pair is not None and view.history_start_pair != history_start_pair:
+            view.history_start_pair = history_start_pair
+            changed = True
+        if excluded_pairs is not None and sorted(set(view.excluded_pairs)) != sorted(set(excluded_pairs)):
+            view.excluded_pairs = sorted(set(excluded_pairs))
+            changed = True
+
+        if changed:
+            save_view(self._view_path_abs, view)
+
+    # ---------- Save (Legacy entrypoint for metadata changes) ----------
 
     def save(self, session_file: Path, session_data: SessionData) -> None:
         del session_file
         if not self.writable:
             typer.echo(
-                "Error: This is a read-only shared-history session. Write commands are not yet supported.",
+                "Error: This is a read-only shared-history session. Write commands are not supported.",
                 err=True,
             )
             raise typer.Exit(code=1)
 
-        if self._original_session is None or self._view_path_abs is None:
-            typer.echo("Error: Internal state missing for shared-history save.", err=True)
+        if self._original_session is None:
+            typer.echo("Error: Internal state missing for shared-history save (no session loaded).", err=True)
             raise typer.Exit(code=1)
-
-        store = HistoryStore(self._history_root)
-        view = load_view(self._view_path_abs)
 
         original = self._original_session
         new = session_data
 
-        # --- Detect operations ---
-        original_len = len(original.chat_history)
-        new_len = len(new.chat_history)
-
-        appended_pair = False
-        edited_message_index: int | None = None
-        edited_message_new_content: str | None = None
-
-        if new_len == original_len + 2:
-            # Potential append
-            if isinstance(new.chat_history[-2], UserChatMessage) and isinstance(
-                new.chat_history[-1], AssistantChatMessage
-            ):
-                appended_pair = True
-            else:
-                self._fail("Ambiguous append: last two messages are not a user/assistant pair.")
-        elif new_len == original_len:
-            # Potential edit (exactly one content change)
-            diffs = [
-                i
-                for i, (o_msg, n_msg) in enumerate(zip(original.chat_history, new.chat_history, strict=False))
-                if o_msg.content != n_msg.content
-            ]
-            if len(diffs) == 1:
-                edited_message_index = diffs[0]
-                edited_message_new_content = new.chat_history[edited_message_index].content
-            elif len(diffs) == 0:
-                # No content diff; may only be exclusions / start index / context/model changes
-                pass
-            else:
-                self._fail("Multiple message content edits detected. Perform edits one at a time.")
-        else:
+        # This save method is now only for metadata-only changes.
+        # Appends and Edits must be handled by proactive methods.
+        if len(original.chat_history) != len(new.chat_history):
             self._fail(
-                "Unsupported history mutation. Only single edits or a single appended pair are supported in this phase."
+                "Unhandled history length modification detected in save(). "
+                + f"Original: {len(original.chat_history)}, New: {len(new.chat_history)}. "
+                + "Use append_pair() or edit_message()."
             )
 
-        # --- Apply operations ---
+        content_diffs = [
+            i
+            for i, (o_msg, n_msg) in enumerate(zip(original.chat_history, new.chat_history, strict=True))
+            if o_msg.content != n_msg.content
+        ]
+        if content_diffs:
+            self._fail(
+                f"Unhandled content modification detected in save() for indices {content_diffs}. Use edit_message()."
+            )
 
-        # 1. Append pair
-        if appended_pair:
-            user_msg = new.chat_history[-2]
-            asst_msg = new.chat_history[-1]
-            if isinstance(user_msg, UserChatMessage) and isinstance(asst_msg, AssistantChatMessage):
-                # Validate append at end only
-                if original_len != len(view.message_indices):
-                    self._fail(
-                        "Invariant mismatch: view/message_indices length does not match original history length."
-                    )
-
-                user_record = self._to_history_record_user(user_msg)
-                assistant_record = self._to_history_record_assistant(asst_msg)
-                _ = append_pair_to_view(store, view, user_record, assistant_record)
-
-        # 2. Edit existing message
-        if edited_message_index is not None and edited_message_new_content is not None:
-            # Map message index to view position (same ordering)
-            if not (0 <= edited_message_index < len(view.message_indices)):
-                self._fail("Edited message index out of bounds for current view.")
-
-            # Preserve derived/token/model on assistant edits when provided in new session_data
-            new_msg = new.chat_history[edited_message_index]
-            if isinstance(new_msg, AssistantChatMessage):
-                _ = edit_message(
-                    store,
-                    view,
-                    edited_message_index,
-                    edited_message_new_content,
-                    model=new_msg.model,
-                    derived=new_msg.derived,
-                    token_usage=new_msg.token_usage,
-                    cost=new_msg.cost,
-                    duration_ms=new_msg.duration_ms,
-                )
-            else:
-                # User edit: keep metadata as-is
-                _ = edit_message(store, view, edited_message_index, edited_message_new_content)
-
-        # 3. Exclusion toggles
-        if hasattr(new, "excluded_pairs"):
-            view.excluded_pairs = sorted(set(new.excluded_pairs))
-        else:
-            new_excluded_pairs = self._compute_excluded_pairs(new.chat_history)
-            view.excluded_pairs = new_excluded_pairs
-
-        # 4. History start mapping
-        if hasattr(new, "history_start_pair"):
-            view.history_start_pair = int(new.history_start_pair)
-        else:
-            view.history_start_pair = map_history_start_index_to_pair(new.chat_history, new.history_start_index)
-
-        # 5. Context files & model
-        if original.context_files != new.context_files:
-            view.context_files = sorted(new.context_files)
-        if original.model != new.model:
-            view.model = new.model
-
-        # Invariants before persisting
-        pairs_now = find_message_pairs(new.chat_history)
-        assert len(view.message_indices) == len(new.chat_history), (
-            "Invariant violation: view/message_indices length mismatch after save."
-        )
-        assert all(p < len(pairs_now) for p in view.excluded_pairs), (
-            "Invariant violation: excluded pair index out of bounds."
+        # If we get here, it's a metadata-only change.
+        self.update_view_metadata(
+            context_files=new.context_files,
+            model=new.model,
+            history_start_pair=new.history_start_pair,
+            excluded_pairs=new.excluded_pairs,
         )
 
-        # Persist view
-        save_view(self._view_path_abs, view)
-        # Update original snapshot for subsequent saves
+        # Update snapshot for subsequent saves within the same process
         self._original_session = copy.deepcopy(new)
 
     # ---------- Helpers ----------
@@ -363,7 +476,7 @@ def load_session_and_resolve_indices(
     return session_file, session_data, pair_indices, resolved_index
 
 
-def get_persistence() -> SessionPersistence:
+def get_persistence() -> StatefulSessionPersistence:
     """
     Factory for persistence backend; detects pointer file to enable shared-history.
     """

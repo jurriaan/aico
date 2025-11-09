@@ -1,6 +1,5 @@
 # pyright: standard
 
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -492,11 +491,9 @@ def test_prompt_with_excluded_history_omits_messages(tmp_path: Path, mocker: Moc
         mock_completion.return_value.__iter__.return_value = iter([_create_mock_stream_chunk("response 3", mocker)])
         runner.invoke(app, ["ask", "prompt 3"])
 
-        # Exclude the second pair (messages at index 2 and 3)
+        # Exclude the second pair (pair index 1)
         session_data = load_final_session(Path(td))
-
-        session_data.chat_history[2] = replace(session_data.chat_history[2], is_excluded=True)
-        session_data.chat_history[3] = replace(session_data.chat_history[3], is_excluded=True)
+        session_data.excluded_pairs = [1]
         save_session(Path(td) / SESSION_FILE_NAME, session_data)
 
         # WHEN another prompt is run

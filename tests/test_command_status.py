@@ -134,9 +134,7 @@ def test_status_omits_excluded_messages(tmp_path: Path, mocker) -> None:
                 model="m",
                 duration_ms=1,
             ),
-            UserChatMessage(
-                role="user", content="excluded message", mode=Mode.CONVERSATION, timestamp="t3", is_excluded=True
-            ),
+            UserChatMessage(role="user", content="excluded message", mode=Mode.CONVERSATION, timestamp="t3"),
             AssistantChatMessage(
                 role="assistant",
                 content="excluded resp",
@@ -144,10 +142,14 @@ def test_status_omits_excluded_messages(tmp_path: Path, mocker) -> None:
                 timestamp="t3",
                 model="m",
                 duration_ms=1,
-                is_excluded=True,
             ),
         ]
-        session_data = SessionData(model="test-model", context_files=[], chat_history=history)
+        session_data = SessionData(
+            model="test-model",
+            context_files=[],
+            chat_history=history,
+            excluded_pairs=[1],  # Exclude pair 1
+        )
         save_session(session_dir / SESSION_FILE_NAME, session_data)
 
         # AND the token counter is mocked
@@ -197,7 +199,7 @@ def test_status_history_summary_logic(tmp_path: Path, mocker) -> None:
             AssistantChatMessage(
                 role="assistant", content="resp 1", mode=Mode.CONVERSATION, timestamp="t1", model="m", duration_ms=1
             ),
-            UserChatMessage(role="user", content="msg 2", mode=Mode.CONVERSATION, timestamp="t2", is_excluded=True),
+            UserChatMessage(role="user", content="msg 2", mode=Mode.CONVERSATION, timestamp="t2"),
             AssistantChatMessage(
                 role="assistant",
                 content="resp 2",
@@ -205,15 +207,15 @@ def test_status_history_summary_logic(tmp_path: Path, mocker) -> None:
                 timestamp="t2",
                 model="m",
                 duration_ms=1,
-                is_excluded=True,
             ),
         ]
-        # Active context starts at Pair 1 (user message index 2)
+        # Active context starts at Pair 1, and pair 2 is excluded
         session_data = SessionData(
             model="test-model",
             chat_history=history,
             context_files=[],
-            history_start_index=2,
+            history_start_pair=1,
+            excluded_pairs=[2],
         )
         save_session(session_dir / SESSION_FILE_NAME, session_data)
         mocker.patch("litellm.token_counter", return_value=10)
@@ -223,7 +225,7 @@ def test_status_history_summary_logic(tmp_path: Path, mocker) -> None:
         result = runner.invoke(app, ["status"])
 
         # THEN the command succeeds and shows the correct summary
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.stderr
         assert "Active window: 2 pairs (IDs 1-2), 1 sent (1 excluded" in result.stdout
 
 

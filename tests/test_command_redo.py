@@ -24,7 +24,6 @@ def session_with_excluded_pairs(tmp_path: Path) -> Iterator[Path]:
                     content=f"user prompt {i}",
                     mode=Mode.CONVERSATION,
                     timestamp=f"ts{i}",
-                    is_excluded=True,
                 )
             )
             history.append(
@@ -35,10 +34,9 @@ def session_with_excluded_pairs(tmp_path: Path) -> Iterator[Path]:
                     timestamp=f"ts{i}",
                     model="test-model",
                     duration_ms=100,
-                    is_excluded=True,
                 )
             )
-        session_data = SessionData(model="test", context_files=[], chat_history=history)
+        session_data = SessionData(model="test", context_files=[], chat_history=history, excluded_pairs=[0, 1])
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, session_data)
         yield session_file
@@ -60,12 +58,9 @@ def test_redo_default_marks_last_pair_included(session_with_excluded_pairs: Path
     # The resolved index of -1 in a 2-pair list is 1.
     assert "Re-included pair at index 1 in context." in result.stdout
 
-    # AND only the last pair is included
+    # AND only the last pair is re-included (pair 0 remains excluded)
     final_session = _load_session_data(session_file)
-    assert final_session.chat_history[0].is_excluded is True
-    assert final_session.chat_history[1].is_excluded is True
-    assert final_session.chat_history[2].is_excluded is False
-    assert final_session.chat_history[3].is_excluded is False
+    assert final_session.excluded_pairs == [0]
 
 
 def test_redo_with_positive_index(session_with_excluded_pairs: Path) -> None:
@@ -79,12 +74,9 @@ def test_redo_with_positive_index(session_with_excluded_pairs: Path) -> None:
     assert result.exit_code == 0
     assert "Re-included pair at index 0 in context." in result.stdout
 
-    # AND only the first pair is included
+    # AND only the first pair is re-included (pair 1 remains excluded)
     final_session = _load_session_data(session_file)
-    assert final_session.chat_history[0].is_excluded is False
-    assert final_session.chat_history[1].is_excluded is False
-    assert final_session.chat_history[2].is_excluded is True
-    assert final_session.chat_history[3].is_excluded is True
+    assert final_session.excluded_pairs == [1]
 
 
 def test_redo_with_negative_index(session_with_excluded_pairs: Path) -> None:
@@ -101,10 +93,7 @@ def test_redo_with_negative_index(session_with_excluded_pairs: Path) -> None:
 
     # AND only the first pair is re-included
     final_session = _load_session_data(session_file)
-    assert final_session.chat_history[0].is_excluded is False
-    assert final_session.chat_history[1].is_excluded is False
-    assert final_session.chat_history[2].is_excluded is True
-    assert final_session.chat_history[3].is_excluded is True
+    assert final_session.excluded_pairs == [1]
 
 
 def test_redo_fails_on_empty_history(tmp_path: Path) -> None:

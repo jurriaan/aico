@@ -27,12 +27,9 @@ def test_undo_default_marks_last_pair_excluded(session_with_two_pairs: Path) -> 
     # The resolved index of -1 in a 2-pair list is 1.
     assert "Marked pair at index 1 as excluded." in result.stdout
 
-    # AND only the last pair is excluded
+    # AND the last pair index is added to the excluded_pairs list
     final_session = load_session_data(session_file)
-    assert final_session.chat_history[0].is_excluded is False
-    assert final_session.chat_history[1].is_excluded is False
-    assert final_session.chat_history[2].is_excluded is True
-    assert final_session.chat_history[3].is_excluded is True
+    assert final_session.excluded_pairs == [1]
 
 
 def test_undo_with_positive_index(session_with_two_pairs: Path) -> None:
@@ -46,12 +43,9 @@ def test_undo_with_positive_index(session_with_two_pairs: Path) -> None:
     assert result.exit_code == 0
     assert "Marked pair at index 0 as excluded." in result.stdout
 
-    # AND only the first pair is excluded
+    # AND the first pair index is added to the excluded_pairs list
     final_session = load_session_data(session_file)
-    assert final_session.chat_history[0].is_excluded is True
-    assert final_session.chat_history[1].is_excluded is True
-    assert final_session.chat_history[2].is_excluded is False
-    assert final_session.chat_history[3].is_excluded is False
+    assert final_session.excluded_pairs == [0]
 
 
 def test_undo_with_negative_index(session_with_two_pairs: Path) -> None:
@@ -66,12 +60,9 @@ def test_undo_with_negative_index(session_with_two_pairs: Path) -> None:
     assert result.exit_code == 0
     assert "Marked pair at index 0 as excluded." in result.stdout
 
-    # AND only the first pair is excluded
+    # AND the first pair index is added to the excluded_pairs list
     final_session = load_session_data(session_file)
-    assert final_session.chat_history[0].is_excluded is True
-    assert final_session.chat_history[1].is_excluded is True
-    assert final_session.chat_history[2].is_excluded is False
-    assert final_session.chat_history[3].is_excluded is False
+    assert final_session.excluded_pairs == [0]
 
 
 def test_undo_fails_on_empty_history(tmp_path: Path) -> None:
