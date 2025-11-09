@@ -39,11 +39,7 @@ def log() -> None:
             user_msg = chat_history[pair.user_index]
             asst_msg = chat_history[pair.assistant_index]
 
-            # Prefer pair-centric exclusion if available
-            if getattr(session_data, "excluded_pairs", None) is not None:
-                pair_excluded = pair_index in excluded_set
-            else:
-                pair_excluded = user_msg.is_excluded and asst_msg.is_excluded
+            pair_excluded = pair_index in excluded_set
             user_row_style = "dim" if pair_excluded else ""
             asst_row_style = "dim" if pair_excluded else ""
 
@@ -85,5 +81,4 @@ def log() -> None:
             role = "[blue]user[/blue]" if isinstance(msg, UserChatMessage) else "[green]assistant[/green]"
             lines = msg.content.strip().splitlines()
             snippet = lines[0] if lines else ""
-            style = "dim" if msg.is_excluded else ""
-            console.print(f"  {role}: {snippet}", style=style)
+            console.print(f"  {role}: {snippet}")

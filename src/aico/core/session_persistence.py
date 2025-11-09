@@ -1,6 +1,7 @@
 import copy
 import sys
 from dataclasses import replace
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -15,7 +16,6 @@ from aico.core.session_context import (
 from aico.historystore import (
     HistoryStore,
     append_pair_to_view,
-    find_message_pairs_in_view,
     load_view,
     reconstruct_chat_history,
     save_view,
@@ -35,10 +35,9 @@ from aico.lib.models import (
     UserDerivedMeta,
 )
 from aico.lib.session import (
+    SESSION_FILE_NAME,
+    SessionDataAdapter,
     find_session_file,
-)
-from aico.lib.session import (
-    load_session as legacy_load_session,
 )
 from aico.lib.session import (
     save_session as legacy_save_session,
@@ -80,14 +79,25 @@ class LegacyJsonPersistence:
     """
 
     def load(self) -> tuple[Path, SessionData]:
-        session_file, session_data = legacy_load_session()
+        session_file = find_session_file()
+        if not session_file:
+            print(f"Error: No session file '{SESSION_FILE_NAME}' found. Please run 'aico init' first.", file=sys.stderr)
+            raise typer.Exit(code=1)
+
+        try:
+            session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        except (ValidationError, JSONDecodeError) as e:
+            print("Error: Session file is corrupt or has an invalid format", file=sys.stderr)
+            print(e, file=sys.stderr)
+            raise typer.Exit(code=1) from e
+        except Exception as e:
+            print(f"Error: Could not load session file {session_file}: {e}", file=sys.stderr)
+            raise typer.Exit(code=1) from e
+
         chat_history = session_data.chat_history
 
         # One-way, in-memory upgrade for backward compatibility.
-        # This function derives the canonical pair-centric fields (`excluded_pairs`, `history_start_pair`)
-        # from their legacy counterparts (`is_excluded`, `history_start_index`) if they are present.
-        # It also computes the legacy `history_start_index` from the canonical `history_start_pair`
-        # for in-memory use by other parts of the application.
+        # This derives canonical fields from legacy fields if they are present.
 
         # 1. Derive `excluded_pairs` from legacy `is_excluded` flags if `excluded_pairs` is empty.
         has_legacy_exclusions = any(msg.is_excluded for msg in chat_history)
@@ -99,21 +109,15 @@ class LegacyJsonPersistence:
                 if chat_history[p.user_index].is_excluded and chat_history[p.assistant_index].is_excluded
             ]
 
-        # 2. Derive `history_start_pair` from `history_start_index` ONLY if `history_start_pair` is at its
-        # default value, to avoid overwriting a value from a modern session file.
-        if session_data.history_start_pair == 0 and session_data.history_start_index > 0:
+        # 2. Derive `history_start_pair` from legacy `history_start_index`.
+        if (
+            session_data.history_start_pair == 0
+            and session_data.history_start_index is not None
+            and session_data.history_start_index > 0
+        ):
             session_data.history_start_pair = map_history_start_index_to_pair(
                 chat_history, session_data.history_start_index
             )
-
-        # 3. If history_start_index is not set (i.e., loading a modern session), derive it
-        # from the canonical history_start_pair for in-memory use by legacy logic.
-        if session_data.history_start_index == 0 and session_data.history_start_pair > 0:
-            pairs = find_message_pairs(chat_history)
-            if session_data.history_start_pair < len(pairs):
-                session_data.history_start_index = pairs[session_data.history_start_pair].user_index
-            else:
-                session_data.history_start_index = len(chat_history)
 
         return session_file, session_data
 
@@ -228,21 +232,10 @@ class SharedHistoryPersistence:
 
         chat_history = reconstruct_chat_history(store, view)
 
-        pair_positions = find_message_pairs_in_view(store, view)
-
-        # Map history_start_pair -> history_start_index
-        if view.history_start_pair >= len(pair_positions):
-            history_start_index = len(chat_history)
-        elif view.history_start_pair <= 0:
-            history_start_index = 0
-        else:
-            history_start_index = pair_positions[view.history_start_pair][0]
-
         session_data = SessionData(
             model=view.model,
             context_files=list(view.context_files),
             chat_history=chat_history,
-            history_start_index=history_start_index,
             history_start_pair=view.history_start_pair,
             excluded_pairs=list(view.excluded_pairs),
         )

@@ -221,9 +221,7 @@ def execute_interaction(
 
     message_cost: float | None = None
     if token_usage:
-        message_cost = calculate_and_display_cost(
-            token_usage, model_name, session_data.chat_history, session_data.history_start_index
-        )
+        message_cost = calculate_and_display_cost(token_usage, model_name, session_data)
 
     unified_diff = generate_unified_diff(original_file_contents, llm_response_content, session_root)
 

@@ -81,7 +81,11 @@ def test_migration_forward_and_round_trip(tmp_path: Path) -> None:
     # WHEN migrating forward to sharded store + view
     session_data = SessionDataAdapter.validate_python(legacy)
     view = from_legacy_session(
-        session_data, history_root=history_root, sessions_dir=sessions_dir, name="main", shard_size=5
+        session_data=session_data,
+        history_root=history_root,
+        sessions_dir=sessions_dir,
+        name="main",
+        shard_size=5,
     )
 
     # THEN the SessionView is created with correct indices and metadata
@@ -139,7 +143,12 @@ def test_migration_empty_session(tmp_path: Path) -> None:
 
     # WHEN migrating forward
     session_data = SessionDataAdapter.validate_python(legacy)
-    view = from_legacy_session(session_data, history_root, sessions_dir, "empty")
+    view = from_legacy_session(
+        session_data=session_data,
+        history_root=history_root,
+        sessions_dir=sessions_dir,
+        name="empty",
+    )
 
     # THEN view has no messages and start pair = 0
     assert view.message_indices == []
@@ -174,7 +183,12 @@ def test_migration_history_start_after_last_pair(tmp_path: Path) -> None:
 
     # WHEN migrating forward
     session_data = SessionDataAdapter.validate_python(legacy)
-    view = from_legacy_session(session_data, history_root, sessions_dir, "after")
+    view = from_legacy_session(
+        session_data=session_data,
+        history_root=history_root,
+        sessions_dir=sessions_dir,
+        name="after",
+    )
 
     # THEN start pair is len(pairs) (cleared context)
     assert view.history_start_pair == 2
@@ -206,7 +220,12 @@ def test_migration_excludes_only_full_excluded_pairs(tmp_path: Path) -> None:
 
     # WHEN migrating forward
     session_data = SessionDataAdapter.validate_python(legacy)
-    view = from_legacy_session(session_data, history_root, sessions_dir, "partial")
+    view = from_legacy_session(
+        session_data=session_data,
+        history_root=history_root,
+        sessions_dir=sessions_dir,
+        name="partial",
+    )
 
     # THEN excluded_pairs is empty because pair exclusion requires both messages excluded
     assert view.excluded_pairs == []

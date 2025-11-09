@@ -215,8 +215,6 @@ def test_set_history_with_zero_sets_index_to_zero(tmp_path: Path) -> None:
         # AND the history start pair is now 0
         updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
         assert updated_session_data.history_start_pair == 0
-        # Re-derive the in-memory index to accurately test get_active_history
-        updated_session_data.history_start_index = 0
         active_history = get_active_history(updated_session_data)
         assert len(active_history) == 10
 

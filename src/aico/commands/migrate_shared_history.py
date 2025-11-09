@@ -102,7 +102,7 @@ def migrate_shared_history(
     # Perform migration
     try:
         _ = from_legacy_session(
-            session_data,
+            session_data=session_data,
             history_root=history_root,
             sessions_dir=sessions_dir,
             name=name,

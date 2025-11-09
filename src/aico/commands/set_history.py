@@ -37,8 +37,7 @@ def set_history(
 
     target_message_index, resolved_index = resolve_history_start_index(chat_history, pair_index_str)
 
-    session_data.history_start_index = target_message_index
-    # Also set pair-centric field for canonical state
+    # Set pair-centric field for canonical state
     session_data.history_start_pair = (
         resolved_index if target_message_index != len(chat_history) else len(find_message_pairs(chat_history))
     )

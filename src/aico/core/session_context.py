@@ -1,5 +1,5 @@
 import sys
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 import typer
 
@@ -112,6 +112,20 @@ def is_pair_excluded(session_data: SessionData, pair_indices: MessagePairIndices
         return False
 
 
+def get_start_message_index(session_data: SessionData) -> int:
+    """Calculates the message index from the canonical history_start_pair."""
+    chat_history = session_data.chat_history
+    history_start_pair = session_data.history_start_pair
+    pairs = find_message_pairs(chat_history)
+
+    if history_start_pair <= 0:
+        return 0
+    if history_start_pair >= len(pairs):
+        return len(chat_history)
+
+    return pairs[history_start_pair].user_index
+
+
 def set_pair_excluded(session_data: SessionData, pair_indices: MessagePairIndices, excluded: bool) -> bool:
     """
     Sets exclusion for a pair by updating the canonical `session_data.excluded_pairs` list.
@@ -141,16 +155,6 @@ def set_pair_excluded(session_data: SessionData, pair_indices: MessagePairIndice
         session_data.excluded_pairs = sorted(current_excluded_set)
         changed = True
 
-    # For in-memory consistency until the next save/load cycle, also update the legacy flags.
-    # These flags are not saved to disk for new sessions.
-    user_msg = session_data.chat_history[pair_indices.user_index]
-    if user_msg.is_excluded != excluded:
-        session_data.chat_history[pair_indices.user_index] = replace(user_msg, is_excluded=excluded)
-
-    assistant_msg = session_data.chat_history[pair_indices.assistant_index]
-    if assistant_msg.is_excluded != excluded:
-        session_data.chat_history[pair_indices.assistant_index] = replace(assistant_msg, is_excluded=excluded)
-
     return changed
 
 
@@ -176,8 +180,7 @@ class InMemorySession:
 def active_message_indices(session_data: SessionData, include_dangling: bool = True) -> list[int]:
     """
     Compute active message indices, using canonical fields (`history_start_pair`, `excluded_pairs`)
-    as the primary source of truth, with fallbacks for legacy fields (`history_start_index`, `is_excluded`)
-    to ensure backward and in-memory compatibility.
+    as the primary source of truth, with fallbacks for legacy `history_start_index` for backward compatibility.
     """
     history = session_data.chat_history
     if not history:
@@ -189,14 +192,11 @@ def active_message_indices(session_data: SessionData, include_dangling: bool = T
     start_pair = session_data.history_start_pair
 
     # Process pairs: Active if at/after `start_pair` and not excluded.
-    # Exclusion check is canonical-first with a legacy fallback.
     for pidx, p in enumerate(pairs):
         if pidx < start_pair:
             continue
 
-        is_canonically_excluded = pidx in excluded_pairs_set
-        is_legacy_excluded = history[p.user_index].is_excluded and history[p.assistant_index].is_excluded
-        if is_canonically_excluded or is_legacy_excluded:
+        if pidx in excluded_pairs_set:
             continue
 
         active_positions.add(p.user_index)
@@ -205,12 +205,11 @@ def active_message_indices(session_data: SessionData, include_dangling: bool = T
     if not include_dangling:
         return sorted(list(active_positions))
 
-    # Process dangling messages: Use `history_start_index` for the boundary and `is_excluded` for filtering.
-    # This preserves behavior for sessions starting on a dangling message and legacy sessions.
-    start_boundary_dangling = session_data.history_start_index
+    # Process dangling messages:
+    start_boundary_dangling = get_start_message_index(session_data)
     pair_positions: set[int] = {pos for p in pairs for pos in (p.user_index, p.assistant_index)}
     for msg_idx in range(start_boundary_dangling, len(history)):
-        if msg_idx not in pair_positions and not history[msg_idx].is_excluded:
+        if msg_idx not in pair_positions:
             active_positions.add(msg_idx)
 
     return sorted(list(active_positions))

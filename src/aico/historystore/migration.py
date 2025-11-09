@@ -20,6 +20,7 @@ from .session_view import find_message_pairs_in_view, save_view
 
 def from_legacy_session(
     session_data: SessionData,
+    *,
     history_root: Path,
     sessions_dir: Path,
     name: str,
@@ -63,8 +64,9 @@ def from_legacy_session(
             idx = store.append(record)
             message_indices.append(idx)
 
-    # Re-calculate history_start_pair from the legacy index, as SessionData defaults it to 0.
-    history_start_pair = map_history_start_index_to_pair(session_data.chat_history, session_data.history_start_index)
+    # Calculate history_start_pair from the legacy index if available on the SessionData object
+    legacy_history_start_index = session_data.history_start_index or 0
+    history_start_pair = map_history_start_index_to_pair(session_data.chat_history, legacy_history_start_index)
 
     # Re-calculate excluded_pairs from legacy per-message flags
     pairs = find_message_pairs(session_data.chat_history)
@@ -176,14 +178,16 @@ def to_legacy_session(store: HistoryStore, view: SessionView) -> dict[str, objec
         model=view.model,
         context_files=list(view.context_files),
         chat_history=chat_history,
-        history_start_index=history_start_index,
         history_start_pair=view.history_start_pair,
         excluded_pairs=list(view.excluded_pairs),
+        history_start_index=history_start_index,  # Populate for round-trip consistency
     )
 
     # Dump the complete SessionData model to a dictionary that matches the old format.
-    # We must manually add back `history_start_index` because it's excluded from serialization by default
-    # in the SessionData model for forward compatibility.
-    legacy_dict: dict[str, object] = session_data.model_dump(exclude={"history_start_pair", "excluded_pairs"})
+    # The `history_start_index` field is excluded by default from serialization, so we manually add it back.
+    legacy_dict = session_data.model_dump(
+        exclude={"history_start_pair", "excluded_pairs"},
+        exclude_defaults=True,
+    )
     legacy_dict["history_start_index"] = history_start_index
     return legacy_dict

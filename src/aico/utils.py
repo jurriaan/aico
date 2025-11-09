@@ -135,11 +135,12 @@ def reconstruct_display_content_for_piping(
 def calculate_and_display_cost(
     token_usage: TokenUsage,
     model_name: str,
-    chat_history: Sequence[ChatMessageHistoryItem],
-    history_start_index: int,
+    session_data: SessionData,
 ) -> float | None:
     """Calculates the message cost and displays token/cost information."""
     import litellm
+
+    from aico.core.session_context import get_start_message_index
 
     message_cost: float | None = None
     # Create a mock response object as a dictionary.
@@ -164,7 +165,8 @@ def calculate_and_display_cost(
     if message_cost is not None:
         # "current chat" cost includes all messages from the start index, even excluded ones,
         # because the cost was already incurred.
-        current_chat_window = chat_history[history_start_index:]
+        history_start_index = get_start_message_index(session_data)
+        current_chat_window = session_data.chat_history[history_start_index:]
         window_history_cost = sum(
             msg.cost for msg in current_chat_window if isinstance(msg, AssistantChatMessage) and msg.cost is not None
         )

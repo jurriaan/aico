@@ -42,26 +42,6 @@ def find_session_file() -> Path | None:
 SessionDataAdapter = TypeAdapter(SessionData)
 
 
-def load_session() -> tuple[Path, SessionData]:
-    session_file = find_session_file()
-    if not session_file:
-        print(
-            f"Error: No session file '{SESSION_FILE_NAME}' found. Please run 'aico init' first.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
-
-    try:
-        session_data = SessionDataAdapter.validate_json(session_file.read_text())
-
-    except (ValidationError, JSONDecodeError) as e:
-        print("Error: Session file is corrupt or has an invalid format", file=sys.stderr)
-        print(e, file=sys.stderr)
-        raise typer.Exit(code=1) from e
-
-    return session_file, session_data
-
-
 def get_relative_path_or_error(file_path: Path, session_root: Path) -> str | None:
     abs_file_path = file_path.resolve()
 

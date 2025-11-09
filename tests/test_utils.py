@@ -91,86 +91,90 @@ def test_get_active_history_filters_and_slices() -> None:
     from aico.utils import get_active_history
 
     history = [
-        UserChatMessage(role="user", content="msg 0 - before start", mode=Mode.RAW, timestamp="t0"),  # before start
-        UserChatMessage(role="user", content="msg 1 - active", mode=Mode.RAW, timestamp="t1"),  # after start
-        UserChatMessage(
-            role="user", content="msg 2 - excluded", mode=Mode.RAW, timestamp="t2", is_excluded=True
-        ),  # after start, excluded
+        UserChatMessage(role="user", content="msg 0 - pair 0, inactive", mode=Mode.RAW, timestamp="t0"),
         AssistantChatMessage(
-            role="assistant",
-            content="resp 2 - excluded",
-            mode=Mode.RAW,
-            timestamp="t3",
-            model="m",
-            duration_ms=1,
-            is_excluded=True,
+            role="assistant", content="resp 0", mode=Mode.RAW, timestamp="t0", model="m", duration_ms=1
         ),
-        UserChatMessage(role="user", content="msg 3 - active", mode=Mode.RAW, timestamp="t4"),  # after start
+        UserChatMessage(role="user", content="msg 1 - pair 1, active", mode=Mode.RAW, timestamp="t1"),
+        AssistantChatMessage(
+            role="assistant", content="resp 1", mode=Mode.RAW, timestamp="t1", model="m", duration_ms=1
+        ),
+        UserChatMessage(role="user", content="msg 2 - dangling, active", mode=Mode.RAW, timestamp="t2"),
+        UserChatMessage(role="user", content="msg 3 - pair 2, excluded", mode=Mode.RAW, timestamp="t3"),
+        AssistantChatMessage(
+            role="assistant", content="resp 2", mode=Mode.RAW, timestamp="t3", model="m", duration_ms=1
+        ),
     ]
+
+    # Create a session where history starts at pair 1, and pair 2 is excluded.
     session_data = SessionData(
         model="test",
         context_files=[],
         chat_history=history,
-        history_start_index=1,
+        history_start_pair=1,  # Equivalent of legacy start_index pointing at msg 1
+        excluded_pairs=[2],  # Exclude the third pair (index 2)
     )
 
     # WHEN get_active_history is called
     active_history = get_active_history(session_data)
 
-    # THEN the returned list contains only the correct messages
-    assert len(active_history) == 2
-    assert active_history[0].content == "msg 1 - active"
-    assert active_history[1].content == "msg 3 - active"
+    # THEN the returned list contains only the active messages (pair 1 and the dangling message)
+    assert len(active_history) == 3
+    assert active_history[0].content == "msg 1 - pair 1, active"
+    assert active_history[1].content == "resp 1"
+    assert active_history[2].content == "msg 2 - dangling, active"
 
 
 def test_calculate_and_display_cost_logic(mocker: MockerFixture) -> None:
     # GIVEN
+    from aico.lib.models import UserChatMessage
+
     mocker.patch("aico.utils.is_terminal", return_value=False)
     mock_print = mocker.patch("builtins.print")
 
     # Mock the entire litellm module by injecting a mock into sys.modules.
-    # This is the correct way to mock a module that is imported inside a function.
     mock_litellm = mocker.MagicMock()
     mock_litellm.completion_cost.return_value = 0.50
     mocker.patch.dict("sys.modules", {"litellm": mock_litellm})
 
     chat_history: Sequence[ChatMessageHistoryItem] = [
-        # This message is before the start index, its cost should be ignored
+        UserChatMessage(role="user", content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
         AssistantChatMessage(
             role="assistant", content="a0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=1, cost=10.0
         ),
-        # These messages are in the window. Their costs should be summed.
+        UserChatMessage(role="user", content="u1", mode=Mode.CONVERSATION, timestamp="t1"),
         AssistantChatMessage(
             role="assistant", content="a1", mode=Mode.CONVERSATION, timestamp="t1", model="m", duration_ms=1, cost=1.0
         ),
+        UserChatMessage(role="user", content="u2", mode=Mode.CONVERSATION, timestamp="t2"),
         AssistantChatMessage(
-            role="assistant",
-            content="a2-excluded",
-            mode=Mode.CONVERSATION,
-            timestamp="t2",
-            model="m",
-            is_excluded=True,  # Cost should still be counted
-            duration_ms=1,
-            cost=2.0,
+            role="assistant", content="a2", mode=Mode.CONVERSATION, timestamp="t2", model="m", duration_ms=1, cost=2.0
         ),
     ]
     token_usage = TokenUsage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
-    history_start_index = 1  # Start from the second message (index 1)
     model_name = "test-model"
 
-    # WHEN calculate_and_display_cost is called
-    message_cost = calculate_and_display_cost(token_usage, model_name, chat_history, history_start_index)
+    # Construct a modern SessionData object that starts at the second pair
+    session_data = SessionData(
+        model=model_name,
+        chat_history=list(chat_history),
+        history_start_pair=1,  # Start at pair 1 {u1, a1}
+        excluded_pairs=[2],  # Exclude pair 2 {u2, a2}. Cost should still be counted.
+    )
 
-    # THEN the returned cost for the new message should be correct
+    # WHEN calculate_and_display_cost is called with the new signature
+    message_cost = calculate_and_display_cost(token_usage, model_name, session_data)
+
+    # THEN the returned cost for the new message is correct
     assert message_cost == 0.50
 
-    # AND the cost calculation for the new message should have been called once
+    # AND the cost calculation for the new message was called once
     mock_litellm.completion_cost.assert_called_once()
     actual_call_args = mock_litellm.completion_cost.call_args.kwargs["completion_response"]
     assert actual_call_args["usage"]["prompt_tokens"] == 100
     assert actual_call_args["model"] == model_name
 
-    # AND the printed output string to stderr should be correctly formatted
+    # AND the printed output string to stderr is correctly formatted
     # Historical window cost = 1.0 (a1) + 2.0 (a2) = 3.0
     # Total current chat cost = 3.0 (history) + 0.5 (new message) = 3.50
     expected_info_str = "Tokens: 100 sent, 50 received. Cost: $0.50, current chat: $3.50"
