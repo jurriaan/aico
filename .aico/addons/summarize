@@ -7,12 +7,13 @@ from datetime import UTC, datetime
 # --- Addon Boilerplate ---
 # This allows the addon to import from the `aico` library.
 try:
+    from aico.core.session_context import find_message_pairs
+    from aico.core.session_persistence import get_persistence
     from aico.lib.models import (
         AssistantChatMessage,
         Mode,
         UserChatMessage,
     )
-    from aico.lib.session import load_session, save_session
 except ImportError as e:
     print(
         "Error: Could not import the 'aico' library. Ensure `aico` is installed "
@@ -80,7 +81,8 @@ def main() -> None:
 
     # 4. Reload session, extract summary, inject a new priming pair, and reset history
     print("Resetting session to start with the new summary...")
-    session_file, session_data = load_session()
+    persistence = get_persistence()
+    _, session_data = persistence.load()
 
     # The generated summary is the content of the last assistant message (which we just undid)
     last_message = session_data.chat_history[-1]
@@ -88,45 +90,35 @@ def main() -> None:
         raise RuntimeError("Expected an AssistantChatMessage as the last entry after 'aico ask'")
     summary_text = last_message.content
 
-    # The new active history will start with the priming pair we are about to add.
-    new_history_start_index = len(session_data.chat_history)
-    session_data.history_start_index = new_history_start_index
+    new_start_pair_index = len(find_message_pairs(session_data.chat_history))
 
-    # Create and append the new priming pair
+    # First, update the history start pair metadata
+    persistence.update_view_metadata(history_start_pair=new_start_pair_index)
+
+    # Create the new priming pair to append
     injection_prompt = (
         "This is the summary generated from our previous conversations, "
         f"respond with just `OK` if you understand it:\n\n{summary_text}"
     )
     timestamp = datetime.now(UTC).isoformat()
 
-    session_data.chat_history.append(
-        UserChatMessage(
-            role="user",
-            content=injection_prompt,
-            mode=Mode.CONVERSATION,
-            timestamp=timestamp,
-            piped_content=None,
-            passthrough=False,
-            is_excluded=False,
-        )
+    user_msg_to_append = UserChatMessage(
+        role="user",
+        content=injection_prompt,
+        mode=Mode.CONVERSATION,
+        timestamp=timestamp,
     )
-    session_data.chat_history.append(
-        AssistantChatMessage(
-            role="assistant",
-            content="OK",
-            mode=Mode.CONVERSATION,
-            model=session_data.model,  # Keep the original model
-            timestamp=timestamp,
-            duration_ms=0,
-            derived=None,
-            token_usage=None,
-            cost=None,
-            is_excluded=False,
-        )
+    asst_msg_to_append = AssistantChatMessage(
+        role="assistant",
+        content="OK",
+        mode=Mode.CONVERSATION,
+        model=session_data.model,  # Keep the original model
+        timestamp=timestamp,
+        duration_ms=0,
     )
 
-    # 5. Save the final state, preserving the full history
-    save_session(session_file, session_data)
+    # 5. Append the new priming pair, which also saves the final state
+    persistence.append_pair(user_msg_to_append, asst_msg_to_append)
     print("\nSession history has been summarized and reset.")
 
 
