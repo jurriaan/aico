@@ -4,8 +4,7 @@ from typing import Annotated
 
 import typer
 
-from aico.core.session_persistence import get_persistence
-from aico.lib.models import SessionData
+from aico.historystore import SessionView, save_view, switch_active_pointer
 from aico.lib.session import SESSION_FILE_NAME
 
 
@@ -31,8 +30,17 @@ def init(
         )
         raise typer.Exit(code=1)
 
-    new_session = SessionData(model=model)
-    persistence = get_persistence()
-    persistence.save(session_file, new_session)
+    # Prepare shared-history directories
+    project_root = session_file.parent
+    history_root = project_root / ".aico" / "history"
+    sessions_dir = project_root / ".aico" / "sessions"
+    history_root.mkdir(parents=True, exist_ok=True)
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create an empty SessionView and point the pointer file at it
+    view_path = sessions_dir / "main.json"
+    view = SessionView(model=model, context_files=[], message_indices=[], history_start_pair=0, excluded_pairs=[])
+    save_view(view_path, view)
+    switch_active_pointer(session_file, view_path)
 
     print(f"Initialized session file: {session_file}")

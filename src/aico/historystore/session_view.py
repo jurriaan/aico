@@ -117,7 +117,7 @@ def append_pair_to_view(
 
 
 def fork_view(
-    store: HistoryStore,  # kept for API symmetry, not used yet
+    store: HistoryStore,
     view: SessionView,
     until_pair: int | None,
     new_name: str,
@@ -162,9 +162,9 @@ def switch_active_pointer(pointer_file: Path, new_view_path: Path) -> None:
     pointer_file.parent.mkdir(parents=True, exist_ok=True)
     rel_path: str
     try:
-        rel_path = os.path.relpath(new_view_path, pointer_file.parent)
+        rel_path = new_view_path.resolve().relative_to(pointer_file.parent.resolve()).as_posix()
     except ValueError:
-        rel_path = str(new_view_path)
+        rel_path = str(new_view_path.resolve())
 
     data = {"type": "aico_session_pointer_v1", "path": rel_path}
     json_text = json.dumps(data, separators=(",", ":"))

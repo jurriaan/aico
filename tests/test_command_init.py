@@ -1,5 +1,6 @@
 # pyright: standard
 
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -19,12 +20,19 @@ def test_init_creates_session_file_in_empty_dir(tmp_path: Path) -> None:
 
         # THEN the command succeeds and creates the session file
         assert result.exit_code == 0
-        session_file = Path(td) / SESSION_FILE_NAME
-        assert session_file.is_file()
-        assert f"Initialized session file: {session_file}" in result.stdout
+        pointer_file = Path(td) / SESSION_FILE_NAME
+        assert pointer_file.is_file()
+        assert f"Initialized session file: {pointer_file}" in result.stdout
 
-        # AND the session file contains the default model
-        assert '"model": "openrouter/google/gemini-2.5-pro"' in session_file.read_text()
+        # AND the pointer file has the correct format and points to a view
+        pointer_data = json.loads(pointer_file.read_text())
+        assert pointer_data["type"] == "aico_session_pointer_v1"
+        view_path = Path(td) / pointer_data["path"]
+        assert view_path.is_file()
+
+        # AND the view file contains the default model
+        view_data = json.loads(view_path.read_text())
+        assert view_data["model"] == "openrouter/google/gemini-2.5-pro"
 
 
 def test_init_fails_if_session_already_exists(tmp_path: Path) -> None:

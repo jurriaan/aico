@@ -7,7 +7,7 @@ from pytest_mock import MockerFixture, MockType
 from typer.testing import CliRunner
 
 from aico.lib.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
-from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter, save_session
+from aico.lib.session import SESSION_FILE_NAME, save_session
 from aico.main import app
 
 runner = CliRunner()
@@ -54,8 +54,19 @@ def setup_prompt_test(
 
 def load_final_session(tmp_path: Path) -> SessionData:
     """Loads and returns the SessionData object from the test's temp directory."""
-    session_file = tmp_path / SESSION_FILE_NAME
-    return SessionDataAdapter.validate_json(session_file.read_text())
+    # Temporarily change directory to ensure find_session_file works correctly
+    import os
+
+    from aico.core.session_persistence import get_persistence
+
+    original_cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        persistence = get_persistence()
+        _, session_data = persistence.load()
+        return session_data
+    finally:
+        os.chdir(original_cwd)
 
 
 def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) -> None:

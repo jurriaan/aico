@@ -16,6 +16,8 @@ from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
 from aico.core.session_context import find_message_pairs
+from aico.historystore import HistoryRecord, HistoryStore, append_pair_to_view, load_view, save_view
+from aico.historystore.pointer import load_pointer
 from aico.lib.models import (
     AssistantChatMessage,
     LiteLLMChoiceContainer,
@@ -51,6 +53,19 @@ def new_get_gherkin_document(abs_filename: str, encoding: str = "utf-8") -> gher
 
 
 _ = mock.patch("pytest_bdd.parser.get_gherkin_document", new=new_get_gherkin_document).start()
+
+
+# Parametrized fixture for testing both session types
+@pytest.fixture(params=["legacy", "shared"])
+def session_type(request: pytest.FixtureRequest) -> str:
+    """A parametrized fixture to provide the session type for testing."""
+    return str(request.param)  # pyright: ignore[reportAny]
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """Parametrize session_type for all feature tests."""
+    if "session_type" in metafunc.fixturenames:
+        metafunc.parametrize("session_type", ["legacy", "shared"])
 
 
 # Step definitions should be added below this line
@@ -91,9 +106,15 @@ def given_file_exists(project_dir: Path, filename: str) -> None:
 
 
 @given(parsers.parse('a project with an initialized aico session for model "{model_name}"'))
-def given_initialized_session(project_dir: Path, runner: CliRunner, model_name: str) -> None:
-    result = runner.invoke(app, ["init", "--model", model_name])
-    assert result.exit_code == 0
+def given_initialized_session(project_dir: Path, runner: CliRunner, model_name: str, session_type: str) -> None:
+    if session_type == "shared":
+        result = runner.invoke(app, ["init", "--model", model_name])
+        assert result.exit_code == 0
+    else:  # session_type == "legacy"
+        session_file = project_dir / SESSION_FILE_NAME
+        new_session = SessionData(model=model_name)
+        save_session(session_file, new_session)
+
     assert (project_dir / SESSION_FILE_NAME).is_file()
 
 
@@ -106,49 +127,51 @@ def given_file_in_context(project_dir: Path, runner: CliRunner, filename: str, d
         contents = docstring if docstring.endswith("\n") else docstring + "\n"
         _ = file.write_text(contents)
     result = runner.invoke(app, ["add", filename])
-    assert result.exit_code == 0
+    assert result.exit_code == 0, f"aico add failed: {result.output}"
+
+
+def _add_pair_to_history(
+    project_dir: Path, session_type: str, user_content: str, assistant_content: str, model: str = "m"
+) -> None:
+    session_file = project_dir / SESSION_FILE_NAME
+    if session_type == "shared":
+        view_path = load_pointer(session_file)
+        view = load_view(view_path)
+        store = HistoryStore(project_dir / ".aico" / "history")
+        u = HistoryRecord(role="user", content=user_content, mode=Mode.CONVERSATION, timestamp="t1")
+        a = HistoryRecord(
+            role="assistant", content=assistant_content, mode=Mode.CONVERSATION, model=model, timestamp="t1"
+        )
+        _ = append_pair_to_view(store, view, u, a)
+        save_view(view_path, view)
+    else:  # session_type == "legacy"
+        session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
+        session_data.chat_history.extend(
+            [
+                UserChatMessage(role="user", content=user_content, mode=Mode.CONVERSATION, timestamp="t1"),
+                AssistantChatMessage(
+                    role="assistant",
+                    content=assistant_content,
+                    mode=Mode.CONVERSATION,
+                    timestamp="t1",
+                    model=model,
+                    duration_ms=1,
+                ),
+            ]
+        )
+        save_session(session_file, session_data)
 
 
 @given("the chat history contains one user/assistant pair")
-def given_history_with_one_pair(project_dir: Path) -> None:
-    session_file = project_dir / SESSION_FILE_NAME
-    session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
-    session_data.chat_history.extend(
-        [
-            UserChatMessage(role="user", content="default prompt", mode=Mode.CONVERSATION, timestamp="t1"),
-            AssistantChatMessage(
-                role="assistant",
-                content="assistant response",
-                mode=Mode.CONVERSATION,
-                timestamp="t1",
-                model="m",
-                duration_ms=1,
-            ),
-        ]
-    )
-    save_session(session_file, session_data)
+def given_history_with_one_pair(project_dir: Path, session_type: str) -> None:
+    _add_pair_to_history(project_dir, session_type, "default prompt", "assistant response")
 
 
 @given(
     parsers.parse('the chat history contains one user/assistant pair where the assistant response is "{response_text}"')
 )
-def given_history_with_one_pair_specific_response(project_dir: Path, response_text: str) -> None:
-    session_file = project_dir / SESSION_FILE_NAME
-    session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
-    session_data.chat_history.extend(
-        [
-            UserChatMessage(role="user", content="default user prompt", mode=Mode.CONVERSATION, timestamp="t1"),
-            AssistantChatMessage(
-                role="assistant",
-                content=response_text,
-                mode=Mode.CONVERSATION,
-                timestamp="t1",
-                model="m",
-                duration_ms=1,
-            ),
-        ]
-    )
-    save_session(session_file, session_data)
+def given_history_with_one_pair_specific_response(project_dir: Path, session_type: str, response_text: str) -> None:
+    _add_pair_to_history(project_dir, session_type, "default user prompt", response_text)
 
 
 @given(
@@ -156,23 +179,10 @@ def given_history_with_one_pair_specific_response(project_dir: Path, response_te
         'the chat history contains one user/assistant pair with content "{user_prompt}" and "{assistant_response}"'
     )
 )
-def given_history_with_specific_content(project_dir: Path, user_prompt: str, assistant_response: str) -> None:
-    session_file = project_dir / SESSION_FILE_NAME
-    session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
-    session_data.chat_history.extend(
-        [
-            UserChatMessage(role="user", content=user_prompt, mode=Mode.CONVERSATION, timestamp="t1"),
-            AssistantChatMessage(
-                role="assistant",
-                content=assistant_response,
-                mode=Mode.CONVERSATION,
-                timestamp="t1",
-                model="m",
-                duration_ms=1,
-            ),
-        ]
-    )
-    save_session(session_file, session_data)
+def given_history_with_specific_content(
+    project_dir: Path, session_type: str, user_prompt: str, assistant_response: str
+) -> None:
+    _add_pair_to_history(project_dir, session_type, user_prompt, assistant_response)
 
 
 @given(parsers.parse("for this scenario, the LLM will stream the response:"))
@@ -252,7 +262,7 @@ def given_test_helper_script_exists(project_dir: Path, script_name: str) -> None
 
 
 @when(parsers.parse("I run the command `{command}`"), target_fixture="command_result")
-def when_run_command(runner: CliRunner, command: str, project_dir: Path) -> dict[str, Result]:
+def when_run_command(runner: CliRunner, command: str, project_dir: Path, session_type: str) -> dict[str, Result]:
     # Check for pipe
     if " | " in command:
         left_cmd, right_cmd = command.split(" | ", 1)
@@ -284,6 +294,36 @@ def when_run_command(runner: CliRunner, command: str, project_dir: Path) -> dict
     args = shlex.split(command)
     if args and args[0] == "aico":
         args = args[1:]
+
+    # Special-case: In legacy mode, emulate `aico init` by creating a legacy session file
+    if session_type == "legacy" and args and args[0] == "init":
+        # Parse optional --model/-m argument
+        model_value: str | None = None
+        i = 1
+        while i < len(args):
+            if args[i] in ("--model", "-m") and i + 1 < len(args):
+                model_value = args[i + 1]
+                i += 2
+            else:
+                i += 1
+        if model_value is None:
+            model_value = "openrouter/google/gemini-2.5-pro"
+
+        session_path = project_dir / SESSION_FILE_NAME
+        new_session = SessionData(model=model_value)
+        save_session(session_path, new_session)
+        out = f"Initialized session file: {session_path}\n"
+        result = Result(
+            runner=runner,
+            output_bytes=out.encode(),
+            stdout_bytes=out.encode(),
+            stderr_bytes=b"",
+            exit_code=0,
+            exception=None,
+            return_value=0,
+        )
+        return {"result": result}
+
     result = runner.invoke(app, args, env={"COLUMNS": "120"}, catch_exceptions=False)
     return {"result": result}
 
@@ -324,36 +364,51 @@ def then_session_file_created(project_dir: Path) -> None:
     assert (project_dir / SESSION_FILE_NAME).is_file()
 
 
-def _get_current_context_files(project_dir: Path) -> list[str]:
+def _get_current_context_files(project_dir: Path, session_type: str) -> list[str]:
     session_file = project_dir / SESSION_FILE_NAME
-    session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
-    return session_data.context_files
+    if session_type == "shared":
+        view_path = load_pointer(session_file)
+        view = load_view(view_path)
+        return view.context_files
+    else:  # session_type == "legacy"
+        session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
+        return session_data.context_files
 
 
 @then("the session context should be empty")
-def then_context_is_empty(project_dir: Path) -> None:
-    context_files = _get_current_context_files(project_dir)
+def then_context_is_empty(project_dir: Path, session_type: str) -> None:
+    context_files = _get_current_context_files(project_dir, session_type)
     assert context_files == []
 
 
 @then(parsers.parse('the session context should contain the file "{filename}"'))
-def then_context_contains(project_dir: Path, filename: str) -> None:
-    context_files = _get_current_context_files(project_dir)
+def then_context_contains(project_dir: Path, session_type: str, filename: str) -> None:
+    context_files = _get_current_context_files(project_dir, session_type)
     assert filename in context_files
 
 
 @then(parsers.parse('the session context should not contain the file "{filename}"'))
-def then_context_does_not_contain(project_dir: Path, filename: str) -> None:
-    context_files = _get_current_context_files(project_dir)
+def then_context_does_not_contain(project_dir: Path, session_type: str, filename: str) -> None:
+    context_files = _get_current_context_files(project_dir, session_type)
     assert filename not in context_files
 
 
 @then(parsers.parse("the session history should contain {count:d} user/assistant pair"))
 @then(parsers.parse("the session history should contain {count:d} user/assistant pairs"))
-def then_history_contains_pairs(project_dir: Path, count: int) -> None:
+def then_history_contains_pairs(project_dir: Path, session_type: str, count: int) -> None:
     session_file = project_dir / SESSION_FILE_NAME
-    session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
-    pairs = find_message_pairs(session_data.chat_history)
+
+    if session_type == "shared":
+        from aico.historystore import find_message_pairs_in_view
+
+        view_path = load_pointer(session_file)
+        view = load_view(view_path)
+        store = HistoryStore(project_dir / ".aico" / "history")
+        pairs = find_message_pairs_in_view(store, view)
+    else:  # session_type == "legacy"
+        session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
+        pairs = find_message_pairs(session_data.chat_history)
+
     assert len(pairs) == count, f"Expected {count} pairs, but found {len(pairs)}"
 
 
@@ -387,13 +442,25 @@ def then_file_should_contain(project_dir: Path, filename: str, docstring: str) -
 
 
 @then(parsers.parse('the content of the assistant response at pair index {pair_index:d} should now be "{new_content}"'))
-def then_response_content_is_updated(project_dir: Path, pair_index: int, new_content: str) -> None:
+def then_response_content_is_updated(project_dir: Path, session_type: str, pair_index: int, new_content: str) -> None:
     session_file = project_dir / SESSION_FILE_NAME
-    session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
-    pairs = find_message_pairs(session_data.chat_history)
-    assert len(pairs) > pair_index, f"Not enough pairs in history to check index {pair_index}"
+    if session_type == "shared":
+        from aico.historystore import find_message_pairs_in_view
 
-    pair = pairs[pair_index]
-    assistant_message = session_data.chat_history[pair.assistant_index]
-    assert isinstance(assistant_message, AssistantChatMessage)
-    assert assistant_message.content == new_content
+        view_path = load_pointer(session_file)
+        view = load_view(view_path)
+        store = HistoryStore(project_dir / ".aico" / "history")
+        pairs_positions = find_message_pairs_in_view(store, view)
+        assistant_pos = pairs_positions[pair_index][1]
+        assistant_index = view.message_indices[assistant_pos]
+        assistant_record = store.read(assistant_index)
+        assert assistant_record.content == new_content
+    else:  # session_type == "legacy"
+        session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
+        pairs = find_message_pairs(session_data.chat_history)
+        assert len(pairs) > pair_index, f"Not enough pairs in history to check index {pair_index}"
+
+        pair = pairs[pair_index]
+        assistant_message = session_data.chat_history[pair.assistant_index]
+        assert isinstance(assistant_message, AssistantChatMessage)
+        assert assistant_message.content == new_content

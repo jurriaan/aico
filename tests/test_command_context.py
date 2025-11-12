@@ -5,7 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from aico.lib.session import SESSION_FILE_NAME, complete_files_in_context
+from aico.lib.session import complete_files_in_context
 from aico.main import app
 
 runner = CliRunner()
@@ -27,9 +27,9 @@ def test_add_file_to_context(tmp_path: Path) -> None:
         assert "Added file to context: test_file.py" in result.stdout
 
         # AND the session file is updated with the file's relative path
-        session_file = Path(td) / SESSION_FILE_NAME
-        session_data = json.loads(session_file.read_text())
-        assert session_data["context_files"] == ["test_file.py"]
+        view_file = Path(td) / ".aico" / "sessions" / "main.json"
+        view_data = json.loads(view_file.read_text())
+        assert view_data["context_files"] == ["test_file.py"]
 
 
 def test_add_duplicate_file_is_ignored(tmp_path: Path) -> None:
@@ -49,9 +49,9 @@ def test_add_duplicate_file_is_ignored(tmp_path: Path) -> None:
         assert "File already in context: test_file.py" in result.stdout
 
         # AND the session context list remains unchanged
-        session_file = Path(td) / SESSION_FILE_NAME
-        session_data = json.loads(session_file.read_text())
-        assert session_data["context_files"] == ["test_file.py"]
+        view_file = Path(td) / ".aico" / "sessions" / "main.json"
+        view_data = json.loads(view_file.read_text())
+        assert view_data["context_files"] == ["test_file.py"]
 
 
 def test_add_non_existent_file_fails(tmp_path: Path) -> None:
@@ -111,9 +111,9 @@ def test_add_multiple_files_successfully(tmp_path: Path) -> None:
         assert "Added file to context: file2.py" in result.stdout
 
         # AND the session file is updated with both relative paths
-        session_file = Path(td) / SESSION_FILE_NAME
-        session_data = json.loads(session_file.read_text())
-        assert sorted(session_data["context_files"]) == ["file1.py", "file2.py"]
+        view_file = Path(td) / ".aico" / "sessions" / "main.json"
+        view_data = json.loads(view_file.read_text())
+        assert sorted(view_data["context_files"]) == ["file1.py", "file2.py"]
 
 
 def test_add_multiple_files_with_one_already_in_context(tmp_path: Path) -> None:
@@ -136,9 +136,9 @@ def test_add_multiple_files_with_one_already_in_context(tmp_path: Path) -> None:
         assert "Added file to context: file2.py" in result.stdout
 
         # AND the session file contains both files without duplicates
-        session_file = Path(td) / SESSION_FILE_NAME
-        session_data = json.loads(session_file.read_text())
-        assert sorted(session_data["context_files"]) == ["file1.py", "file2.py"]
+        view_file = Path(td) / ".aico" / "sessions" / "main.json"
+        view_data = json.loads(view_file.read_text())
+        assert sorted(view_data["context_files"]) == ["file1.py", "file2.py"]
 
 
 def test_add_multiple_files_with_one_non_existent_partially_fails(
@@ -165,9 +165,9 @@ def test_add_multiple_files_with_one_non_existent_partially_fails(
         assert f"Error: File not found: {non_existent_file}" in result.stderr
 
         # AND the session file is updated with only the valid file
-        session_file = Path(td) / SESSION_FILE_NAME
-        session_data = json.loads(session_file.read_text())
-        assert session_data["context_files"] == ["file1.py"]
+        view_file = Path(td) / ".aico" / "sessions" / "main.json"
+        view_data = json.loads(view_file.read_text())
+        assert view_data["context_files"] == ["file1.py"]
 
 
 def test_drop_single_file_successfully(tmp_path: Path) -> None:
@@ -186,9 +186,9 @@ def test_drop_single_file_successfully(tmp_path: Path) -> None:
         assert "Dropped file from context: file1.py" in result.stdout
 
         # AND the session file is updated to contain only the other file
-        session_file = Path(td) / SESSION_FILE_NAME
-        session_data = json.loads(session_file.read_text())
-        assert sorted(session_data["context_files"]) == ["file2.py"]
+        view_file = Path(td) / ".aico" / "sessions" / "main.json"
+        view_data = json.loads(view_file.read_text())
+        assert sorted(view_data["context_files"]) == ["file2.py"]
 
 
 def test_drop_multiple_files_successfully(tmp_path: Path) -> None:
@@ -209,9 +209,9 @@ def test_drop_multiple_files_successfully(tmp_path: Path) -> None:
         assert "Dropped file from context: file3.py" in result.stdout
 
         # AND the session file is updated correctly
-        session_file = Path(td) / SESSION_FILE_NAME
-        session_data = json.loads(session_file.read_text())
-        assert sorted(session_data["context_files"]) == ["file2.py"]
+        view_file = Path(td) / ".aico" / "sessions" / "main.json"
+        view_data = json.loads(view_file.read_text())
+        assert sorted(view_data["context_files"]) == ["file2.py"]
 
 
 def test_drop_file_not_in_context_fails(tmp_path: Path) -> None:
@@ -231,9 +231,9 @@ def test_drop_file_not_in_context_fails(tmp_path: Path) -> None:
         assert "Error: File not in context: not_in_context.py" in result.stderr
 
         # AND the session file remains unchanged
-        session_file = Path(td) / SESSION_FILE_NAME
-        session_data = json.loads(session_file.read_text())
-        assert session_data["context_files"] == ["file1.py"]
+        view_file = Path(td) / ".aico" / "sessions" / "main.json"
+        view_data = json.loads(view_file.read_text())
+        assert view_data["context_files"] == ["file1.py"]
 
 
 def test_drop_multiple_with_one_not_in_context_partially_fails(tmp_path: Path) -> None:
@@ -257,24 +257,25 @@ def test_drop_multiple_with_one_not_in_context_partially_fails(tmp_path: Path) -
         assert "Error: File not in context: not_in_context.py" in result.stderr
 
         # AND the session file is updated to remove the valid file
-        session_file = Path(td) / SESSION_FILE_NAME
-        session_data = json.loads(session_file.read_text())
-        assert sorted(session_data["context_files"]) == ["file2.py"]
+        view_file = Path(td) / ".aico" / "sessions" / "main.json"
+        view_data = json.loads(view_file.read_text())
+        assert sorted(view_data["context_files"]) == ["file2.py"]
 
 
 def test_drop_autocompletion(tmp_path: Path) -> None:
     # GIVEN a session with several files in context
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         # AND a session file is initialized with context files
-        runner.invoke(app, ["init"])
-        session_file = Path(td) / SESSION_FILE_NAME
-        session_data = json.loads(session_file.read_text())
-        session_data["context_files"] = [
+        result = runner.invoke(app, ["init"])
+        assert result.exit_code == 0
+        view_file = Path(td) / ".aico" / "sessions" / "main.json"
+        view_data = json.loads(view_file.read_text())
+        view_data["context_files"] = [
             "src/main.py",
             "src/utils.py",
             "docs/README.md",
         ]
-        session_file.write_text(json.dumps(session_data))
+        view_file.write_text(json.dumps(view_data))
 
         # WHEN the completion function is called with various partial inputs
         # THEN it returns the correct list of matching files

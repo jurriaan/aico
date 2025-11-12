@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from json import JSONDecodeError
@@ -7,6 +8,8 @@ from tempfile import mkstemp
 import typer
 from pydantic import TypeAdapter, ValidationError
 
+from aico.historystore import load_view
+from aico.historystore.pointer import SessionPointer
 from aico.lib.models import FileContents, SessionData
 
 SESSION_FILE_NAME = ".ai_session.json"
@@ -58,17 +61,41 @@ def get_relative_path_or_error(file_path: Path, session_root: Path) -> str | Non
 
 
 def complete_files_in_context(incomplete: str) -> list[str]:
+    """Provides shell completion for filenames currently in the session context."""
     session_file = find_session_file()
     if not session_file:
         return []
 
+    context_files: list[str] = []
     try:
-        session_data = SessionDataAdapter.validate_json(session_file.read_text())
-        completions = [f for f in session_data.context_files if f.startswith(incomplete)]
-        completions += [f for f in session_data.context_files if incomplete in f and f not in completions]
-        return completions
-    except (ValidationError, JSONDecodeError):
+        raw_text = session_file.read_text(encoding="utf-8").strip()
+        if not raw_text:
+            return []
+
+        # Attempt to parse as a shared-history pointer
+        if "aico_session_pointer_v1" in raw_text:
+            try:
+                pointer = SessionPointer.model_validate_json(raw_text)
+                view_path = (session_file.parent / pointer.path).resolve()
+                if view_path.is_file():
+                    view = load_view(view_path)
+                    context_files = view.context_files
+            except (ValidationError, json.JSONDecodeError):
+                # It looked like a pointer but wasn't. Fall through to legacy parsing.
+                pass
+
+        # Fallback for legacy session files or failed pointer parsing
+        if not context_files:
+            session_data = SessionDataAdapter.validate_json(raw_text)
+            context_files = session_data.context_files
+
+    except (ValidationError, JSONDecodeError, OSError):
         return []
+
+    # Build the list of completions, prioritizing prefix matches
+    completions = [f for f in context_files if f.startswith(incomplete)]
+    completions += [f for f in context_files if incomplete in f and f not in completions]
+    return completions
 
 
 def save_session(session_file: Path, session_data: SessionData) -> None:
