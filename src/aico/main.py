@@ -19,6 +19,7 @@ from aico.commands.prompt import ask, generate_patch, prompt
 from aico.commands.redo import redo
 from aico.commands.session_fork import session_fork
 from aico.commands.session_list import session_list
+from aico.commands.session_new import session_new
 from aico.commands.session_switch import session_switch
 from aico.commands.set_history import set_history
 from aico.commands.status import status
@@ -60,6 +61,7 @@ _ = app.command("redo", context_settings={"ignore_unknown_options": True})(redo)
 _ = app.command("session-list")(session_list)
 _ = app.command("session-switch")(session_switch)
 _ = app.command("session-fork")(session_fork)
+_ = app.command("session-new")(session_new)
 _ = app.command("migrate-shared-history")(migrate_shared_history)
 register_addon_commands(app)
 
