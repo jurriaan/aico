@@ -150,6 +150,7 @@ For more detailed usage examples and scenarios, see [USAGE.feature.md](USAGE.fea
 - `aico session-list`: List available session branches (shared-history only).
 - `aico session-switch <name>`: Switch the active branch (shared-history only).
 - `aico session-fork <name>`: Create a new branch from the current one (shared-history only).
+- `aico session-new <name>`: Create a new, empty session branch (shared-history only).
 - `aico migrate-shared-history`: Convert a legacy single-file session to the shared-history format (creates history shards, a session view, and repoints `.ai_session.json`).
 
 ## Addons: Extending `aico`
