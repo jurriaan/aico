@@ -191,7 +191,7 @@ def status() -> None:  # noqa: C901
         Text("Total", style="bold"),
     )
 
-    console.print(table)
+    console.print(table, markup=False)
 
     if max_input_tokens:
         console.print()
