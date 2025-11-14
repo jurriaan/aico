@@ -1,0 +1,134 @@
+#!/bin/sh
+
+set -e
+
+# --- Usage / Help ---
+if [ "$1" = "--usage" ]; then
+    echo "Interactively manage the Aico context using git ls-files and fzf (add/drop files with optional bat preview)."
+    exit 0
+fi
+
+# --- Dependency checks ---
+
+if ! command -v git >/dev/null 2>&1; then
+    echo "Error: git is required for manage-context (to list project files)." >&2
+    exit 1
+fi
+
+if ! command -v fzf >/dev/null 2>&1; then
+    echo "Error: fzf is required for manage-context. Please install fzf to use this addon." >&2
+    exit 1
+fi
+
+# Optional pretty preview: bat if available, otherwise plain text preview
+if command -v bat >/dev/null 2>&1; then
+    PREVIEW_CMD='bat --color=always --style=numbers --line-range=:200 {}'
+else
+    # Fallback: show first 200 lines with basic numbering
+    PREVIEW_CMD='nl -ba {} | sed -n "1,200p"'
+fi
+
+# --- Determine repo root (for nicer relative paths) ---
+
+if git rev-parse --show-toplevel >/dev/null 2>&1; then
+    REPO_ROOT="$(git rev-parse --show-toplevel)"
+    cd "$REPO_ROOT"
+fi
+
+# --- Build candidate file list from git ---
+# We include both tracked and untracked (but unignored) files, mirroring fd-like behavior.
+
+TRACKED="$(git ls-files)"
+UNTRACKED="$(git ls-files --others --exclude-standard)"
+
+ALL_CANDIDATES="$(printf "%s\n%s\n" "$TRACKED" "$UNTRACKED" | awk 'NF {seen[$0]++} END {for (f in seen) print f}' | sort)"
+
+if [ -z "$ALL_CANDIDATES" ]; then
+    echo "No files found to manage in context." >&2
+    exit 0
+fi
+
+# --- Discover current context files via completion hack ---
+# This uses aico's completion for `drop` to list files currently in the context.
+CURRENT_CONTEXT_ORIGINAL="$(
+  env _AICO_COMPLETE=complete_bash COMP_WORDS='aico drop ' COMP_CWORD=2 aico 2>/dev/null \
+    | tr ' ' '\n' \
+    | sed '/^$/d' \
+    | sort -u
+)"
+
+# --- Reorder candidates: context files first, then the rest ---
+IN_CONTEXT_FILES="$(comm -12 <(printf "%s\n" "$ALL_CANDIDATES") <(printf "%s\n" "$CURRENT_CONTEXT_ORIGINAL"))"
+NOT_IN_CONTEXT_FILES="$(comm -23 <(printf "%s\n" "$ALL_CANDIDATES") <(printf "%s\n" "$CURRENT_CONTEXT_ORIGINAL"))"
+
+# Calculate the number of files in context to pre-select them
+NUM_IN_CONTEXT=$(printf "%s\n" "$IN_CONTEXT_FILES" | sed '/^$/d' | wc -l)
+
+# --- Interactive selection via fzf ---
+
+# FZF options
+# - Context files are listed first.
+# - alt-c: clear all selections
+# - alt-o: quickly reselect only the original context files (first NUM_IN_CONTEXT entries).
+FZF_OPTS=(
+  --sync
+  --multi
+  --preview "$PREVIEW_CMD"
+  --header "== In Context (pre-selected) ==  |  [alt-c] clear all  [alt-o] only context"
+)
+
+SELECTED_FILES="$(
+  (printf "%s\n" "$IN_CONTEXT_FILES"; printf "%s\n" "$NOT_IN_CONTEXT_FILES") \
+    | fzf \
+        "${FZF_OPTS[@]}" \
+        --bind "alt-c:clear-multi" \
+        --bind "load:transform:printf '+clear-multi';printf '+pos(%d)+select' $(seq 1 "$NUM_IN_CONTEXT" | tr '\n' ' ')" \
+        --bind "alt-o:clear-query+search()+bg-transform(printf 'trigger(load)')" 
+)"
+
+if [ -z "$SELECTED_FILES" ]; then
+    # User cancelled or selected nothing
+    exit 0
+fi
+
+# --- Compute delta between selected files and current context ---
+
+# Normalize to one-per-line sets
+NEW_SELECTION="$(printf "%s\n" "$SELECTED_FILES" | sort -u)"
+CURRENT_CONTEXT_SORTED="$(printf "%s\n" "$CURRENT_CONTEXT_ORIGINAL" | sort -u)"
+
+# Files to add: in NEW_SELECTION but not in CURRENT_CONTEXT
+TO_ADD="$(comm -23 <(printf "%s\n" "$NEW_SELECTION") <(printf "%s\n" "$CURRENT_CONTEXT_SORTED"))"
+
+# Files to drop: in CURRENT_CONTEXT but not in NEW_SELECTION
+# NOTE: We keep files that are missing on disk "sticky" in context to avoid accidental drops
+# when switching branches or working with temporary files.
+TO_DROP="$(
+  comm -13 <(printf "%s\n" "$NEW_SELECTION") <(printf "%s\n" "$CURRENT_CONTEXT_SORTED") \
+    | while IFS= read -r path; do
+        if [ -z "$path" ]; then
+          continue
+        fi
+        if [ -f "$path" ]; then
+          printf "%s\n" "$path"
+        fi
+      done
+)"
+
+# --- Apply add/drop operations via aico ---
+
+CHANGED=0
+
+if [ -n "$TO_ADD" ]; then
+  CHANGED=1
+  printf "%s\n" "$TO_ADD" | xargs -t --no-run-if-empty aico add
+fi
+
+if [ -n "$TO_DROP" ]; then
+  CHANGED=1
+  printf "%s\n" "$TO_DROP" | xargs -t --no-run-if-empty aico drop
+fi
+
+if [ "$CHANGED" -eq 0 ]; then
+  echo "Context unchanged." >&2
+fi
