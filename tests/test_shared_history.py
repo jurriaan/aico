@@ -3,6 +3,7 @@
 import shlex
 from pathlib import Path
 
+import click
 import pytest
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
@@ -117,6 +118,82 @@ def test_last_on_shared_session_diff(shared_history_project_dir: Path) -> None:
     assert result.exit_code == 0
     expected_diff = "--- a/file1.py\n+++ b/file1.py\n@@ -1 +1 @@\n-def func_one(): pass\n+def func_one(a: int): pass\n"
     assert result.stdout.strip() == expected_diff.strip()
+
+
+def test_status_renders_paths_with_special_characters_literal(
+    shared_history_project_dir: Path, mocker: MockerFixture
+) -> None:
+    """
+    Tests that `status` renders context file paths with special characters like [] and () literally,
+    without interpreting them as Rich markup.
+    """
+    from aico.historystore import load_view, save_view
+    from aico.historystore.pointer import load_pointer
+
+    project_dir = shared_history_project_dir
+
+    # GIVEN a context file path containing brackets and parentheses
+    special_path = "app/(editor)/book/[bookId]/page.tsx"
+    file_path = project_dir / special_path
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_text("console.log('ok');", encoding="utf-8")
+
+    # AND the active SessionView includes this path in context_files
+    pointer_path = project_dir / ".ai_session.json"
+    view_path = load_pointer(pointer_path)
+    view = load_view(view_path)
+    view.context_files.append(special_path)
+    save_view(view_path, view)
+
+    # AND token counting/model info are mocked to keep output deterministic
+    mocker.patch("litellm.token_counter", return_value=10)
+    mocker.patch("litellm.get_model_info", return_value=None)
+    mocker.patch("litellm.completion_cost", side_effect=Exception("No cost info"))
+
+    # WHEN `aico status` is run
+    result = runner.invoke(app, ["status"], catch_exceptions=False)
+
+    # THEN it succeeds and the literal path appears in stdout (not eaten/treated as markup)
+    assert result.exit_code == 0, result.stderr
+    assert special_path in result.stdout
+
+
+def test_load_pointer_invalid_json_exits(tmp_path: Path) -> None:
+    """
+    Tests that load_pointer emits a clear error and exits when the pointer file contains invalid JSON.
+    This calls load_pointer directly, rather than going through the CLI/persistence selection.
+    """
+    from aico.historystore.pointer import load_pointer
+
+    project_dir = tmp_path / "project_invalid_json"
+    project_dir.mkdir()
+    pointer_file = project_dir / ".ai_session.json"
+    pointer_file.write_text('{"foo":false}', encoding="utf-8")
+
+    with pytest.raises(click.exceptions.Exit) as excinfo:
+        _ = load_pointer(pointer_file)
+
+    assert excinfo.value.exit_code == 1
+
+
+def test_load_pointer_missing_view_exits(tmp_path: Path) -> None:
+    """
+    Tests that load_pointer emits a clear error and exits when the referenced view file is missing.
+    """
+    from aico.historystore.pointer import SessionPointer
+
+    project_dir = tmp_path / "project_missing_view"
+    project_dir.mkdir()
+    pointer_file = project_dir / ".ai_session.json"
+
+    # Valid pointer JSON pointing to a non-existent view
+    pointer = SessionPointer(type="aico_session_pointer_v1", path=".aico/sessions/missing.json")
+    pointer_file.write_text(pointer.model_dump_json(), encoding="utf-8")
+
+    result = runner.invoke(app, ["status"], catch_exceptions=False, env={"AICO_SESSION_FILE": str(pointer_file)})
+
+    assert result.exit_code != 0
+    assert "Session pointer refers to missing view file" in result.stderr
 
 
 @pytest.mark.parametrize(
