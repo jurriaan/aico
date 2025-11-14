@@ -24,10 +24,10 @@ def session_fork(
         typer.echo("Error: New session name is required.", err=True)
         raise typer.Exit(code=1)
 
-    persistence = get_persistence()
+    persistence = get_persistence(require_type="shared")
     session_file, _ = persistence.load()
 
-    # Validate pointer and resolve active view path
+    # At this point we know we are in a valid shared-history session.
     active_view_path = load_pointer(session_file)
 
     sessions_dir = session_file.parent / ".aico" / "sessions"

@@ -1,5 +1,6 @@
 from contextlib import suppress
 from dataclasses import dataclass
+from pathlib import Path
 
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -11,6 +12,7 @@ from rich.text import Text
 import aico.utils as utils
 from aico.core.session_context import summarize_active_window
 from aico.core.session_persistence import get_persistence
+from aico.historystore.pointer import InvalidPointerError, MissingViewError, load_pointer
 from aico.lib.models import SessionData
 from aico.prompts import ALIGNMENT_PROMPTS, DEFAULT_SYSTEM_PROMPT, DIFF_MODE_INSTRUCTIONS
 
@@ -20,6 +22,19 @@ class _TokenInfo:
     description: str
     tokens: int
     cost: float | None = None
+
+
+def _get_session_name(session_file: Path) -> str | None:
+    """
+    Returns the current session/view name for shared-history sessions.
+    For legacy sessions (no pointer or invalid pointer), returns None.
+    """
+    try:
+        view_path = load_pointer(session_file)
+    except (InvalidPointerError, MissingViewError, OSError):
+        # Legacy or invalid pointer: omit a name for status display.
+        return None
+    return view_path.stem
 
 
 def _get_history_summary_text(session_data: SessionData) -> Text | None:
@@ -144,7 +159,12 @@ def status() -> None:  # noqa: C901
     max_input_tokens: int | None = model_info.get("max_input_tokens") if model_info else None
 
     # --- Rich Rendering ---
-    console.print(Panel(Text(session_data.model, justify="center"), title="Status for model", border_style="dim"))
+    session_name = _get_session_name(session_file) or "main"
+
+    header_title = f"Session '{session_name}'"
+    header_body = Text(session_data.model, justify="center")
+
+    console.print(Panel(header_body, title=header_title, border_style="dim"))
     console.print()
 
     table = Table.grid(expand=True, padding=(0, 1))

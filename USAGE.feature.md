@@ -45,7 +45,7 @@ Understanding context size is crucial for managing API costs and model performan
 - When I run the command `aico status`
 - Then the output should be:
   ```
-  ╭────────────────────────────────────────────────── Status for model ──────────────────────────────────────────────────╮
+  ╭─────────────────────────────────────────────────── Session 'main' ───────────────────────────────────────────────────╮
   │                                                 test-model-with-cost                                                 │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   

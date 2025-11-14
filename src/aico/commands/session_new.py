@@ -25,11 +25,10 @@ def session_new(
         typer.echo("Error: New session name is required.", err=True)
         raise typer.Exit(code=1)
 
-    persistence = get_persistence()
+    persistence = get_persistence(require_type="shared")
     session_file, session_data = persistence.load()
 
-    # Validate we are in a shared-history project by trying to load the pointer
-    # This also gives us the absolute path to the active view, which we don't need, but it's a good check.
+    # We are guaranteed to be in a shared-history project; resolve active view path.
     active_view_path = load_pointer(session_file)
 
     sessions_dir = active_view_path.parent

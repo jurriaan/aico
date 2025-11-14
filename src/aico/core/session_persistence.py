@@ -24,7 +24,11 @@ from aico.historystore import (
     edit_message as edit_message_historystore,
 )
 from aico.historystore.models import HistoryRecord, UserMetaEnvelope
-from aico.historystore.pointer import SessionPointer
+from aico.historystore.pointer import (
+    InvalidPointerError,
+    MissingViewError,
+    SessionPointer,
+)
 from aico.historystore.pointer import load_pointer as load_pointer_helper
 from aico.lib.models import (
     AssistantChatMessage,
@@ -218,7 +222,14 @@ class SharedHistoryPersistence:
         Load the active SessionView and reconstruct a strongly-typed SessionData.
         """
         # Resolve and validate the session view path from the pointer file
-        self._view_path_abs = load_pointer_helper(self._pointer_file)
+        try:
+            self._view_path_abs = load_pointer_helper(self._pointer_file)
+        except MissingViewError as e:
+            typer.echo(str(e), err=True)
+            raise typer.Exit(1) from e
+        except InvalidPointerError as e:
+            typer.echo(f"Error: {e}", err=True)
+            raise typer.Exit(1) from e
 
         store = HistoryStore(self._history_root)
         try:
@@ -469,33 +480,73 @@ def load_session_and_resolve_indices(
     return session_file, session_data, pair_indices, resolved_index
 
 
-def get_persistence() -> StatefulSessionPersistence:
+def get_persistence(require_type: str = "any") -> StatefulSessionPersistence:
     """
     Factory for persistence backend; detects pointer file to enable shared-history.
+
+    Args:
+        require_type: Controls which persistence types are acceptable.
+            - "any": return either LegacyJsonPersistence or SharedHistoryPersistence.
+            - "shared": require a valid shared-history session (pointer + view); otherwise exit.
     """
     session_file_path = find_session_file()
     if session_file_path is None:
+        if require_type == "shared":
+            print(
+                f"Error: No session file '{SESSION_FILE_NAME}' found. "
+                + "This command requires a shared-history session. "
+                + "Run 'aico init' or 'aico migrate-shared-history' first.",
+                file=sys.stderr,
+            )
+            raise typer.Exit(code=1)
         return LegacyJsonPersistence()
 
     try:
         raw_text = session_file_path.read_text(encoding="utf-8").strip()
-        if not raw_text:
-            return LegacyJsonPersistence()
-    except OSError:
-        # File found but unreadable, let legacy loader handle it.
+    except OSError as e:
+        if require_type == "shared":
+            print(f"Error: Could not read session file {session_file_path}: {e}", file=sys.stderr)
+            raise typer.Exit(code=1) from e
+        return LegacyJsonPersistence()
+
+    if not raw_text:
+        if require_type == "shared":
+            print(
+                f"Error: Session file '{SESSION_FILE_NAME}' is empty. "
+                + "This command requires a shared-history session pointer.",
+                file=sys.stderr,
+            )
+            raise typer.Exit(code=1)
         return LegacyJsonPersistence()
 
     # Optimization: if it doesn't contain the magic string, it can't be a pointer.
     if "aico_session_pointer_v1" not in raw_text:
+        if require_type == "shared":
+            print(
+                "Error: This command requires a shared-history session. "
+                + "Run 'aico migrate-shared-history' to upgrade this legacy session.",
+                file=sys.stderr,
+            )
+            raise typer.Exit(code=1)
         return LegacyJsonPersistence()
 
-    # At this point, it's likely a pointer. Let's verify with Pydantic.
-    try:
-        # We only try to validate as a pointer. If it fails, it's legacy.
-        _ = SessionPointer.model_validate_json(raw_text)
-        return SharedHistoryPersistence(session_file_path)
-    except ValidationError:
-        # It had the magic string but didn't validate as a pointer.
-        # This could be a legacy session that happens to contain the string
-        # in its content. Fall back to legacy.
-        return LegacyJsonPersistence()
+    # It looks like a pointer.
+    if require_type == "shared":
+        # If shared is required, be strict: load_pointer must succeed completely.
+        try:
+            _ = load_pointer_helper(session_file_path)
+        except MissingViewError as e:
+            typer.echo(str(e), err=True)
+            raise typer.Exit(code=1) from e
+        except InvalidPointerError as e:
+            typer.echo(f"Error: {e}", err=True)
+            raise typer.Exit(code=1) from e
+    else:
+        # If any type is allowed, be lenient.
+        # It's a pointer if it can be parsed as one, even if the view is missing.
+        try:
+            _ = SessionPointer.model_validate_json(raw_text)
+        except ValidationError:
+            return LegacyJsonPersistence()
+
+    return SharedHistoryPersistence(session_file_path)

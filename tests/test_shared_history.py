@@ -3,7 +3,6 @@
 import shlex
 from pathlib import Path
 
-import click
 import pytest
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
@@ -17,6 +16,7 @@ from aico.historystore import (
     switch_active_pointer,
 )
 from aico.historystore.models import UserMetaEnvelope
+from aico.historystore.pointer import load_pointer
 from aico.lib.models import DerivedContent, Mode, TokenUsage, UserDerivedMeta
 
 # aico imports
@@ -160,27 +160,27 @@ def test_status_renders_paths_with_special_characters_literal(
 
 def test_load_pointer_invalid_json_exits(tmp_path: Path) -> None:
     """
-    Tests that load_pointer emits a clear error and exits when the pointer file contains invalid JSON.
+    Tests that load_pointer raises a clear error when the pointer file contains invalid JSON.
     This calls load_pointer directly, rather than going through the CLI/persistence selection.
     """
-    from aico.historystore.pointer import load_pointer
+    from aico.historystore.pointer import InvalidPointerError, load_pointer
 
     project_dir = tmp_path / "project_invalid_json"
     project_dir.mkdir()
     pointer_file = project_dir / ".ai_session.json"
     pointer_file.write_text('{"foo":false}', encoding="utf-8")
 
-    with pytest.raises(click.exceptions.Exit) as excinfo:
+    with pytest.raises(InvalidPointerError) as excinfo:
         _ = load_pointer(pointer_file)
 
-    assert excinfo.value.exit_code == 1
+    assert "Not a valid shared-history pointer file" in str(excinfo.value)
 
 
 def test_load_pointer_missing_view_exits(tmp_path: Path) -> None:
     """
     Tests that load_pointer emits a clear error and exits when the referenced view file is missing.
     """
-    from aico.historystore.pointer import SessionPointer
+    from aico.historystore.pointer import MissingViewError, SessionPointer
 
     project_dir = tmp_path / "project_missing_view"
     project_dir.mkdir()
@@ -190,10 +190,15 @@ def test_load_pointer_missing_view_exits(tmp_path: Path) -> None:
     pointer = SessionPointer(type="aico_session_pointer_v1", path=".aico/sessions/missing.json")
     pointer_file.write_text(pointer.model_dump_json(), encoding="utf-8")
 
-    result = runner.invoke(app, ["status"], catch_exceptions=False, env={"AICO_SESSION_FILE": str(pointer_file)})
+    # When using a shared-history-only command, missing view should cause a clear error and non-zero exit.
+    result = runner.invoke(app, ["session-list"], catch_exceptions=False, env={"AICO_SESSION_FILE": str(pointer_file)})
 
     assert result.exit_code != 0
     assert "Session pointer refers to missing view file" in result.stderr
+
+    # And load_pointer itself should raise a MissingViewError when called directly.
+    with pytest.raises(MissingViewError):
+        _ = load_pointer(pointer_file)
 
 
 @pytest.mark.parametrize(

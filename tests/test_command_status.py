@@ -60,7 +60,7 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
         output = result.stdout
 
         # Check titles and headers
-        assert "Status for model" in output
+        assert "Session 'main'" in output
         assert "test-model-with-cost" in output
         assert "Tokens" in output and "Cost" in output and "Component" in output
 

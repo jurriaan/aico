@@ -13,7 +13,7 @@ def session_switch(
     """
     Switch the active session pointer to another existing view (branch).
     """
-    persistence = get_persistence()
+    persistence = get_persistence(require_type="shared")
     session_file, _ = persistence.load()
 
     # Validate pointer and resolve current active view (ensures shared-history)

@@ -10,7 +10,7 @@ def session_list() -> None:
     """
     List available session views (branches) for a shared-history session.
     """
-    persistence = get_persistence()
+    persistence = get_persistence(require_type="shared")
     session_file, _ = persistence.load()
 
     # Validate and resolve active view path via pointer helper

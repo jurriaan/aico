@@ -94,4 +94,4 @@ def test_session_new_fails_in_legacy_session(tmp_path: Path) -> None:
 
         # THEN the command fails because it's not a shared-history session
         assert result.exit_code == 1
-        assert "Not a valid shared-history pointer file" in result.stderr
+        assert "This command requires a shared-history session." in result.stderr
