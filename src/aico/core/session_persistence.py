@@ -1,4 +1,3 @@
-import copy
 import sys
 from dataclasses import replace
 from json import JSONDecodeError
@@ -51,7 +50,6 @@ from aico.lib.session import (
 @runtime_checkable
 class SessionPersistence(Protocol):
     def load(self) -> tuple[Path, SessionData]: ...
-    def save(self, session_file: Path, session_data: SessionData) -> None: ...
 
 
 @runtime_checkable
@@ -124,10 +122,6 @@ class LegacyJsonPersistence:
             )
 
         return session_file, session_data
-
-    def save(self, session_file: Path, session_data: SessionData) -> None:
-        """Saves session data. Used by `init`."""
-        legacy_save_session(session_file, session_data)
 
     def append_pair(self, user_msg: UserChatMessage, asst_msg: AssistantChatMessage) -> None:
         session_file, session_data = self.load()
@@ -202,7 +196,6 @@ class SharedHistoryPersistence:
     _history_root: Path
     _view_rel_path: str | None
     _view_path_abs: Path | None
-    _original_session: SessionData | None
     writable: bool
 
     def __init__(self, pointer_file: Path):
@@ -211,7 +204,6 @@ class SharedHistoryPersistence:
         self._history_root = self._session_root / ".aico" / "history"
         self._view_rel_path = None
         self._view_path_abs = None
-        self._original_session = None
         # Writes are enabled by default
         self.writable = True
 
@@ -252,7 +244,6 @@ class SharedHistoryPersistence:
         )
 
         # Snapshot for diffing on save
-        self._original_session = copy.deepcopy(session_data)
         return self._pointer_file, session_data
 
     def append_pair(self, user_msg: UserChatMessage, asst_msg: AssistantChatMessage) -> None:
@@ -268,11 +259,6 @@ class SharedHistoryPersistence:
         _ = append_pair_to_view(store, view, user_record, assistant_record)
 
         save_view(self._view_path_abs, view)
-
-        # Update internal state to prevent old save method from tripping on length changes
-        if self._original_session:
-            self._original_session.chat_history.append(user_msg)
-            self._original_session.chat_history.append(asst_msg)
 
     def edit_message(
         self,
@@ -307,20 +293,6 @@ class SharedHistoryPersistence:
 
         save_view(self._view_path_abs, view)
 
-        if self._original_session:
-            original_message = self._original_session.chat_history[message_index]
-            updated_message = replace(original_message, content=new_content)
-            if new_metadata and isinstance(updated_message, AssistantChatMessage):
-                updated_message = replace(
-                    updated_message,
-                    model=new_metadata.model,
-                    derived=new_metadata.derived,
-                    token_usage=new_metadata.token_usage,
-                    cost=new_metadata.cost,
-                    duration_ms=new_metadata.duration_ms,
-                )
-            self._original_session.chat_history[message_index] = updated_message
-
     def update_view_metadata(
         self,
         *,
@@ -351,54 +323,6 @@ class SharedHistoryPersistence:
 
         if changed:
             save_view(self._view_path_abs, view)
-
-    # ---------- Save (Legacy entrypoint for metadata changes) ----------
-
-    def save(self, session_file: Path, session_data: SessionData) -> None:
-        del session_file
-        if not self.writable:
-            typer.echo(
-                "Error: This is a read-only shared-history session. Write commands are not supported.",
-                err=True,
-            )
-            raise typer.Exit(code=1)
-
-        if self._original_session is None:
-            typer.echo("Error: Internal state missing for shared-history save (no session loaded).", err=True)
-            raise typer.Exit(code=1)
-
-        original = self._original_session
-        new = session_data
-
-        # This save method is now only for metadata-only changes.
-        # Appends and Edits must be handled by proactive methods.
-        if len(original.chat_history) != len(new.chat_history):
-            self._fail(
-                "Unhandled history length modification detected in save(). "
-                + f"Original: {len(original.chat_history)}, New: {len(new.chat_history)}. "
-                + "Use append_pair() or edit_message()."
-            )
-
-        content_diffs = [
-            i
-            for i, (o_msg, n_msg) in enumerate(zip(original.chat_history, new.chat_history, strict=True))
-            if o_msg.content != n_msg.content
-        ]
-        if content_diffs:
-            self._fail(
-                f"Unhandled content modification detected in save() for indices {content_diffs}. Use edit_message()."
-            )
-
-        # If we get here, it's a metadata-only change.
-        self.update_view_metadata(
-            context_files=new.context_files,
-            model=new.model,
-            history_start_pair=new.history_start_pair,
-            excluded_pairs=new.excluded_pairs,
-        )
-
-        # Update snapshot for subsequent saves within the same process
-        self._original_session = copy.deepcopy(new)
 
     # ---------- Helpers ----------
 
