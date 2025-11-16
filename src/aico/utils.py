@@ -1,6 +1,6 @@
-import contextlib
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Literal, cast
 
 from rich.console import Console, Group, RenderableType
@@ -16,9 +16,11 @@ from aico.lib.models import (
     LLMChatMessage,
     Mode,
     SessionData,
+    TokenInfo,
     TokenUsage,
     UserChatMessage,
 )
+from aico.prompts import ALIGNMENT_PROMPTS, DEFAULT_SYSTEM_PROMPT, DIFF_MODE_INSTRUCTIONS
 
 
 def format_tokens(tokens: int) -> str:
@@ -138,25 +140,9 @@ def calculate_and_display_cost(
     session_data: SessionData,
 ) -> float | None:
     """Calculates the message cost and displays token/cost information."""
-    import litellm
-
     from aico.core.session_context import get_start_message_index
 
-    message_cost: float | None = None
-    # Create a mock response object as a dictionary.
-    # This provides litellm.completion_cost with the usage data AND the model name
-    # in a format it expects for calculating costs robustly.
-    mock_response = {
-        "usage": {
-            "prompt_tokens": token_usage.prompt_tokens,
-            "completion_tokens": token_usage.completion_tokens,
-            "total_tokens": token_usage.total_tokens,
-        },
-        "model": model_name,
-    }
-
-    with contextlib.suppress(Exception):
-        message_cost = litellm.completion_cost(completion_response=mock_response)  # pyright: ignore[reportUnknownMemberType, reportPrivateImportUsage]
+    message_cost = compute_component_cost(model_name, token_usage.prompt_tokens, token_usage.completion_tokens)
 
     prompt_tokens_str = format_tokens(token_usage.prompt_tokens)
     completion_tokens_str = format_tokens(token_usage.completion_tokens)
@@ -193,3 +179,60 @@ def count_tokens_for_messages(model: str, messages: list[LLMChatMessage]) -> int
     import litellm
 
     return cast(int, litellm.token_counter(model=model, messages=messages))  # pyright: ignore[reportPrivateImportUsage,  reportUnknownMemberType, reportUnnecessaryCast]
+
+
+def compute_component_cost(model: str, prompt_tokens: int, completion_tokens: int = 0) -> float | None:
+    import litellm
+
+    mock_response = {
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens,
+        },
+        "model": model,
+    }
+    try:
+        return litellm.completion_cost(completion_response=mock_response)  # pyright: ignore[reportPrivateImportUsage, reportUnknownMemberType]
+    except Exception:
+        return None
+
+
+def count_system_tokens(model: str) -> int:
+    system_prompt = DEFAULT_SYSTEM_PROMPT + DIFF_MODE_INSTRUCTIONS
+    return count_tokens_for_messages(model, [{"role": "system", "content": system_prompt}])
+
+
+def count_max_alignment_tokens(model: str) -> int:
+    if not ALIGNMENT_PROMPTS:
+        return 0
+    max_tokens = max(
+        count_tokens_for_messages(model, [{"role": msg.role, "content": msg.content} for msg in prompt_set])
+        for prompt_set in ALIGNMENT_PROMPTS.values()
+    )
+    return max_tokens
+
+
+def count_active_history_tokens(model: str, session_data: SessionData) -> int:
+    active_history = get_active_history(session_data)
+    if not active_history:
+        return 0
+    history_messages = reconstruct_historical_messages(active_history)
+    return count_tokens_for_messages(model, history_messages)
+
+
+def count_context_files_tokens(
+    model: str, session_data: SessionData, session_root: Path
+) -> tuple[list[TokenInfo], list[str]]:
+    file_infos: list[TokenInfo] = []
+    skipped_files: list[str] = []
+    for file_path_str in session_data.context_files:
+        try:
+            file_path = session_root / file_path_str
+            content = file_path.read_text(encoding="utf-8")
+            wrapper = f'<file path="{file_path_str}">\n{content}\n</file>\n'
+            tokens = count_tokens_for_messages(model, [{"role": "user", "content": wrapper}])
+            file_infos.append(TokenInfo(description=file_path_str, tokens=tokens))
+        except FileNotFoundError:
+            skipped_files.append(file_path_str)
+    return file_infos, skipped_files

@@ -57,6 +57,13 @@ class DerivedContent:
     display_content: list[DisplayItem] | str | None = None
 
 
+@dataclass(slots=True)
+class TokenInfo:
+    description: str
+    tokens: int
+    cost: float | None = None
+
+
 class UserDerivedMeta(BaseModel):
     passthrough: bool = False
     piped_content: str | None = None

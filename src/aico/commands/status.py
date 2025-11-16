@@ -1,5 +1,4 @@
 from contextlib import suppress
-from dataclasses import dataclass
 from pathlib import Path
 
 from rich.console import Console, Group
@@ -9,19 +8,17 @@ from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
-import aico.utils as utils
 from aico.core.session_context import summarize_active_window
 from aico.core.session_persistence import get_persistence
 from aico.historystore.pointer import InvalidPointerError, MissingViewError, load_pointer
-from aico.lib.models import SessionData
-from aico.prompts import ALIGNMENT_PROMPTS, DEFAULT_SYSTEM_PROMPT, DIFF_MODE_INSTRUCTIONS
-
-
-@dataclass(slots=True)
-class _TokenInfo:
-    description: str
-    tokens: int
-    cost: float | None = None
+from aico.lib.models import SessionData, TokenInfo
+from aico.utils import (
+    compute_component_cost,
+    count_active_history_tokens,
+    count_context_files_tokens,
+    count_max_alignment_tokens,
+    count_system_tokens,
+)
 
 
 def _get_session_name(session_file: Path) -> str | None:
@@ -72,55 +69,25 @@ def status() -> None:  # noqa: C901
     session_root = session_file.parent
     console = Console()
 
-    components: list[_TokenInfo] = []
-    total_tokens = 0
+    model = session_data.model
+
+    components: list[TokenInfo] = []
 
     # 1. System Prompt
-    system_prompt = DEFAULT_SYSTEM_PROMPT + DIFF_MODE_INSTRUCTIONS
-    system_prompt_tokens = utils.count_tokens_for_messages(
-        session_data.model, [{"role": "system", "content": system_prompt}]
-    )
-    components.append(_TokenInfo(description="system prompt", tokens=system_prompt_tokens))
-    total_tokens += system_prompt_tokens
+    sys_tokens = count_system_tokens(model)
+    components.append(TokenInfo(description="system prompt", tokens=sys_tokens))
 
     # 2. Alignment Prompts (worst-case)
-    alignment_prompts_tokens = 0
-    if ALIGNMENT_PROMPTS:
-        alignment_prompts_tokens = max(
-            utils.count_tokens_for_messages(
-                session_data.model, list({"role": msg.role, "content": msg.content} for msg in ps)
-            )
-            for ps in ALIGNMENT_PROMPTS.values()
-        )
-    if alignment_prompts_tokens > 0:
-        components.append(_TokenInfo(description="alignment prompts (worst-case)", tokens=alignment_prompts_tokens))
-        total_tokens += alignment_prompts_tokens
+    align_tokens = count_max_alignment_tokens(model)
+    if align_tokens > 0:
+        components.append(TokenInfo(description="alignment prompts (worst-case)", tokens=align_tokens))
 
     # 3. Chat History
-    active_history = utils.get_active_history(session_data)
-    history_tokens = 0
-    if active_history:
-        history_messages = utils.reconstruct_historical_messages(active_history)
-        history_tokens = utils.count_tokens_for_messages(session_data.model, history_messages)
-    history_component = _TokenInfo(description="chat history", tokens=history_tokens)
-    total_tokens += history_tokens
+    history_tokens = count_active_history_tokens(model, session_data)
+    history_component = TokenInfo(description="chat history", tokens=history_tokens)
 
     # 4. Context Files
-    file_components: list[_TokenInfo] = []
-    skipped_files: list[str] = []
-    for file_path_str in session_data.context_files:
-        try:
-            file_path = session_root / file_path_str
-            content = file_path.read_text()
-            file_prompt_wrapper = f'<file path="{file_path_str}">\n{content}\n</file>\n'
-            file_tokens = utils.count_tokens_for_messages(
-                session_data.model, [{"role": "user", "content": file_prompt_wrapper}]
-            )
-            file_components.append(_TokenInfo(description=file_path_str, tokens=file_tokens))
-            total_tokens += file_tokens
-        except FileNotFoundError:
-            _ = skipped_files.append(file_path_str)
-
+    file_components, skipped_files = count_context_files_tokens(model, session_data, session_root)
     if skipped_files:
         skipped_list = " ".join(sorted(skipped_files))
         console.print(f"[yellow]Warning: Context files not found, skipped: {skipped_list}[/yellow]")
@@ -130,30 +97,21 @@ def status() -> None:  # noqa: C901
     from litellm.router import ModelInfo  # pyright: ignore[reportPrivateImportUsage]
 
     all_components_with_tokens = components + [history_component] + file_components
+    total_tokens = sum(c.tokens for c in all_components_with_tokens)
     total_cost = 0.0
     has_cost_info = False
     model_info: ModelInfo | None = None
 
     with suppress(Exception):
-        model_info = litellm.get_model_info(session_data.model)  # pyright: ignore[reportPrivateImportUsage]
+        model_info = litellm.get_model_info(model)  # pyright: ignore[reportPrivateImportUsage]
 
-    try:
-        if model_info and model_info.get("input_cost_per_token", 0) > 0:
-            has_cost_info = True
+    has_cost_info = bool(model_info and model_info.get("input_cost_per_token", 0) > 0)
 
-        if has_cost_info:
-            for component in all_components_with_tokens:
-                if component.tokens > 0:
-                    cost = litellm.completion_cost(  # pyright: ignore[reportPrivateImportUsage, reportUnknownMemberType]
-                        completion_response={
-                            "usage": {"prompt_tokens": component.tokens, "completion_tokens": 0},
-                            "model": session_data.model,
-                        }
-                    )
-                    component.cost = cost
-                    total_cost += cost
-    except Exception:
-        has_cost_info = False
+    if has_cost_info:
+        for component in all_components_with_tokens:
+            component.cost = compute_component_cost(model, component.tokens)
+            if component.cost is not None:
+                total_cost += component.cost
 
     # 6. Context Window Info
     max_input_tokens: int | None = model_info.get("max_input_tokens") if model_info else None
