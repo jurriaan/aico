@@ -20,6 +20,11 @@ if ! command -v fzf >/dev/null 2>&1; then
     exit 1
 fi
 
+if ! command -v jq >/dev/null 2>&1; then
+    echo "Error: jq is required for manage-context. Please install jq to use this addon." >&2
+    exit 1
+fi
+
 # Optional pretty preview: bat if available, otherwise plain text preview
 if command -v bat >/dev/null 2>&1; then
     PREVIEW_CMD='bat --color=always --style=numbers --line-range=:200 {}'
@@ -48,14 +53,9 @@ if [ -z "$ALL_CANDIDATES" ]; then
     exit 0
 fi
 
-# --- Discover current context files via completion hack ---
-# This uses aico's completion for `drop` to list files currently in the context.
-CURRENT_CONTEXT_ORIGINAL="$(
-  env _AICO_COMPLETE=complete_bash COMP_WORDS='aico drop ' COMP_CWORD=2 aico 2>/dev/null \
-    | tr ' ' '\n' \
-    | sed '/^$/d' \
-    | sort -u
-)"
+# --- Discover current context files via dump-context command ---
+# This uses the `aico dump-context` command, which provides a stable JSON output.
+CURRENT_CONTEXT_ORIGINAL="$(aico dump-context | jq -r '.context_files[]')"
 
 # --- Reorder candidates: context files first, then the rest ---
 IN_CONTEXT_FILES="$(comm -12 <(printf "%s\n" "$ALL_CANDIDATES") <(printf "%s\n" "$CURRENT_CONTEXT_ORIGINAL"))"
