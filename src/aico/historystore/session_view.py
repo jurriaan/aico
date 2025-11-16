@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
-from tempfile import mkstemp
 
 from aico.lib.models import TokenUsage
+from aico.utils import atomic_write_text
 
 from .history_store import HistoryStore
 from .models import HistoryDerived, HistoryRecord, SessionView
@@ -23,16 +22,8 @@ def save_view(path: Path, view: SessionView) -> None:
     """
     Atomically save a SessionView to disk using a compact single-line JSON format.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
     json_text = view.model_dump_json(indent=None)
-    fd, tmp = mkstemp(suffix=".json", prefix=path.name + ".tmp", dir=path.parent)
-    tmp_path = Path(tmp)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            _ = f.write(json_text)
-        _ = os.replace(tmp_path, path)
-    finally:
-        _ = tmp_path.unlink(missing_ok=True)
+    atomic_write_text(path, json_text)
 
 
 def find_message_pairs_in_view(store: HistoryStore, view: SessionView) -> list[tuple[int, int]]:
@@ -159,7 +150,6 @@ def switch_active_pointer(pointer_file: Path, new_view_path: Path) -> None:
     Atomically write a pointer file referencing the given view path.
     Stores a relative path when possible.
     """
-    pointer_file.parent.mkdir(parents=True, exist_ok=True)
     rel_path: str
     try:
         rel_path = new_view_path.resolve().relative_to(pointer_file.parent.resolve()).as_posix()
@@ -168,11 +158,4 @@ def switch_active_pointer(pointer_file: Path, new_view_path: Path) -> None:
 
     data = {"type": "aico_session_pointer_v1", "path": rel_path}
     json_text = json.dumps(data, separators=(",", ":"))
-    fd, tmp = mkstemp(suffix=".json", prefix=pointer_file.name + ".tmp", dir=pointer_file.parent)
-    tmp_path = Path(tmp)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            _ = f.write(json_text)
-        _ = os.replace(tmp_path, pointer_file)
-    finally:
-        _ = tmp_path.unlink(missing_ok=True)
+    atomic_write_text(pointer_file, json_text)

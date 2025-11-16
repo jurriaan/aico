@@ -3,7 +3,6 @@ import os
 import sys
 from json import JSONDecodeError
 from pathlib import Path
-from tempfile import mkstemp
 
 import typer
 from pydantic import TypeAdapter, ValidationError
@@ -11,6 +10,7 @@ from pydantic import TypeAdapter, ValidationError
 from aico.historystore import load_view
 from aico.historystore.pointer import SessionPointer
 from aico.lib.models import FileContents, SessionData
+from aico.utils import atomic_write_text
 
 SESSION_FILE_NAME = ".ai_session.json"
 
@@ -99,14 +99,8 @@ def complete_files_in_context(incomplete: str) -> list[str]:
 
 
 def save_session(session_file: Path, session_data: SessionData) -> None:
-    fd, tmp = mkstemp(suffix=".json", prefix=session_file.name + ".tmp", dir=session_file.parent)
-    session_file_tmp = Path(tmp)
-    try:
-        with os.fdopen(fd, "wb") as f:
-            _ = f.write(SessionDataAdapter.dump_json(session_data, indent=2))
-        os.replace(session_file_tmp, session_file)
-    finally:
-        session_file_tmp.unlink(missing_ok=True)
+    text = SessionDataAdapter.dump_json(session_data, indent=2)
+    atomic_write_text(session_file, text)
 
 
 def build_original_file_contents(context_files: list[str], session_root: Path) -> FileContents:
