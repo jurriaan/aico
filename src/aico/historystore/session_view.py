@@ -26,17 +26,12 @@ def save_view(path: Path, view: SessionView) -> None:
     atomic_write_text(path, json_text)
 
 
-def find_message_pairs_in_view(store: HistoryStore, view: SessionView) -> list[tuple[int, int]]:
+def find_message_pairs_from_records(records: list[HistoryRecord]) -> list[tuple[int, int]]:
     """
-    Returns a list of (user_pos, assistant_pos) tuples where positions are indices into view.message_indices.
-    A pair is a 'user' message immediately followed by an 'assistant' message.
+    Internal helper: given an in-memory list of HistoryRecord objects (already ordered for a view),
+    return (user_pos, assistant_pos) tuples for adjacent user/assistant pairs.
     """
     positions: list[tuple[int, int]] = []
-    if not view.message_indices:
-        return positions
-
-    # Read roles only to minimize allocations
-    records = store.read_many(view.message_indices)
     i = 0
     while i < len(records) - 1:
         cur = records[i]
@@ -47,6 +42,17 @@ def find_message_pairs_in_view(store: HistoryStore, view: SessionView) -> list[t
         else:
             i += 1
     return positions
+
+
+def find_message_pairs_in_view(store: HistoryStore, view: SessionView) -> list[tuple[int, int]]:
+    """
+    Returns a list of (user_pos, assistant_pos) tuples where positions are indices into view.message_indices.
+    Delegates to the internal records-based helper after a single read.
+    """
+    if not view.message_indices:
+        return []
+    records = store.read_many(view.message_indices)
+    return find_message_pairs_from_records(records)
 
 
 def edit_message(

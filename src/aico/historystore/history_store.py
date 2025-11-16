@@ -9,6 +9,8 @@ from contextlib import suppress
 from pathlib import Path
 from typing import ClassVar
 
+from pydantic import TypeAdapter
+
 from .models import SHARD_SIZE, HistoryRecord, dumps_history_record, load_history_record
 
 
@@ -121,21 +123,26 @@ class HistoryStore:
             for pos, off in positions:
                 offset_to_pos[off].append(pos)
 
-            found: dict[int, HistoryRecord] = {}
-            try:
-                with shard_path.open("r", encoding="utf-8") as f:
-                    for i, line in enumerate(f):
-                        if i in needed_offsets:
-                            found[i] = load_history_record(line)
-                            if len(found) == len(needed_offsets):
-                                break
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Corrupt JSON in shard {shard_path}: {e}") from e
+            found_lines: list[str] = []
+            found_line_pos: list[int] = []
+            with shard_path.open("r", encoding="utf-8") as f:
+                for i, line in enumerate(f):
+                    if i in needed_offsets:
+                        found_line_pos.append(i)
+                        found_lines.append(line)
+                        if len(found_lines) == len(needed_offsets):
+                            break
 
             # Map found records back to their positions
-            for off, rec in found.items():
-                for pos in offset_to_pos[off]:
-                    results[pos] = rec
+            try:
+                list_of_records: list[HistoryRecord] = TypeAdapter(list[HistoryRecord]).validate_json(
+                    "[" + ",".join(found_lines) + "]"
+                )
+                for rec, off in zip(list_of_records, found_line_pos, strict=True):
+                    for pos in offset_to_pos[off]:
+                        results[pos] = rec
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Corrupt JSON in shard {shard_path}: {e}") from e
 
         # Ensure none are missing
         if any(r is None for r in results):

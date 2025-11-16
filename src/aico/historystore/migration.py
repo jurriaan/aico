@@ -15,7 +15,7 @@ from aico.lib.models import (
 
 from .history_store import HistoryStore
 from .models import HistoryRecord, SessionView, UserMetaEnvelope
-from .session_view import find_message_pairs_in_view, save_view
+from .session_view import find_message_pairs_from_records, save_view
 
 
 def from_legacy_session(
@@ -140,7 +140,7 @@ def reconstruct_chat_history(
 ) -> list[ChatMessageHistoryItem]:
     """Reconstructs strongly-typed ChatMessageHistoryItem objects from a view."""
     records = store.read_many(view.message_indices)
-    pair_positions = find_message_pairs_in_view(store, view)
+    pair_positions = find_message_pairs_from_records(records)
     excluded_pair_set = set(view.excluded_pairs)
     excluded_message_positions: set[int] = {
         pos
