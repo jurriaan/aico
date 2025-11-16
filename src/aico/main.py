@@ -9,6 +9,7 @@ from typer.core import TyperGroup
 from aico.addons import register_addon_commands
 from aico.commands.add import add
 from aico.commands.drop import drop
+from aico.commands.dump_context import dump_context
 from aico.commands.dump_history import dump_history
 from aico.commands.edit import edit
 from aico.commands.init import init
@@ -63,6 +64,7 @@ _ = app.command("session-switch")(session_switch)
 _ = app.command("session-fork")(session_fork)
 _ = app.command("session-new")(session_new)
 _ = app.command("migrate-shared-history")(migrate_shared_history)
+_ = app.command("dump-context")(dump_context)
 register_addon_commands(app)
 
 

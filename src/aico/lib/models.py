@@ -64,6 +64,11 @@ class TokenInfo:
     cost: float | None = None
 
 
+@dataclass(slots=True, frozen=True)
+class ContextFilesResponse:
+    context_files: list[str]
+
+
 class UserDerivedMeta(BaseModel):
     passthrough: bool = False
     piped_content: str | None = None
