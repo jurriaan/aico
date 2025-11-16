@@ -6,7 +6,6 @@ from tempfile import mkstemp
 from typing import Literal, cast
 
 from rich.console import Console, Group, RenderableType
-from rich.markdown import Markdown
 from rich.syntax import Syntax
 from rich.text import Text
 
@@ -98,6 +97,8 @@ def format_history_to_markdown(history: Sequence[ChatMessageHistoryItem]) -> str
 
 def render_display_items_to_rich(items: Sequence[DisplayItem]) -> Group:
     """Converts a list of DisplayItems into a Rich Group for rendering."""
+    from rich.markdown import Markdown
+
     renderables: list[RenderableType] = []
     for item in items:
         if item["type"] == "markdown":
