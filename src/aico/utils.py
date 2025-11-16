@@ -10,7 +10,7 @@ from rich.markdown import Markdown
 from rich.syntax import Syntax
 from rich.text import Text
 
-from aico.core.session_context import active_message_indices
+from aico.core.session_context import active_message_indices, get_start_message_index
 from aico.lib.models import (
     AssistantChatMessage,
     ChatMessageHistoryItem,
@@ -44,7 +44,7 @@ def is_input_terminal() -> bool:
 
 def get_active_history(session_data: SessionData) -> list[ChatMessageHistoryItem]:
     """
-    Returns the active slice of chat history based on pair-centric and legacy boundaries.
+    Returns the active slice of chat history messages.
     """
     indices = active_message_indices(session_data, include_dangling=True)
     return [session_data.chat_history[i] for i in indices]
@@ -142,8 +142,6 @@ def calculate_and_display_cost(
     session_data: SessionData,
 ) -> float | None:
     """Calculates the message cost and displays token/cost information."""
-    from aico.core.session_context import get_start_message_index
-
     message_cost = compute_component_cost(model_name, token_usage.prompt_tokens, token_usage.completion_tokens)
 
     prompt_tokens_str = format_tokens(token_usage.prompt_tokens)
@@ -153,8 +151,8 @@ def calculate_and_display_cost(
     if message_cost is not None:
         # "current chat" cost includes all messages from the start index, even excluded ones,
         # because the cost was already incurred.
-        history_start_index = get_start_message_index(session_data)
-        current_chat_window = session_data.chat_history[history_start_index:]
+        start_message_idx = get_start_message_index(session_data)
+        current_chat_window = session_data.chat_history[start_message_idx:]
         window_history_cost = sum(
             msg.cost for msg in current_chat_window if isinstance(msg, AssistantChatMessage) and msg.cost is not None
         )

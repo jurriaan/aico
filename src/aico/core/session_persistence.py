@@ -7,31 +7,27 @@ from typing import Protocol, runtime_checkable
 import typer
 from pydantic import ValidationError
 
-from aico.core.session_context import (
-    find_message_pairs,
-    map_history_start_index_to_pair,
-    resolve_pair_index_to_message_indices,
-)
 from aico.historystore import (
     HistoryStore,
     append_pair_to_view,
     load_view,
     reconstruct_chat_history,
+    reconstruct_full_chat_history,
     save_view,
 )
 from aico.historystore import (
     edit_message as edit_message_historystore,
 )
-from aico.historystore.models import HistoryRecord, UserMetaEnvelope
+from aico.historystore.models import HistoryRecord, SessionView, UserMetaEnvelope
 from aico.historystore.pointer import (
     InvalidPointerError,
     MissingViewError,
     SessionPointer,
 )
 from aico.historystore.pointer import load_pointer as load_pointer_helper
+from aico.lib.history_utils import find_message_pairs, map_history_start_index_to_pair
 from aico.lib.models import (
     AssistantChatMessage,
-    ChatMessageHistoryItem,
     MessagePairIndices,
     SessionData,
     UserChatMessage,
@@ -120,6 +116,10 @@ class LegacyJsonPersistence:
             session_data.history_start_pair = map_history_start_index_to_pair(
                 chat_history, session_data.history_start_index
             )
+        # Clear legacy-only field so downstream logic does not misinterpret it as a slicing signal.
+        session_data.history_start_index = None
+        session_data.is_pre_sliced = False
+        session_data.total_pairs_in_history = None
 
         return session_file, session_data
 
@@ -194,7 +194,6 @@ class SharedHistoryPersistence:
     _pointer_file: Path
     _session_root: Path
     _history_root: Path
-    _view_rel_path: str | None
     _view_path_abs: Path | None
     writable: bool
 
@@ -202,18 +201,15 @@ class SharedHistoryPersistence:
         self._pointer_file = pointer_file
         self._session_root = pointer_file.parent
         self._history_root = self._session_root / ".aico" / "history"
-        self._view_rel_path = None
         self._view_path_abs = None
-        # Writes are enabled by default
         self.writable = True
 
-    # ---------- Load ----------
+    # ---------- Load helpers ----------
 
-    def load(self) -> tuple[Path, SessionData]:
+    def _load_view_and_store(self) -> tuple[HistoryStore, SessionView]:
         """
-        Load the active SessionView and reconstruct a strongly-typed SessionData.
+        Resolve the active SessionView and associated HistoryStore.
         """
-        # Resolve and validate the session view path from the pointer file
         try:
             self._view_path_abs = load_pointer_helper(self._pointer_file)
         except MissingViewError as e:
@@ -232,8 +228,40 @@ class SharedHistoryPersistence:
                 err=True,
             )
             raise typer.Exit(1) from e
+        return store, view
+
+    # ---------- Load ----------
+
+    def load(self) -> tuple[Path, SessionData]:
+        """
+        Load the active SessionView and reconstruct a strongly-typed SessionData
+        containing only the active window of history.
+        """
+        store, view = self._load_view_and_store()
 
         chat_history = reconstruct_chat_history(store, view)
+
+        total_pairs = len(view.message_indices) // 2
+        session_data = SessionData(
+            model=view.model,
+            context_files=list(view.context_files),
+            chat_history=chat_history,
+            history_start_pair=view.history_start_pair,
+            excluded_pairs=list(view.excluded_pairs),
+            history_start_index=0,
+            total_pairs_in_history=total_pairs,
+            is_pre_sliced=True,
+        )
+
+        return self._pointer_file, session_data
+
+    def load_full_history(self) -> tuple[Path, SessionData]:
+        """
+        Load the active SessionView and reconstruct a SessionData containing the full history.
+        """
+        store, view = self._load_view_and_store()
+        chat_history = reconstruct_full_chat_history(store, view)
+        total_pairs = len(find_message_pairs(chat_history))
 
         session_data = SessionData(
             model=view.model,
@@ -241,9 +269,11 @@ class SharedHistoryPersistence:
             chat_history=chat_history,
             history_start_pair=view.history_start_pair,
             excluded_pairs=list(view.excluded_pairs),
+            history_start_index=None,
+            total_pairs_in_history=total_pairs,
+            is_pre_sliced=False,
         )
 
-        # Snapshot for diffing on save
         return self._pointer_file, session_data
 
     def append_pair(self, user_msg: UserChatMessage, asst_msg: AssistantChatMessage) -> None:
@@ -330,17 +360,6 @@ class SharedHistoryPersistence:
         typer.echo(f"Error: {message}", err=True)
         raise typer.Exit(code=1)
 
-    def _compute_excluded_pairs(self, chat_history: list[ChatMessageHistoryItem]) -> list[int]:
-        pairs = find_message_pairs(chat_history)
-        excluded: list[int] = []
-        for idx, p in enumerate(pairs):
-            if chat_history[p.user_index].is_excluded and chat_history[p.assistant_index].is_excluded:
-                excluded.append(idx)
-        return excluded
-
-    def _compute_history_start_pair(self, chat_history: list[ChatMessageHistoryItem], history_start_index: int) -> int:
-        return map_history_start_index_to_pair(chat_history, history_start_index)
-
     def _to_history_record_user(self, msg: UserChatMessage) -> HistoryRecord:
         derived_envelope: UserMetaEnvelope | None = None
         if msg.passthrough or msg.piped_content is not None:
@@ -376,31 +395,59 @@ def load_session_and_resolve_indices(
     persistence: SessionPersistence | None = None,
 ) -> tuple[Path, SessionData, MessagePairIndices, int]:
     """
-    Loads session (using provided persistence instance when supplied), parses index string,
-    and resolves message pair indices.
-    Supplying a persistence instance ensures commands perform load/save on the SAME
-    persistence object (important for shared-history write tracking).
+    Load the session, parse a user-provided index string, and resolve it to
+    a message pair using global pair indices (full history).
+
+    Supports:
+      - Positive indices: 0..N-1 over the full history.
+      - Negative indices: -1..-N counted from the end of the full history.
+
+    Error messages are kept compatible with legacy behavior.
     """
     persistence = persistence or get_persistence()
-    session_file, session_data = persistence.load()
+
+    # For shared-history, resolve against the full history; for legacy, load already returns it.
+    if isinstance(persistence, SharedHistoryPersistence):
+        session_file, session_data = persistence.load_full_history()
+    else:
+        session_file, session_data = persistence.load()
 
     try:
-        pair_index_int = int(index_str)
+        user_idx_val = int(index_str)
     except ValueError:
         print(f"Error: Invalid index '{index_str}'. Must be an integer.", file=sys.stderr)
         raise typer.Exit(code=1) from None
 
-    try:
-        pair_indices = resolve_pair_index_to_message_indices(session_data.chat_history, pair_index_int)
-    except IndexError as e:
-        print(str(e), file=sys.stderr)
-        raise typer.Exit(code=1) from e
+    pairs = find_message_pairs(session_data.chat_history)
+    num_pairs = len(pairs)
 
-    resolved_index = pair_index_int
-    if resolved_index < 0:
-        all_pairs = find_message_pairs(session_data.chat_history)
-        resolved_index += len(all_pairs)
+    if num_pairs == 0:
+        print("Error: No message pairs found in history.", file=sys.stderr)
+        raise typer.Exit(code=1)
 
+    # Map negative indices to their positive counterparts.
+    if user_idx_val < 0:
+        if user_idx_val < -num_pairs:
+            if num_pairs == 1:
+                err_msg = f"Error: Pair at index {user_idx_val} not found. The only valid index is 0 (or -1)."
+            else:
+                valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
+                err_msg = f"Error: Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
+            print(err_msg, file=sys.stderr)
+            raise typer.Exit(code=1)
+        resolved_index = num_pairs + user_idx_val
+    else:
+        if user_idx_val >= num_pairs:
+            if num_pairs == 1:
+                err_msg = f"Error: Pair at index {user_idx_val} not found. The only valid index is 0 (or -1)."
+            else:
+                valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
+                err_msg = f"Error: Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
+            print(err_msg, file=sys.stderr)
+            raise typer.Exit(code=1)
+        resolved_index = user_idx_val
+
+    pair_indices = pairs[resolved_index]
     return session_file, session_data, pair_indices, resolved_index
 
 

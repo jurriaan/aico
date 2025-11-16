@@ -17,6 +17,7 @@ from .migration import (
     deserialize_user_record,
     from_legacy_session,
     reconstruct_chat_history,
+    reconstruct_full_chat_history,
     to_legacy_session,
 )
 from .models import (
@@ -56,4 +57,5 @@ __all__ = [
     "deserialize_user_record",
     "deserialize_assistant_record",
     "reconstruct_chat_history",
+    "reconstruct_full_chat_history",
 ]

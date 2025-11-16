@@ -1,8 +1,9 @@
 from rich.console import Console
 from rich.table import Table
 
-from aico.core.session_context import active_message_indices, find_message_pairs
+from aico.core.session_context import active_message_indices, get_active_message_pairs
 from aico.core.session_persistence import get_persistence
+from aico.lib.history_utils import find_message_pairs
 from aico.lib.models import UserChatMessage
 
 
@@ -15,17 +16,11 @@ def log() -> None:
     chat_history = session_data.chat_history
     console = Console()
 
-    all_pairs = find_message_pairs(chat_history)
-    all_pairs_with_indices = list(enumerate(all_pairs))
+    # Use centralized helper to get pairs in the active window with their absolute indices
+    active_pairs_with_indices = get_active_message_pairs(session_data)
 
     # Determine active indices using centralized helper
     active_indices_set = set(active_message_indices(session_data, include_dangling=True))
-
-    # Determine active pairs using pair-centric start if available
-    start_pair = getattr(session_data, "history_start_pair", 0)
-    active_pairs_with_indices = [
-        (pair_idx, pair) for pair_idx, pair in all_pairs_with_indices if pair_idx >= start_pair
-    ]
 
     if active_pairs_with_indices:
         table = Table(title="Active Context Log", show_header=True, header_style="bold", box=None, padding=(0, 1))
@@ -67,7 +62,12 @@ def log() -> None:
     else:
         console.print("No message pairs found in active history.")
 
-    all_paired_indices = {idx for _, pair in all_pairs_with_indices for idx in (pair.user_index, pair.assistant_index)}
+    # For dangling messages, we need to know which messages in the current history list are part of any pair.
+    # This is safe for both legacy (full history) and shared (sliced history) sessions.
+    all_pairs_in_current_history = find_message_pairs(chat_history)
+    all_paired_indices = {
+        idx for pair in all_pairs_in_current_history for idx in (pair.user_index, pair.assistant_index)
+    }
 
     # Dangling messages are active if in active_indices_set and not part of a pair
     active_dangling_messages = [

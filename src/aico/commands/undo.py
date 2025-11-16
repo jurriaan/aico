@@ -23,15 +23,15 @@ def undo(
     ignored when building the context for the next prompt.
     """
     persistence = get_persistence()
-    _session_file, session_data, pair_indices, resolved_index = load_session_and_resolve_indices(
+    _session_file, session_data, _pair_indices, resolved_index = load_session_and_resolve_indices(
         index, persistence=persistence
     )
 
-    if is_pair_excluded(session_data, pair_indices):
+    if is_pair_excluded(session_data, resolved_index):
         print(f"Pair at index {resolved_index} is already excluded. No changes made.")
         raise typer.Exit(code=0)
 
-    _ = set_pair_excluded(session_data, pair_indices, True)
+    _ = set_pair_excluded(session_data, resolved_index, True)
 
     persistence.update_view_metadata(excluded_pairs=session_data.excluded_pairs)
     print(f"Marked pair at index {resolved_index} as excluded.")

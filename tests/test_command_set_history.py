@@ -6,6 +6,15 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from aico.historystore import (
+    HistoryStore,
+    SessionView,
+    append_pair_to_view,
+    load_view,
+    save_view,
+    switch_active_pointer,
+)
+from aico.historystore.models import HistoryRecord
 from aico.lib.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
 from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter, save_session
 from aico.main import app
@@ -250,3 +259,195 @@ def test_set_history_with_clear_keyword(tmp_path: Path) -> None:
         # AND the history start pair is set to 2 (the total number of pairs)
         updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
         assert updated_session_data.history_start_pair == 2
+
+
+def test_set_history_can_move_pointer_backwards(tmp_path: Path) -> None:
+    # GIVEN a legacy session with 3 pairs and history_start_pair at 2
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        history: list[ChatMessageHistoryItem] = []
+        for i in range(3):
+            history.append(UserChatMessage(role="user", content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
+            history.append(
+                AssistantChatMessage(
+                    role="assistant",
+                    content=f"r{i}",
+                    mode=Mode.CONVERSATION,
+                    timestamp=f"t{i}",
+                    model="m",
+                    duration_ms=1,
+                )
+            )
+
+        session_data = SessionData(model="test-model", chat_history=history, context_files=[], history_start_pair=2)
+        session_file = Path(td) / SESSION_FILE_NAME
+        save_session(session_file, session_data)
+
+        # WHEN `aico set-history 0` is run
+        result = runner.invoke(app, ["set-history", "0"])
+
+        # THEN the command succeeds and reports success
+        assert result.exit_code == 0
+        assert "History context reset. Full chat history is now active." in result.stdout
+
+        # AND the history start pair is set back to 0
+        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        assert updated_session_data.history_start_pair == 0
+
+
+def test_set_history_can_move_pointer_backwards_shared_history(tmp_path: Path) -> None:
+    # GIVEN a shared-history session with 3 pairs and history_start_pair at 2
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        project_root = Path(td)
+        history_root = project_root / ".aico" / "history"
+        sessions_dir = project_root / ".aico" / "sessions"
+        history_root.mkdir(parents=True, exist_ok=True)
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+
+        store = HistoryStore(history_root)
+        view = SessionView(
+            model="test-model",
+            context_files=[],
+            message_indices=[],
+            history_start_pair=2,
+            excluded_pairs=[],
+        )
+
+        for i in range(3):
+            user_record = HistoryRecord(
+                role="user",
+                content=f"p{i}",
+                mode=Mode.CONVERSATION,
+                timestamp=f"t{i}",
+            )
+            assistant_record = HistoryRecord(
+                role="assistant",
+                content=f"r{i}",
+                mode=Mode.CONVERSATION,
+                timestamp=f"t{i}",
+                model="m",
+                duration_ms=1,
+            )
+            _ = append_pair_to_view(store, view, user_record, assistant_record)
+
+        view_path = sessions_dir / "main.json"
+        save_view(view_path, view)
+        session_file = project_root / SESSION_FILE_NAME
+        switch_active_pointer(session_file, view_path)
+
+        # WHEN `aico set-history 0` is run
+        result = runner.invoke(app, ["set-history", "0"])
+
+        # THEN the command succeeds and reports success
+        assert result.exit_code == 0
+        assert "History context reset. Full chat history is now active." in result.stdout
+
+        # AND the history start pair is set back to 0 in the underlying view
+        updated_view = load_view(view_path)
+        assert updated_view.history_start_pair == 0
+
+
+def test_set_history_clear_uses_full_history_in_shared_session(tmp_path: Path) -> None:
+    # GIVEN a shared-history session with 3 pairs and an active window starting at pair 1
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        project_root = Path(td)
+        history_root = project_root / ".aico" / "history"
+        sessions_dir = project_root / ".aico" / "sessions"
+        history_root.mkdir(parents=True, exist_ok=True)
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+
+        store = HistoryStore(history_root)
+        view = SessionView(
+            model="test-model",
+            context_files=[],
+            message_indices=[],
+            history_start_pair=1,
+            excluded_pairs=[],
+        )
+
+        for i in range(3):
+            user_record = HistoryRecord(
+                role="user",
+                content=f"p{i}",
+                mode=Mode.CONVERSATION,
+                timestamp=f"t{i}",
+            )
+            assistant_record = HistoryRecord(
+                role="assistant",
+                content=f"r{i}",
+                mode=Mode.CONVERSATION,
+                timestamp=f"t{i}",
+                model="m",
+                duration_ms=1,
+            )
+            _ = append_pair_to_view(store, view, user_record, assistant_record)
+
+        view_path = sessions_dir / "main.json"
+        save_view(view_path, view)
+        session_file = project_root / SESSION_FILE_NAME
+        switch_active_pointer(session_file, view_path)
+
+        # WHEN `aico set-history clear` is run
+        result = runner.invoke(app, ["set-history", "clear"])
+
+        # THEN the command succeeds and confirms the context is cleared
+        assert result.exit_code == 0
+        assert "History context cleared (will start after the last conversation)." in result.stdout
+
+        # AND the history start pair is set to the total number of pairs in the full history (3)
+        updated_view = load_view(view_path)
+        assert updated_view.history_start_pair == 3
+
+
+def test_set_history_fails_with_invalid_index_shared_history(tmp_path: Path) -> None:
+    # GIVEN a shared-history session with 3 pairs and an active window starting at pair 1
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        project_root = Path(td)
+        history_root = project_root / ".aico" / "history"
+        sessions_dir = project_root / ".aico" / "sessions"
+        history_root.mkdir(parents=True, exist_ok=True)
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+
+        store = HistoryStore(history_root)
+        view = SessionView(
+            model="test-model",
+            context_files=[],
+            message_indices=[],
+            history_start_pair=1,
+            excluded_pairs=[],
+        )
+
+        for i in range(3):
+            user_record = HistoryRecord(
+                role="user",
+                content=f"p{i}",
+                mode=Mode.CONVERSATION,
+                timestamp=f"t{i}",
+            )
+            assistant_record = HistoryRecord(
+                role="assistant",
+                content=f"r{i}",
+                mode=Mode.CONVERSATION,
+                timestamp=f"t{i}",
+                model="m",
+                duration_ms=1,
+            )
+            _ = append_pair_to_view(store, view, user_record, assistant_record)
+
+        view_path = sessions_dir / "main.json"
+        save_view(view_path, view)
+        session_file = project_root / SESSION_FILE_NAME
+        switch_active_pointer(session_file, view_path)
+
+        # WHEN `aico set-history` is run with an out-of-bounds index
+        result = runner.invoke(app, ["set-history", "4"])
+
+        # THEN the command fails with a clear error message using full-history bounds
+        assert result.exit_code == 1
+        assert (
+            "Error: Index out of bounds. Valid indices are in the range 0 to 2 (or -1 to -3), or 3 to clear context."
+            in result.stderr
+        )
+
+        # AND the underlying view's history_start_pair remains unchanged
+        updated_view = load_view(view_path)
+        assert updated_view.history_start_pair == 1

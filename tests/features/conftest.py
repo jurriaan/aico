@@ -15,9 +15,9 @@ from pytest_bdd import exceptions, gherkin_parser, given, parsers, then, when
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
-from aico.core.session_context import find_message_pairs
 from aico.historystore import HistoryRecord, HistoryStore, append_pair_to_view, load_view, save_view
 from aico.historystore.pointer import load_pointer
+from aico.lib.history_utils import find_message_pairs
 from aico.lib.models import (
     AssistantChatMessage,
     LiteLLMChoiceContainer,

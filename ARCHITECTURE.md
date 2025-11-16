@@ -27,7 +27,8 @@ The application is composed of several distinct components, each with a clear ro
     -   A `SessionPersistence` protocol defines the `load()` and `save()` interface.
     -   A factory function, `get_persistence()`, inspects `.ai_session.json` to determine the storage format and returns the correct persistence backend.
     -   `LegacyJsonPersistence` handles the traditional single-file JSON format.
-    -   `SharedHistoryPersistence` supports the new `historystore` format. Its `load()` reconstructs a legacy-compatible `SessionData` from a session view and sharded records. Its `save()` supports write operations (append, single-edit, exclusions, history start, context/model updates) by default.
+    -   `SharedHistoryPersistence` supports the new `historystore` format. Its `load()` reconstructs a legacy-compatible `SessionData` from a session view and sharded records (pre-sliced to the active window for fast status/log/token counting). Its `save()` supports write operations (append, single-edit, exclusions, history start, context/model updates) by default.
+    -   For commands that need global pair IDs (e.g., `last`, `edit`, `undo`, `redo`, `set-history`), `SharedHistoryPersistence.load_full_history()` reconstructs the full history, ensuring indices are always resolved against the complete conversation.
 
 ### Command & Interaction Layer
 
@@ -54,7 +55,7 @@ These are specialized components that handle the most complex processing tasks.
 The components work together in a predictable sequence. The lifecycle of a typical `aico gen` command illustrates this flow:
 
 1.  **Invocation:** The user's command is received by the **Entrypoint**, which routes it to the correct function in the **Command Layer**.
-2.  **State Loading:** The command uses the **State Persistence Layer** to find and load the `.ai_session.json` file into memory as a structured Pydantic object.
+2.  **State Loading:** The command uses the **State Persistence Layer** to find and load the `.ai_session.json` file into memory as a structured Pydantic object. Most commands load only the active window; history-indexing commands that accept pair IDs use the full-history path to resolve indices globally.
 3.  **Context Building:** The command reads the files specified in the session state from disk.
 4.  **Prompt Construction:** The **LLM Interaction Engine** assembles the final prompt, combining system instructions, file contents, active chat history, and the new user instruction into a single request.
 5.  **LLM Streaming & Parsing:** The request is sent to the LLM. As the response streams back:

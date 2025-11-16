@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 # --- Addon Boilerplate ---
 # This allows the addon to import from the `aico` library.
 try:
-    from aico.core.session_context import find_message_pairs
     from aico.core.session_persistence import get_persistence
+    from aico.lib.history_utils import find_message_pairs
     from aico.lib.models import (
         AssistantChatMessage,
         Mode,
@@ -90,7 +90,21 @@ def main() -> None:
         raise RuntimeError("Expected an AssistantChatMessage as the last entry after 'aico ask'")
     summary_text = last_message.content
 
-    new_start_pair_index = len(find_message_pairs(session_data.chat_history))
+    # The new start pair index should be the global index of the first pair
+    # after the currently active window.
+    #
+    # For shared-history sessions, `chat_history` contains only the active
+    # window (pre-sliced), so we advance from the current history_start_pair
+    # by the number of pairs in that window.
+    #
+    # For legacy sessions, `chat_history` is the full history; the active
+    # window starts at `history_start_pair` and extends to the end, so the
+    # first pair after the window is simply the total number of pairs.
+    num_pairs_total = len(find_message_pairs(session_data.chat_history))
+    if getattr(session_data, "is_pre_sliced", False):
+        new_start_pair_index = session_data.history_start_pair + num_pairs_total
+    else:
+        new_start_pair_index = num_pairs_total
 
     # First, update the history start pair metadata
     persistence.update_view_metadata(history_start_pair=new_start_pair_index)

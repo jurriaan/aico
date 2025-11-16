@@ -3,88 +3,42 @@ from dataclasses import dataclass
 
 import typer
 
+from aico.lib.history_utils import find_message_pairs
 from aico.lib.models import (
-    AssistantChatMessage,
-    ChatMessageHistoryItem,
     MessagePairIndices,
     SessionData,
-    UserChatMessage,
 )
 
 
-def find_message_pairs(chat_history: list[ChatMessageHistoryItem]) -> list[MessagePairIndices]:
+def resolve_start_pair_index(pair_index_str: str, num_pairs: int) -> int:
     """
-    Scans the chat history and identifies user/assistant message pairs.
-
-    A pair is defined as a user message followed immediately by an assistant message.
-    """
-    pairs: list[MessagePairIndices] = []
-    i = 0
-    while i < len(chat_history) - 1:
-        current_msg = chat_history[i]
-        next_msg = chat_history[i + 1]
-        if isinstance(current_msg, UserChatMessage) and isinstance(next_msg, AssistantChatMessage):
-            pairs.append(MessagePairIndices(user_index=i, assistant_index=i + 1))
-            i += 2  # Move to the next potential pair
-        else:
-            i += 1
-    return pairs
-
-
-def resolve_pair_index_to_message_indices(
-    chat_history: list[ChatMessageHistoryItem], pair_index: int
-) -> MessagePairIndices:
-    """
-    Resolves a human-friendly pair index (positive from start, negative from end)
-    to a `MessagePairIndices` object containing the actual list indices.
-    """
-    pairs = find_message_pairs(chat_history)
-    num_pairs = len(pairs)
-
-    try:
-        return pairs[pair_index]
-    except IndexError:
-        if not pairs:
-            raise IndexError("Error: No message pairs found in history.") from None
-
-        if num_pairs == 1:
-            raise IndexError(
-                f"Error: Pair at index {pair_index} not found. The only valid index is 0 (or -1)."
-            ) from None
-
-        valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
-        raise IndexError(f"Error: Pair at index {pair_index} not found. Valid indices are {valid_range_str}.") from None
-
-
-def resolve_history_start_index(chat_history: list[ChatMessageHistoryItem], pair_index_str: str) -> tuple[int, int]:
-    """
-    Resolves the start index for active history based on a human-friendly pair index string.
-
-    Returns a tuple of (target_message_index, resolved_pair_index).
+    Resolves a human-friendly pair index string against a total number of pairs.
+    Returns a resolved, non-negative, absolute pair index.
     """
     try:
         pair_index_val = int(pair_index_str)
-    except ValueError:
+    except ValueError as e:
         print(f"Error: Invalid index '{pair_index_str}'. Must be an integer.", file=sys.stderr)
-        raise typer.Exit(code=1) from None
+        raise typer.Exit(code=1) from e
 
-    pairs = find_message_pairs(chat_history)
-    num_pairs = len(pairs)
     resolved_index = pair_index_val
 
     if num_pairs == 0:
         if pair_index_val == 0:
-            target_message_index = 0
+            return 0
         else:
             print("Error: No message pairs found. The only valid index is 0.", file=sys.stderr)
             raise typer.Exit(code=1)
-    elif -num_pairs <= pair_index_val < num_pairs:
+
+    if -num_pairs <= resolved_index < num_pairs:
         if resolved_index < 0:
             resolved_index += num_pairs
-        target_message_index = pairs[pair_index_val].user_index
-    elif pair_index_val == num_pairs:
-        target_message_index = len(chat_history)
+        return resolved_index
+    elif resolved_index == num_pairs:
+        # This corresponds to 'clear'
+        return num_pairs
     else:
+        # Error condition
         if num_pairs == 1:
             err_msg = "Error: Index out of bounds. Valid index is 0 (or -1), or 1 to clear context."
         else:
@@ -96,24 +50,49 @@ def resolve_history_start_index(chat_history: list[ChatMessageHistoryItem], pair
         print(err_msg, file=sys.stderr)
         raise typer.Exit(code=1)
 
-    return target_message_index, resolved_index
 
-
-def is_pair_excluded(session_data: SessionData, pair_indices: MessagePairIndices) -> bool:
+def get_active_message_pairs(session_data: SessionData) -> list[tuple[int, MessagePairIndices]]:
     """
-    Returns True if the pair is excluded, using `excluded_pairs` as the canonical source of truth.
+    Returns the message pairs within the active window for display.
+
+    This is the single source of truth for which pairs are included in the `log` command.
+    - For shared-history sessions (pre-sliced history), it returns all pairs present,
+      correcting their indices to be absolute for display.
+    - For legacy sessions (full history), it applies filtering based on `history_start_pair`.
     """
     history = session_data.chat_history
-    pairs = find_message_pairs(history)
-    try:
-        pair_idx = next(i for i, p in enumerate(pairs) if p.user_index == pair_indices.user_index)
-        return pair_idx in set(session_data.excluded_pairs)
-    except StopIteration:
-        return False
+    all_pairs_relative_to_history = find_message_pairs(history)
+    all_pairs_with_relative_indices = list(enumerate(all_pairs_relative_to_history))
+
+    # For pre-sliced histories (shared-history), `chat_history` already contains only the
+    # active window. In this case, `history_start_pair` holds the absolute index of the
+    # first pair in this slice. We must add this offset to our relative pair indices to
+    # get correct absolute IDs for display in `log`.
+    if session_data.is_pre_sliced:
+        start_pair_offset = session_data.history_start_pair
+        return [(pair_idx + start_pair_offset, pair) for pair_idx, pair in all_pairs_with_relative_indices]
+
+    # For legacy sessions, `chat_history` is the full history. The pair indices are
+    # already absolute. We just need to filter them from `history_start_pair` onwards.
+    start_pair = session_data.history_start_pair
+    active_pairs = [(pair_idx, pair) for pair_idx, pair in all_pairs_with_relative_indices if pair_idx >= start_pair]
+    return active_pairs
+
+
+def is_pair_excluded(session_data: SessionData, pair_index: int) -> bool:
+    """
+    Returns True if the absolute pair_index is in the set of excluded pairs.
+    """
+    return pair_index in set(session_data.excluded_pairs)
 
 
 def get_start_message_index(session_data: SessionData) -> int:
     """Calculates the message index from the canonical history_start_pair."""
+    # For pre-sliced/shared history, the history is already the active window, so
+    # the start index for the current chat is always 0.
+    if session_data.is_pre_sliced:
+        return 0
+
     chat_history = session_data.chat_history
     history_start_pair = session_data.history_start_pair
     pairs = find_message_pairs(chat_history)
@@ -126,66 +105,44 @@ def get_start_message_index(session_data: SessionData) -> int:
     return pairs[history_start_pair].user_index
 
 
-def set_pair_excluded(session_data: SessionData, pair_indices: MessagePairIndices, excluded: bool) -> bool:
+def set_pair_excluded(session_data: SessionData, pair_index: int, excluded: bool) -> bool:
     """
     Sets exclusion for a pair by updating the canonical `session_data.excluded_pairs` list.
     Returns True if any change was made.
     """
-    # Find the index of the pair to modify
-    pairs = find_message_pairs(session_data.chat_history)
-    try:
-        pair_idx = next(
-            i
-            for i, p in enumerate(pairs)
-            if p.user_index == pair_indices.user_index and p.assistant_index == pair_indices.assistant_index
-        )
-    except StopIteration:
-        # Pair not found, should not happen if called correctly
-        return False
-
     current_excluded_set = set(session_data.excluded_pairs)
     changed = False
 
-    if excluded and pair_idx not in current_excluded_set:
-        current_excluded_set.add(pair_idx)
-        session_data.excluded_pairs = sorted(current_excluded_set)
+    if excluded and pair_index not in current_excluded_set:
+        current_excluded_set.add(pair_index)
+        session_data.excluded_pairs = sorted(list(current_excluded_set))
         changed = True
-    elif not excluded and pair_idx in current_excluded_set:
-        current_excluded_set.remove(pair_idx)
-        session_data.excluded_pairs = sorted(current_excluded_set)
+    elif not excluded and pair_index in current_excluded_set:
+        current_excluded_set.remove(pair_index)
+        session_data.excluded_pairs = sorted(list(current_excluded_set))
         changed = True
 
     return changed
 
 
-@dataclass(slots=True)
-class InMemorySession:
-    """
-    Thin wrapper to host caches around SessionData.
-    For Phase A, we keep it minimal and backward-compatible.
-    """
-
-    data: SessionData
-    _pairs_cache: list[MessagePairIndices] | None = None
-
-    def pairs(self) -> list[MessagePairIndices]:
-        if self._pairs_cache is None:
-            self._pairs_cache = find_message_pairs(self.data.chat_history)
-        return self._pairs_cache
-
-    def invalidate_pairs(self) -> None:
-        self._pairs_cache = None
-
-
 def active_message_indices(session_data: SessionData, include_dangling: bool = True) -> list[int]:
     """
-    Compute active message indices, using canonical fields (`history_start_pair`, `excluded_pairs`)
-    as the primary source of truth, with fallbacks for legacy `history_start_index` for backward compatibility.
+    Compute active message indices.
+    - For shared-history sessions (pre-sliced history), it honors the `is_excluded`
+      flag on messages that `reconstruct_chat_history` sets.
+    - For legacy sessions, it uses `history_start_pair` and `excluded_pairs` to slice the full history.
     """
     history = session_data.chat_history
     if not history:
         return []
 
+    if session_data.is_pre_sliced:
+        # For shared history, history is pre-sliced. Exclusions are marked on messages.
+        # This correctly includes non-excluded pairs and all dangling messages.
+        active_indices_set = {i for i, msg in enumerate(history) if not msg.is_excluded}
+        return sorted(list(active_indices_set))
+
+    # For legacy sessions, the full history is loaded, so we must apply the filters.
     pairs = find_message_pairs(history)
     excluded_pairs_set: set[int] = set(session_data.excluded_pairs)
     active_positions: set[int] = set()
@@ -205,7 +162,7 @@ def active_message_indices(session_data: SessionData, include_dangling: bool = T
     if not include_dangling:
         return sorted(list(active_positions))
 
-    # Process dangling messages:
+    # Process dangling messages for legacy: they are active if they are in the active window.
     start_boundary_dangling = get_start_message_index(session_data)
     pair_positions: set[int] = {pos for p in pairs for pos in (p.user_index, p.assistant_index)}
     for msg_idx in range(start_boundary_dangling, len(history)):
@@ -213,21 +170,6 @@ def active_message_indices(session_data: SessionData, include_dangling: bool = T
             active_positions.add(msg_idx)
 
     return sorted(list(active_positions))
-
-
-def map_history_start_index_to_pair(chat_history: list[ChatMessageHistoryItem], history_start_index: int) -> int:
-    """
-    Map a legacy message-centric history_start_index to a pair index.
-    """
-    pairs = find_message_pairs(chat_history)
-    if not pairs:
-        return 0
-    if history_start_index >= len(chat_history):
-        return len(pairs)
-    for pair_idx, p in enumerate(pairs):
-        if p.user_index >= history_start_index:
-            return pair_idx
-    return len(pairs)
 
 
 @dataclass(slots=True)
@@ -250,22 +192,19 @@ def summarize_active_window(session_data: SessionData) -> ActiveWindowSummary | 
     if not history:
         return None
 
-    pairs = find_message_pairs(history)
-    start_pair = getattr(session_data, "history_start_pair", 0)
-    active_pairs_with_indices = [(pidx, p) for pidx, p in enumerate(pairs) if pidx >= start_pair]
+    active_pairs_with_indices = get_active_message_pairs(session_data)
 
     # Active dangling detection
-    dangling_indices: set[int] = set(range(len(history)))
-    pair_positions: set[int] = {pos for p in pairs for pos in (p.user_index, p.assistant_index)}
-    dangling_indices = {i for i in range(len(history)) if i not in pair_positions}
-    active_indices = set(active_message_indices(session_data, include_dangling=True))
-    active_dangling = [i for i in dangling_indices if i in active_indices]
+    all_pairs_in_history_list = find_message_pairs(history)
+    all_paired_indices = {idx for p in all_pairs_in_history_list for idx in (p.user_index, p.assistant_index)}
+    active_indices_set = set(active_message_indices(session_data, include_dangling=True))
+    has_active_dangling = any(i not in all_paired_indices and i in active_indices_set for i in range(len(history)))
 
-    if not active_pairs_with_indices and not active_dangling:
+    if not active_pairs_with_indices and not has_active_dangling:
         return None
 
-    excluded_set: set[int] = set(getattr(session_data, "excluded_pairs", []) or [])
-    excluded_in_window = sum(1 for pidx, _ in active_pairs_with_indices if pidx in excluded_set) if excluded_set else 0
+    excluded_set: set[int] = set(session_data.excluded_pairs)
+    excluded_in_window = sum(1 for pidx, _ in active_pairs_with_indices if pidx in excluded_set)
 
     active_window_pairs = len(active_pairs_with_indices)
     if active_pairs_with_indices:
@@ -282,6 +221,6 @@ def summarize_active_window(session_data: SessionData) -> ActiveWindowSummary | 
         active_end_id=active_end_id,
         excluded_in_window=excluded_in_window,
         pairs_sent=pairs_sent,
-        has_active_dangling=bool(active_dangling),
+        has_active_dangling=has_active_dangling,
         has_any_active_history=True,
     )

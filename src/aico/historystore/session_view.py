@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from aico.lib.history_utils import find_message_pairs_from_records
 from aico.lib.models import TokenUsage
 from aico.utils import atomic_write_text
 
@@ -24,24 +25,6 @@ def save_view(path: Path, view: SessionView) -> None:
     """
     json_text = view.model_dump_json(indent=None)
     atomic_write_text(path, json_text)
-
-
-def find_message_pairs_from_records(records: list[HistoryRecord]) -> list[tuple[int, int]]:
-    """
-    Internal helper: given an in-memory list of HistoryRecord objects (already ordered for a view),
-    return (user_pos, assistant_pos) tuples for adjacent user/assistant pairs.
-    """
-    positions: list[tuple[int, int]] = []
-    i = 0
-    while i < len(records) - 1:
-        cur = records[i]
-        nxt = records[i + 1]
-        if cur.role == "user" and nxt.role == "assistant":
-            positions.append((i, i + 1))
-            i += 2
-        else:
-            i += 1
-    return positions
 
 
 def find_message_pairs_in_view(store: HistoryStore, view: SessionView) -> list[tuple[int, int]]:

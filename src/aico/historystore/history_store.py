@@ -118,27 +118,28 @@ class HistoryStore:
             if not shard_path.is_file():
                 raise IndexError(f"Missing shard for indices in base {shard_base}")
 
-            needed_offsets = {off for _, off in positions}
             offset_to_pos: dict[int, list[int]] = defaultdict(list)
             for pos, off in positions:
                 offset_to_pos[off].append(pos)
 
+            needed_offsets_sorted = sorted(offset_to_pos.keys())
+
             found_lines: list[str] = []
-            found_line_pos: list[int] = []
+            next_expected_idx = 0
             with shard_path.open("r", encoding="utf-8") as f:
                 for i, line in enumerate(f):
-                    if i in needed_offsets:
-                        found_line_pos.append(i)
+                    if next_expected_idx < len(needed_offsets_sorted) and i == needed_offsets_sorted[next_expected_idx]:
                         found_lines.append(line)
-                        if len(found_lines) == len(needed_offsets):
-                            break
+                        next_expected_idx += 1
+                    if next_expected_idx == len(needed_offsets_sorted):
+                        break
 
             # Map found records back to their positions
             try:
                 list_of_records: list[HistoryRecord] = TypeAdapter(list[HistoryRecord]).validate_json(
                     "[" + ",".join(found_lines) + "]"
                 )
-                for rec, off in zip(list_of_records, found_line_pos, strict=True):
+                for off, rec in zip(needed_offsets_sorted, list_of_records, strict=True):
                     for pos in offset_to_pos[off]:
                         results[pos] = rec
             except json.JSONDecodeError as e:

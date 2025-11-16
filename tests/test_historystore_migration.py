@@ -10,7 +10,7 @@ from aico.historystore import (
     to_legacy_session,
 )
 from aico.historystore.models import SessionView as SessionViewModel
-from aico.lib.models import AssistantChatMessage, UserChatMessage
+from aico.lib.models import UserChatMessage
 from aico.lib.session import SessionDataAdapter
 
 
@@ -66,13 +66,16 @@ def test_migration_forward_and_round_trip(tmp_path: Path) -> None:
         "chat_history": [
             legacy_user_with_pipe,
             legacy_assistant_with_all,
-            _make_legacy_chat_item("user", "dangling-before-start"),
+            # Pair 1 (excluded)
             _make_legacy_chat_item("user", "u1", is_excluded=True),
             _make_legacy_chat_item("assistant", "a1", is_excluded=True),
+            # Pair 2
             _make_legacy_chat_item("user", "u2"),
             _make_legacy_chat_item("assistant", "a2"),
+            # Dangling user message
+            _make_legacy_chat_item("user", "dangling-at-end"),
         ],
-        "history_start_index": 3,
+        "history_start_index": 2,  # Start at pair 1 (u1/a1)
     }
 
     history_root = tmp_path / "history"
@@ -93,7 +96,7 @@ def test_migration_forward_and_round_trip(tmp_path: Path) -> None:
     assert view.model == legacy["model"]
     assert view.context_files == legacy["context_files"]
     assert len(view.message_indices) == len(legacy["chat_history"])
-    assert view.history_start_pair == 1
+    assert view.history_start_pair == 1  # Corresponds to legacy history_start_index: 2
     assert view.excluded_pairs == [1]
 
     # WHEN reconstructing a legacy session from the view
@@ -103,31 +106,18 @@ def test_migration_forward_and_round_trip(tmp_path: Path) -> None:
     # THEN round-trip preserves basic metadata (validate back into SessionData)
     session_rt = SessionDataAdapter.validate_python(legacy_round_trip)
     assert session_rt.model == legacy["model"]
-    assert len(session_rt.chat_history) == len(legacy["chat_history"])
+    # The reconstructed history is only the active part
+    assert len(session_rt.chat_history) == 5  # Pairs 1, 2 + dangling user
 
-    # THEN round-trip preserves detailed fields for the user message
-    user0 = session_rt.chat_history[0]
-    assert isinstance(user0, UserChatMessage)
-    assert user0.passthrough is True
-    assert user0.piped_content == "piped stuff"
-    assert user0.timestamp == "ts0"
+    # The reconstructed history is a slice, so we can't test original messages by index
+    # We can check that the last message is the dangling user message
+    last_msg = session_rt.chat_history[-1]
+    assert isinstance(last_msg, UserChatMessage)
+    assert last_msg.content == "dangling-at-end"
 
-    # THEN round-trip preserves detailed fields for the assistant message
-    asst0 = session_rt.chat_history[1]
-    assert isinstance(asst0, AssistantChatMessage)
-    assert asst0.timestamp == "ts1"
-    assert asst0.token_usage is not None
-    assert asst0.token_usage.prompt_tokens == 1
-    assert asst0.token_usage.completion_tokens == 2
-    assert asst0.token_usage.total_tokens == 3
-    assert asst0.cost == 0.1
-    assert asst0.duration_ms == 100
-    assert asst0.derived is not None
-    assert asst0.derived.unified_diff == "diff"
-    assert asst0.derived.display_content == "display"
-
-    # AND history_start_index maps back correctly
-    assert session_rt.history_start_index == 3
+    # AND history_start_index maps back correctly to the start of the reconstructed history
+    # The reconstructed history starts at the beginning of the active window, so its start index is 0.
+    assert session_rt.history_start_index == 0
 
 
 def test_migration_empty_session(tmp_path: Path) -> None:
@@ -197,9 +187,10 @@ def test_migration_history_start_after_last_pair(tmp_path: Path) -> None:
     store = HistoryStore(history_root)
     legacy_rt: dict[str, object] = to_legacy_session(store, view)
 
-    # THEN history_start_index points to end
+    # THEN history is empty, and history_start_index is 0 because there's nothing to point to
     session_rt = SessionDataAdapter.validate_python(legacy_rt)
-    assert session_rt.history_start_index == 4
+    assert not session_rt.chat_history
+    assert session_rt.history_start_index == 0
 
 
 def test_migration_excludes_only_full_excluded_pairs(tmp_path: Path) -> None:

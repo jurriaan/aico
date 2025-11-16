@@ -5,6 +5,15 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from aico.historystore import (
+    HistoryStore,
+    SessionView,
+    append_pair_to_view,
+    load_view,
+    save_view,
+    switch_active_pointer,
+)
+from aico.historystore.models import HistoryRecord
 from aico.lib.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
 from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter, save_session
 from aico.main import app
@@ -144,3 +153,55 @@ def test_redo_fails_with_invalid_index_format(session_with_excluded_pairs: Path)
     # THEN it fails with a parsing error
     assert result.exit_code == 1
     assert "Error: Invalid index 'abc'. Must be an integer." in result.stderr
+
+
+def test_redo_can_include_pair_before_active_window_shared_history(tmp_path: Path) -> None:
+    # GIVEN a shared-history session with 2 pairs, both excluded, and an active window starting at pair 1
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        project_root = Path(td)
+        history_root = project_root / ".aico" / "history"
+        sessions_dir = project_root / ".aico" / "sessions"
+        history_root.mkdir(parents=True, exist_ok=True)
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+
+        store = HistoryStore(history_root)
+        view = SessionView(
+            model="test-model",
+            context_files=[],
+            message_indices=[],
+            history_start_pair=1,
+            excluded_pairs=[0, 1],
+        )
+
+        for i in range(2):
+            user_record = HistoryRecord(
+                role="user",
+                content=f"prompt {i}",
+                mode=Mode.CONVERSATION,
+                timestamp=f"t{i}",
+            )
+            assistant_record = HistoryRecord(
+                role="assistant",
+                content=f"response {i}",
+                mode=Mode.CONVERSATION,
+                timestamp=f"t{i}",
+                model="test-model",
+                duration_ms=1,
+            )
+            _ = append_pair_to_view(store, view, user_record, assistant_record)
+
+        view_path = sessions_dir / "main.json"
+        save_view(view_path, view)
+        session_file = project_root / SESSION_FILE_NAME
+        switch_active_pointer(session_file, view_path)
+
+        # WHEN `aico redo 0` is run, targeting a pair before the active window
+        result = runner.invoke(app, ["redo", "0"])
+
+        # THEN it should succeed and re-include pair 0
+        assert result.exit_code == 0
+        assert "Re-included pair at index 0 in context." in result.stdout
+
+        # AND the underlying view should have only pair 1 remaining in excluded_pairs
+        updated_view = load_view(view_path)
+        assert updated_view.excluded_pairs == [1]

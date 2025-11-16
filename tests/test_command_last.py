@@ -8,6 +8,15 @@ import pytest
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
+from aico.historystore import (
+    HistoryStore,
+    SessionView,
+    append_pair_to_view,
+    save_view,
+    switch_active_pointer,
+)
+from aico.historystore.models import HistoryRecord
+from aico.lib.models import Mode
 from aico.lib.session import SESSION_FILE_NAME
 from aico.main import app
 
@@ -189,3 +198,114 @@ def test_last_recompute_for_diff_response(tmp_path: Path, mocker: MockerFixture)
         assert result_recomputed_piped.exit_code == 0
         assert result_recomputed_piped.stdout == assistant_message["derived"]["unified_diff"]
         assert "Warning" not in result_recomputed_piped.stderr
+
+
+def test_last_can_access_pair_before_active_window(tmp_path: Path) -> None:
+    # GIVEN a legacy session with 3 pairs and an active window starting at pair 1
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        session_data = {
+            "model": "test-model",
+            "context_files": [],
+            "history_start_pair": 1,  # Active window starts at pair 1
+            "chat_history": [
+                {"role": "user", "content": "prompt 0", "mode": "conversation", "timestamp": "t0"},
+                {
+                    "role": "assistant",
+                    "content": "response 0",
+                    "mode": "conversation",
+                    "model": "test",
+                    "timestamp": "t0",
+                    "duration_ms": 1,
+                },
+                {"role": "user", "content": "prompt 1", "mode": "conversation", "timestamp": "t1"},
+                {
+                    "role": "assistant",
+                    "content": "response 1",
+                    "mode": "conversation",
+                    "model": "test",
+                    "timestamp": "t1",
+                    "duration_ms": 1,
+                },
+                {"role": "user", "content": "prompt 2", "mode": "conversation", "timestamp": "t2"},
+                {
+                    "role": "assistant",
+                    "content": "response 2",
+                    "mode": "conversation",
+                    "model": "test",
+                    "timestamp": "t2",
+                    "duration_ms": 1,
+                },
+            ],
+        }
+        (Path(td) / SESSION_FILE_NAME).write_text(json.dumps(session_data))
+
+        # WHEN `aico last 0` is run, targeting a pair before the active window
+        result = runner.invoke(app, ["last", "0"])
+
+        # THEN it should succeed and show the response from the first pair (index 0)
+        assert result.exit_code == 0
+        assert "response 0" in result.stdout
+        assert "response 1" not in result.stdout
+
+        # WHEN `aico last -3` is run, which is equivalent to index 0
+        result_neg = runner.invoke(app, ["last", "-3"])
+
+        # THEN it should also succeed and show the response from the first pair
+        assert result_neg.exit_code == 0
+        assert "response 0" in result_neg.stdout
+
+
+def test_last_can_access_pair_before_active_window_shared_history(tmp_path: Path) -> None:
+    # GIVEN a shared-history session with 3 pairs and an active window starting at pair 1
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        project_root = Path(td)
+        history_root = project_root / ".aico" / "history"
+        sessions_dir = project_root / ".aico" / "sessions"
+        history_root.mkdir(parents=True, exist_ok=True)
+        sessions_dir.mkdir(parents=True, exist_ok=True)
+
+        store = HistoryStore(history_root)
+        view = SessionView(
+            model="test-model",
+            context_files=[],
+            message_indices=[],
+            history_start_pair=1,  # Active window starts at pair 1
+            excluded_pairs=[],
+        )
+
+        for i in range(3):
+            user_record = HistoryRecord(
+                role="user",
+                content=f"prompt {i}",
+                mode=Mode.CONVERSATION,
+                timestamp=f"t{i}",
+            )
+            assistant_record = HistoryRecord(
+                role="assistant",
+                content=f"response {i}",
+                mode=Mode.CONVERSATION,
+                timestamp=f"t{i}",
+                model="test-model",
+                duration_ms=1,
+            )
+            _ = append_pair_to_view(store, view, user_record, assistant_record)
+
+        view_path = sessions_dir / "main.json"
+        save_view(view_path, view)
+        session_file = project_root / SESSION_FILE_NAME
+        switch_active_pointer(session_file, view_path)
+
+        # WHEN `aico last 0` is run, targeting a pair before the active window
+        result = runner.invoke(app, ["last", "0"])
+
+        # THEN it should succeed and show the response from the first pair (index 0)
+        assert result.exit_code == 0
+        assert "response 0" in result.stdout
+        assert "response 1" not in result.stdout
+
+        # WHEN `aico last -3` is run, which is equivalent to index 0
+        result_neg = runner.invoke(app, ["last", "-3"])
+
+        # THEN it should also succeed and show the response from the first pair
+        assert result_neg.exit_code == 0
+        assert "response 0" in result_neg.stdout

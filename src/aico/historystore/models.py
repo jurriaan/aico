@@ -3,22 +3,24 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, TypeAdapter, model_validator
+from pydantic.dataclasses import dataclass
 
 from aico.lib.models import DerivedContent, Mode, TokenUsage, UserDerivedMeta
 
-# Hard-coded shard size constant (Phase 1 persistence uses sharding, no meta.json)
 SHARD_SIZE = 10_000
 
 
-class UserMetaEnvelope(BaseModel):
+@dataclass(slots=True, frozen=True)
+class UserMetaEnvelope:
     aico_user_meta: UserDerivedMeta
 
 
 type HistoryDerived = DerivedContent | UserMetaEnvelope
 
 
-class HistoryRecord(BaseModel):
+@dataclass(slots=True, frozen=True)
+class HistoryRecord:
     """
     Immutable representation of a single message (user or assistant).
 
@@ -74,11 +76,11 @@ def dumps_history_record(record: HistoryRecord) -> str:
     """
     Compact single-line JSON for a HistoryRecord.
     """
-    return record.model_dump_json(indent=None, exclude_none=True)
+    return TypeAdapter(HistoryRecord).dump_json(record, indent=None, exclude_none=True).decode()
 
 
 def load_history_record(line: str) -> HistoryRecord:
     """
     Parse a JSON line into a HistoryRecord.
     """
-    return HistoryRecord.model_validate_json(line)
+    return TypeAdapter(HistoryRecord).validate_json(line)
