@@ -46,7 +46,7 @@ SessionDataAdapter = TypeAdapter(SessionData)
 
 
 def get_relative_path_or_error(file_path: Path, session_root: Path) -> str | None:
-    abs_file_path = file_path.resolve()
+    abs_file_path = Path(os.path.normpath(file_path.absolute().as_posix()))
 
     try:
         relative_path = abs_file_path.relative_to(session_root)
