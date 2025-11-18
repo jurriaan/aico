@@ -20,6 +20,7 @@ DIFF_MODE_INSTRUCTIONS = (
     "Your response MUST ONLY contain one or more raw SEARCH/REPLACE blocks. "
     "You SHOULD NOT add any other text, commentary, or markdown. "
     "Your entire response must strictly follow the format specified below.\n"
+    "- Precede every SEARCH/REPLACE block with a line containing the file path: `File: <path>`\n"
     "- To create a new file, use an empty SEARCH block.\n"
     "- To delete a file, provide a SEARCH block with the entire file content and an empty REPLACE block.\n"
     "- Prefer generating multiple, small, targeted SEARCH/REPLACE blocks over a single large one that "
