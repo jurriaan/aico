@@ -287,6 +287,79 @@ def test_drop_autocompletion(tmp_path: Path) -> None:
         assert complete_files_in_context("src/main") == ["src/main.py"]
         assert complete_files_in_context("invalid") == []
 
+
+def test_add_symlink_to_inside_success(tmp_path: Path) -> None:
+    # GIVEN an initialized session and a target file
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+
+        target = Path(td) / "target.py"
+        target.write_text("print('hello')")
+
+        sym = Path(td) / "sym.py"
+        sym.symlink_to(target)
+
+        # WHEN adding the symlink
+        result = runner.invoke(app, ["add", "sym.py"])
+
+        # THEN succeeds and adds the symlink path
+        assert result.exit_code == 0
+        assert "Added file to context: sym.py" in result.stdout
+
+        # AND session contains the symlink relative path
+        view_file = Path(td) / ".aico" / "sessions" / "main.json"
+        view_data = json.loads(view_file.read_text())
+        assert view_data["context_files"] == ["sym.py"]
+
+
+def test_drop_symlink_success(tmp_path: Path) -> None:
+    # GIVEN session with symlink in context
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+
+        target = Path(td) / "target.py"
+        target.write_text("content")
+        sym = Path(td) / "sym.py"
+        sym.symlink_to(target)
+        runner.invoke(app, ["add", "sym.py"])
+
+        # WHEN dropping the symlink path
+        result = runner.invoke(app, ["drop", "sym.py"])
+
+        # THEN succeeds
+        assert result.exit_code == 0
+        assert "Dropped file from context: sym.py" in result.stdout
+
+        # AND removed from session
+        view_file = Path(td) / ".aico" / "sessions" / "main.json"
+        view_data = json.loads(view_file.read_text())
+        assert view_data["context_files"] == []
+
+
+def test_autocompletion_includes_symlinks(tmp_path: Path) -> None:
+    # GIVEN session with symlinks and regular files
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        runner.invoke(app, ["init"])
+
+        # Regular file
+        regular = Path(td) / "regular.py"
+        regular.touch()
+
+        # Symlinks
+        sym1 = Path(td) / "sym1.py"
+        sym1.symlink_to("regular.py")
+        sym2 = Path(td) / "src/sym2.py"
+        sym2.parent.mkdir()
+        sym2.symlink_to("../regular.py")
+
+        runner.invoke(app, ["add", "regular.py", "sym1.py", "src/sym2.py"])
+
+        # WHEN completion
+        # THEN includes symlinks (from session JSON paths)
+        assert sorted(complete_files_in_context("sym")) == sorted(["sym1.py", "src/sym2.py"])
+        assert sorted(complete_files_in_context("src/")) == ["src/sym2.py"]
+        assert sorted(complete_files_in_context("")) == sorted(["regular.py", "src/sym2.py", "sym1.py"])
+
     # GIVEN a directory with no session file
     with runner.isolated_filesystem():
         # WHEN the completion function is called

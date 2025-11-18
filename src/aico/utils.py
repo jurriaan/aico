@@ -234,7 +234,9 @@ def count_context_files_tokens(
             wrapper = f'<file path="{file_path_str}">\n{content}\n</file>\n'
             tokens = count_tokens_for_messages(model, [{"role": "user", "content": wrapper}])
             file_infos.append(TokenInfo(description=file_path_str, tokens=tokens))
-        except FileNotFoundError:
+        except OSError:
+            # Catches FileNotFoundError, but also other IO errors like broken permissions
+            # or symlink loops which should result in the file being skipped/warned.
             skipped_files.append(file_path_str)
     return file_infos, skipped_files
 

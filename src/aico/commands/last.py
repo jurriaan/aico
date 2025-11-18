@@ -23,6 +23,7 @@ def _render_content(content: str, use_rich_markdown: bool) -> None:
     if use_rich_markdown:
         console = Console()
         from rich.markdown import Markdown
+
         console.print(Markdown(content))
     else:
         # Use an empty end='' to prevent adding an extra newline if the content
@@ -70,6 +71,7 @@ def last(
     Use --recompute to re-apply an AI's instructions to the current file state.
     """
     from rich.markdown import Markdown
+
     session_file, session_data, pair_indices, _ = load_session_and_resolve_indices(index)
 
     if prompt:
