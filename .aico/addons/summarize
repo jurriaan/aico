@@ -1,149 +1,59 @@
-#!/usr/bin/env python
+#!/bin/bash
+#
+# Addon: summarize
+#
+# Archives the active conversation history as a timestamped Markdown summary in
+# `.aico/summaries/YYYYMMDDTHHMMSS_PROJECT_SUMMARY.md`, creates/updates a symlink
+# `PROJECT_SUMMARY.md` at project root, resets active history to empty via
+# `set-history clear`, and adds the symlink to context if missing.
+#
+# Uses the existing `summarize` prompts for consistency.
 
-import subprocess
-import sys
-from datetime import UTC, datetime
+set -euo pipefail
 
-# --- Addon Boilerplate ---
-# This allows the addon to import from the `aico` library.
-try:
-    from aico.core.session_persistence import get_persistence
-    from aico.lib.history_utils import find_message_pairs
-    from aico.lib.models import (
-        AssistantChatMessage,
-        Mode,
-        UserChatMessage,
-    )
-except ImportError as e:
-    print(
-        "Error: Could not import the 'aico' library. Ensure `aico` is installed "
-        f"in your environment (e.g., via `uv tool install`). Details: {e}",
-        file=sys.stderr,
-    )
-    sys.exit(1)
+if [[ "${1-}" == "--usage" ]]; then
+  echo "Archives active history as dated summary (symlink: PROJECT_SUMMARY.md), resets history, adds to context."
+  exit 0
+fi
 
+PROJECT_ROOT=$(dirname "$AICO_SESSION_FILE")
+SUMMARY_DIR="$PROJECT_ROOT/.aico/summaries"
 
-# --- Addon Discovery ---
-if "--usage" in sys.argv:
-    print("Generate a summary of the active history and reset the session.")
-    sys.exit(0)
+# 1. Check for active history
+DUMP_HISTORY=$(aico dump-history)
+if [ -z "$DUMP_HISTORY" ]; then
+  echo "No active history to summarize. Aborting."
+  exit 0
+fi
 
+# 2. Generate summary (captures stdout, hides stderr/token info)
+SYSTEM_PROMPT="You are an expert technical writer and minute-taker. Your task is to analyze the provided conversation log and produce a comprehensive, objective summary. Focus on capturing the rationale for key decisions, evolution of key concepts and approaches, development narrative, current state, and final outcomes, while preserving and integrating details from all prior exchanges for full continuity. The summary should be suitable for a new developer to get up to speed on the project's history without needing to read the entire log."
 
-# --- Summarization Logic ---
+USER_PROMPT="Your goal is to synthesize a two-part document from the log provided on stdin.
 
-SUMMARIZER_SYSTEM_PROMPT = """You are an expert technical writer and minute-taker. Your task is to analyze the provided conversation log and produce a comprehensive, objective summary. Focus on capturing the rationale for key decisions, evolution of key concepts and approaches, development narrative, current state, and final outcomes, while preserving and integrating details from all prior exchanges for full continuity. The summary should be suitable for a new developer to get up to speed on the project's history without needing to read the entire log."""
-SUMMARIZER_USER_PROMPT = """Your goal is to synthesize a two-part document from the log provided on stdin.
-
-First, create a concise summary of the most recent developments from our immediate conversation under a `### Recent Developments` heading. This part is crucial for continuing our work.
+First, create a concise summary of the most recent developments from our immediate conversation under a \`### Recent Developments\` heading. This part is crucial for continuing our work.
 If applicable, include a concise summary of previous developments (mentioned in earlier summary documents) under this heading as well.
 
-Second, create a comprehensive, self-contained `### Comprehensive Project Summary` that serves as a full onboarding document. For this part, find and integrate the content of any previous summaries in the log with the project's current state (from files, the conversation log and recent decisions).
-"""
+Second, create a comprehensive, self-contained \`### Comprehensive Project Summary\` that serves as a full onboarding document. For this part, find and integrate the content of any previous summaries in the log with the project's current state (from files, the conversation log and recent decisions)."
 
+echo "Generating summary..."
+echo
+echo "$DUMP_HISTORY" | aico ask --no-history --system-prompt "$SYSTEM_PROMPT" "$USER_PROMPT" 2>/dev/null
 
-def main() -> None:
-    # 1. Get the formatted log from `aico dump-history`
-    print("Exporting conversation log...")
-    dump_history_proc = subprocess.run(
-        ["aico", "dump-history"],
-        capture_output=True,
-        check=True,
-        text=True,
-        encoding="utf-8",
-    )
-    markdown_log = dump_history_proc.stdout
+# 3. Undo the summarization turn + clear active history
+aico undo >/dev/null 2>/dev/null
+aico set-history clear
 
-    if not markdown_log:
-        print("No active history to summarize. Aborting.")
-        sys.exit(0)
+# 4. Write timestamped archive + update symlink
+mkdir -p "$SUMMARY_DIR"
+TIMESTAMP=$(date +%Y%m%dT%H%M%S)
+SUMMARY_FILE="$SUMMARY_DIR/${TIMESTAMP}_PROJECT_SUMMARY.md"
+aico last>"$SUMMARY_FILE"
+ln -sf "$SUMMARY_FILE" "$PROJECT_ROOT/PROJECT_SUMMARY.md"
 
-    # 2. Generate the summary in isolation, without including historical context
-    print("Invoking AI to generate summary (without history)...")
-    subprocess.run(
-        [
-            "aico",
-            "ask",
-            "--no-history",
-            "--system-prompt",
-            SUMMARIZER_SYSTEM_PROMPT,
-            SUMMARIZER_USER_PROMPT,
-        ],
-        input=markdown_log,
-        check=True,
-        text=True,
-        encoding="utf-8",
-    )
+# 5. Add symlink to context if missing (check JSON output)
+if ! aico dump-context | jq -e '.context_files[] | select(. == "PROJECT_SUMMARY.md")' >/dev/null 2>&1; then
+  aico add "$PROJECT_ROOT/PROJECT_SUMMARY.md"
+fi
 
-    # 3. Archive the summarization turn so it is not included in future active history
-    print("Archiving the summarization turn...")
-    subprocess.run(["aico", "undo"], check=True)
-    print("Summary generated and archived successfully.")
-
-    # 4. Reload session, extract summary, inject a new priming pair, and reset history
-    print("Resetting session to start with the new summary...")
-    persistence = get_persistence()
-    _, session_data = persistence.load()
-
-    # The generated summary is the content of the last assistant message (which we just undid)
-    last_message = session_data.chat_history[-1]
-    if not isinstance(last_message, AssistantChatMessage):
-        raise RuntimeError("Expected an AssistantChatMessage as the last entry after 'aico ask'")
-    summary_text = last_message.content
-
-    # The new start pair index should be the global index of the first pair
-    # after the currently active window.
-    #
-    # For shared-history sessions, `chat_history` contains only the active
-    # window (pre-sliced), so we advance from the current history_start_pair
-    # by the number of pairs in that window.
-    #
-    # For legacy sessions, `chat_history` is the full history; the active
-    # window starts at `history_start_pair` and extends to the end, so the
-    # first pair after the window is simply the total number of pairs.
-    num_pairs_total = len(find_message_pairs(session_data.chat_history))
-    if getattr(session_data, "is_pre_sliced", False):
-        new_start_pair_index = session_data.history_start_pair + num_pairs_total
-    else:
-        new_start_pair_index = num_pairs_total
-
-    # First, update the history start pair metadata
-    persistence.update_view_metadata(history_start_pair=new_start_pair_index)
-
-    # Create the new priming pair to append
-    injection_prompt = (
-        "This is the summary generated from our previous conversations, "
-        f"respond with just `OK` if you understand it:\n\n{summary_text}"
-    )
-    timestamp = datetime.now(UTC).isoformat()
-
-    user_msg_to_append = UserChatMessage(
-        role="user",
-        content=injection_prompt,
-        mode=Mode.CONVERSATION,
-        timestamp=timestamp,
-    )
-    asst_msg_to_append = AssistantChatMessage(
-        role="assistant",
-        content="OK",
-        mode=Mode.CONVERSATION,
-        model=session_data.model,  # Keep the original model
-        timestamp=timestamp,
-        duration_ms=0,
-    )
-
-    # 5. Append the new priming pair, which also saves the final state
-    persistence.append_pair(user_msg_to_append, asst_msg_to_append)
-    print("\nSession history has been summarized and reset.")
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except subprocess.CalledProcessError as e:
-        print("\nAn error occurred while running an 'aico' subcommand:", file=sys.stderr)
-        stderr_output = e.stderr.strip() if e.stderr else "None"
-        print(f"  STDERR: {stderr_output}", file=sys.stderr)
-        sys.exit(1)
-    except Exception as e:
-        print(f"\nAn unexpected error occurred: {e}", file=sys.stderr)
-        sys.exit(1)
+echo "Archived summary to $SUMMARY_FILE (symlink: $PROJECT_ROOT/PROJECT_SUMMARY.md); history reset + context updated."

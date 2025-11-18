@@ -172,5 +172,5 @@ The best way to learn how to write an addon is to inspect the examples provided 
 The repository includes two addons that serve as practical examples:
 
 - [`commit`](.aico/addons/commit): Generates a Conventional Commit message for staged changes, using both your `git diff` and the `aico` conversation log for context.
-- [`summarize`](.aico/addons/summarize): Uses `aico` to first generate a comprehensive project summary, and then resets the session history to that summary. This is a useful technique for managing context length and cost.
+- [`summarize`](.aico/addons/summarize): Archives history as timestamped `.aico/summaries/YYYYMMDDTHHMMSS_PROJECT_SUMMARY.md`, symlinks `PROJECT_SUMMARY.md` at root, resets active history, adds to context.
 - [`manage-context`](.aico/addons/manage-context): Lets you interactively manage the session context using `git ls-files` and `fzf`, preselecting files already in context so you can quickly add or drop files without remembering exact paths.
