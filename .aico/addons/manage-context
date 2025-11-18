@@ -55,7 +55,7 @@ fi
 
 # --- Discover current context files via dump-context command ---
 # This uses the `aico dump-context` command, which provides a stable JSON output.
-CURRENT_CONTEXT_ORIGINAL="$(aico dump-context | jq -r '.context_files[]')"
+CURRENT_CONTEXT_ORIGINAL="$(aico dump-context | jq -r '.context_files[]' | sort)"
 
 # --- Reorder candidates: context files first, then the rest ---
 IN_CONTEXT_FILES="$(comm -12 <(printf "%s\n" "$ALL_CANDIDATES") <(printf "%s\n" "$CURRENT_CONTEXT_ORIGINAL"))"
