@@ -47,7 +47,8 @@ aico set-history clear
 # 4. Write timestamped archive + update symlink
 mkdir -p "$SUMMARY_DIR"
 TIMESTAMP=$(date +%Y%m%dT%H%M%S)
-SUMMARY_FILE="$SUMMARY_DIR/${TIMESTAMP}_PROJECT_SUMMARY.md"
+FILE_NAME="${TIMESTAMP}_PROJECT_SUMMARY.md"
+SUMMARY_FILE="$SUMMARY_DIR/${FILE_NAME}"
 aico last>"$SUMMARY_FILE"
 ln -sf "$SUMMARY_FILE" "$PROJECT_ROOT/PROJECT_SUMMARY.md"
 
@@ -56,4 +57,4 @@ if ! aico dump-context | jq -e '.context_files[] | select(. == "PROJECT_SUMMARY.
   aico add "$PROJECT_ROOT/PROJECT_SUMMARY.md"
 fi
 
-echo "Archived summary to $SUMMARY_FILE (symlink: $PROJECT_ROOT/PROJECT_SUMMARY.md); history reset + context updated."
+echo "Archived summary to $FILE_NAME and reset active history"
