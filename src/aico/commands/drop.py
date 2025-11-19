@@ -22,10 +22,9 @@ def drop(
     """
     session = load_active_session()
 
-    files_were_dropped = False
+    files_to_drop: list[str] = []
+    current_files = set(session.data.context_files)
     errors_found = False
-
-    new_context_files = session.data.context_files[:]
 
     for file_path in file_paths:
         relative_path_str = get_relative_path_or_error(file_path, session.root)
@@ -34,16 +33,16 @@ def drop(
             errors_found = True
             continue
 
-        if relative_path_str in new_context_files:
-            new_context_files.remove(relative_path_str)
-            files_were_dropped = True
+        if relative_path_str in current_files:
+            files_to_drop.append(relative_path_str)
             print(f"Dropped file from context: {relative_path_str}")
         else:
             print(f"Error: File not in context: {file_path}", file=sys.stderr)
             errors_found = True
 
-    if files_were_dropped:
-        session.persistence.update_view_metadata(context_files=sorted(new_context_files))
+    if files_to_drop:
+        new_context = sorted(current_files - set(files_to_drop))
+        session.persistence.update_view_metadata(context_files=new_context)
 
     if errors_found:
         raise typer.Exit(code=1)

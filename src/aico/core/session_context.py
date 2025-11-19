@@ -105,26 +105,6 @@ def get_start_message_index(session_data: SessionData) -> int:
     return pairs[history_start_pair].user_index
 
 
-def set_pair_excluded(session_data: SessionData, pair_index: int, excluded: bool) -> bool:
-    """
-    Sets exclusion for a pair by updating the canonical `session_data.excluded_pairs` list.
-    Returns True if any change was made.
-    """
-    current_excluded_set = set(session_data.excluded_pairs)
-    changed = False
-
-    if excluded and pair_index not in current_excluded_set:
-        current_excluded_set.add(pair_index)
-        session_data.excluded_pairs = sorted(list(current_excluded_set))
-        changed = True
-    elif not excluded and pair_index in current_excluded_set:
-        current_excluded_set.remove(pair_index)
-        session_data.excluded_pairs = sorted(list(current_excluded_set))
-        changed = True
-
-    return changed
-
-
 def active_message_indices(session_data: SessionData, include_dangling: bool = True) -> list[int]:
     """
     Compute active message indices.
