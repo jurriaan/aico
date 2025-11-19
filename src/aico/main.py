@@ -1,7 +1,7 @@
-import re
 import warnings
 from typing import final, override
 
+import regex as re
 import typer
 from click import Context
 from typer.core import TyperGroup
