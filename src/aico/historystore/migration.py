@@ -131,17 +131,22 @@ def deserialize_assistant_record(
 def reconstruct_chat_history(
     store: HistoryStore,
     view: SessionView,
+    start_pair: int | None = None,
 ) -> list[ChatMessageHistoryItem]:
     """
     Reconstructs strongly-typed ChatMessageHistoryItem objects from a view.
 
-    Optimized to only read the active part of the history from disk if `history_start_pair` is set.
+    Optimized to only read the active part of the history from disk.
+
+    Args:
+        start_pair: The pair index to start from. If None, uses view.history_start_pair (active window).
+                    Use 0 for full history.
     """
     if not view.message_indices:
         return []
 
-    start_pair = view.history_start_pair
-    start_message_pos = start_pair * 2
+    effective_start_pair = view.history_start_pair if start_pair is None else start_pair
+    start_message_pos = effective_start_pair * 2
     if start_message_pos >= len(view.message_indices):
         return []
 
@@ -151,20 +156,20 @@ def reconstruct_chat_history(
     if records:
         if records[0].role != "user":
             raise ValueError(
-                f"History data integrity error: Expected first active message at index {start_message_pos} "
-                + f"(from start pair {start_pair}) to be 'user', but found '{records[0].role}'."
+                f"History data integrity error: Expected first message at index {start_message_pos} "
+                + f"(from start pair {effective_start_pair}) to be 'user', but found '{records[0].role}'."
             )
         for i in range(0, len(records) - 1, 2):
             if not (records[i].role == "user" and records[i + 1].role == "assistant"):
                 raise ValueError(
-                    f"History data integrity error: Mismatched roles at positions {i}, {i + 1} "
-                    + "in active history window. Expected user/assistant, "
+                    f"History data integrity error: Mismatched roles at positions {i}, {i + 1}. "
+                    + "Expected user/assistant, "
                     + f"found {records[i].role}/{records[i + 1].role}."
                 )
 
     pair_positions = find_message_pairs_from_records(records)
 
-    excluded_pair_set = {p - start_pair for p in view.excluded_pairs if p >= start_pair}
+    excluded_pair_set = {p - effective_start_pair for p in view.excluded_pairs if p >= effective_start_pair}
     excluded_message_positions: set[int] = {
         pos
         for pair_idx, (u_pos, a_pos) in enumerate(pair_positions)
@@ -189,27 +194,7 @@ def reconstruct_full_chat_history(
     """
     Reconstructs strongly-typed ChatMessageHistoryItem objects for the full history of a view.
     """
-    if not view.message_indices:
-        return []
-
-    records = store.read_many(view.message_indices)
-    pair_positions = find_message_pairs_from_records(records)
-    excluded_pair_set = set(view.excluded_pairs)
-    excluded_message_positions: set[int] = {
-        pos
-        for pair_idx, (u_pos, a_pos) in enumerate(pair_positions)
-        if pair_idx in excluded_pair_set
-        for pos in (u_pos, a_pos)
-    }
-
-    chat_history: list[ChatMessageHistoryItem] = []
-    for pos, rec in enumerate(records):
-        is_excluded = pos in excluded_message_positions
-        if rec.role == "user":
-            chat_history.append(deserialize_user_record(rec, is_excluded))
-        else:
-            chat_history.append(deserialize_assistant_record(rec, is_excluded, view.model))
-    return chat_history
+    return reconstruct_chat_history(store, view, start_pair=0)
 
 
 def to_legacy_session(store: HistoryStore, view: SessionView) -> dict[str, object]:

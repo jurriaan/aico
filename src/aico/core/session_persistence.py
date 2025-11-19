@@ -12,7 +12,6 @@ from aico.historystore import (
     append_pair_to_view,
     load_view,
     reconstruct_chat_history,
-    reconstruct_full_chat_history,
     save_view,
 )
 from aico.historystore import (
@@ -255,7 +254,7 @@ class SharedHistoryPersistence:
         Load the active SessionView and reconstruct a SessionData containing the full history.
         """
         store, view = self._load_view_and_store()
-        chat_history = reconstruct_full_chat_history(store, view)
+        chat_history = reconstruct_chat_history(store, view, start_pair=0)
         total_pairs = len(find_message_pairs(chat_history))
 
         session_data = SessionData(
