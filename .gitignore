@@ -1,2 +1,5 @@
 .aider*
 __pycache__
+.aico/sessions
+.aico/history
+.aico/summaries
