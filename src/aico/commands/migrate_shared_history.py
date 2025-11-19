@@ -3,7 +3,7 @@ import sys
 from typing import Annotated
 
 import typer
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from aico.historystore import from_legacy_session, switch_active_pointer
 from aico.historystore.pointer import SessionPointer
@@ -58,7 +58,7 @@ def migrate_shared_history(
 
     # Already a pointer?
     try:
-        _ = SessionPointer.model_validate_json(raw_text)
+        _ = TypeAdapter(SessionPointer).validate_json(raw_text)
         print("This session is already using the shared-history format. Nothing to migrate.")
         raise typer.Exit(code=0)
     except ValidationError:

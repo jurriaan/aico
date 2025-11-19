@@ -69,11 +69,6 @@ class ContextFilesResponse:
     context_files: list[str]
 
 
-class UserDerivedMeta(BaseModel):
-    passthrough: bool = False
-    piped_content: str | None = None
-
-
 @dataclass(slots=True, frozen=True)
 class AssistantChatMessage:
     role: Literal["assistant"]

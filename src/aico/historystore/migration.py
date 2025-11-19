@@ -14,11 +14,10 @@ from aico.lib.models import (
     SessionData,
     TokenUsage,
     UserChatMessage,
-    UserDerivedMeta,
 )
 
 from .history_store import HistoryStore
-from .models import HistoryRecord, SessionView, UserMetaEnvelope
+from .models import HistoryRecord, SessionView
 from .session_view import save_view
 
 
@@ -41,14 +40,13 @@ def from_legacy_session(
         record: HistoryRecord | None = None
 
         if isinstance(msg, UserChatMessage):
-            user_meta = UserDerivedMeta(passthrough=msg.passthrough, piped_content=msg.piped_content)
-            has_meta = bool(user_meta.model_dump(exclude_defaults=True))
             record = HistoryRecord(
                 role="user",
                 content=msg.content,
                 mode=msg.mode,
                 timestamp=msg.timestamp,
-                derived=UserMetaEnvelope(aico_user_meta=user_meta) if has_meta else None,
+                passthrough=msg.passthrough,
+                piped_content=msg.piped_content,
             )
         else:
             # AssistantChatMessage branch
@@ -96,22 +94,14 @@ def from_legacy_session(
 
 
 def deserialize_user_record(rec: HistoryRecord, is_excluded: bool) -> UserChatMessage:
-    passthrough: bool = False
-    piped_content: str | None = None
-
-    if isinstance(rec.derived, UserMetaEnvelope):
-        meta = rec.derived.aico_user_meta
-        passthrough = meta.passthrough
-        piped_content = meta.piped_content
-
     return UserChatMessage(
         role="user",
         content=rec.content,
         mode=rec.mode,
         timestamp=rec.timestamp,
         is_excluded=is_excluded,
-        passthrough=passthrough,
-        piped_content=piped_content,
+        passthrough=rec.passthrough,
+        piped_content=rec.piped_content,
     )
 
 

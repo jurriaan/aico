@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 import typer
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from aico.historystore import (
     HistoryStore,
@@ -18,7 +18,7 @@ from aico.historystore import (
 from aico.historystore import (
     edit_message as edit_message_historystore,
 )
-from aico.historystore.models import HistoryRecord, SessionView, UserMetaEnvelope
+from aico.historystore.models import HistoryRecord, SessionView
 from aico.historystore.pointer import (
     InvalidPointerError,
     MissingViewError,
@@ -31,7 +31,6 @@ from aico.lib.models import (
     MessagePairIndices,
     SessionData,
     UserChatMessage,
-    UserDerivedMeta,
 )
 from aico.lib.session import (
     SESSION_FILE_NAME,
@@ -361,19 +360,13 @@ class SharedHistoryPersistence:
         raise typer.Exit(code=1)
 
     def _to_history_record_user(self, msg: UserChatMessage) -> HistoryRecord:
-        derived_envelope: UserMetaEnvelope | None = None
-        if msg.passthrough or msg.piped_content is not None:
-            # Only include when non-default metadata is present
-            user_meta = UserDerivedMeta(passthrough=msg.passthrough, piped_content=msg.piped_content)
-            if user_meta.model_dump(exclude_defaults=True):
-                derived_envelope = UserMetaEnvelope(aico_user_meta=user_meta)
-
         return HistoryRecord(
             role="user",
             content=msg.content,
             mode=msg.mode,
             timestamp=msg.timestamp,
-            derived=derived_envelope,
+            passthrough=msg.passthrough,
+            piped_content=msg.piped_content,
         )
 
     def _to_history_record_assistant(self, msg: AssistantChatMessage) -> HistoryRecord:
@@ -516,7 +509,7 @@ def get_persistence(require_type: str = "any") -> StatefulSessionPersistence:
         # If any type is allowed, be lenient.
         # It's a pointer if it can be parsed as one, even if the view is missing.
         try:
-            _ = SessionPointer.model_validate_json(raw_text)
+            _ = TypeAdapter(SessionPointer).validate_json(raw_text)
         except ValidationError:
             return LegacyJsonPersistence()
 

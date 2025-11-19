@@ -1,22 +1,18 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, TypeAdapter, model_validator
 from pydantic.dataclasses import dataclass
+from pydantic_core import ArgsKwargs
 
-from aico.lib.models import DerivedContent, Mode, TokenUsage, UserDerivedMeta
+from aico.lib.models import DerivedContent, Mode, TokenUsage
 
 SHARD_SIZE = 10_000
 
 
-@dataclass(slots=True, frozen=True)
-class UserMetaEnvelope:
-    aico_user_meta: UserDerivedMeta
-
-
-type HistoryDerived = DerivedContent | UserMetaEnvelope
+type HistoryDerived = DerivedContent
 
 
 @dataclass(slots=True, frozen=True)
@@ -33,16 +29,32 @@ class HistoryRecord:
     content: str
     mode: Mode
     timestamp: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    passthrough: bool = False
+    piped_content: str | None = None
 
     # Assistant-only optional metadata
     model: str | None = None
     token_usage: TokenUsage | None = None
     cost: float | None = None
     duration_ms: int | None = None
-    derived: HistoryDerived | None = None  # Structured envelope for user or assistant metadata
+    derived: HistoryDerived | None = None
 
     # Edit lineage (stores global index of predecessor)
     edit_of: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_user_meta(cls, values: dict[Any, Any] | ArgsKwargs):  # pyright: ignore[reportExplicitAny]
+        if isinstance(values, ArgsKwargs):
+            return values
+
+        derived = values.get("derived")
+        if isinstance(derived, dict) and "aico_user_meta" in derived:
+            meta: dict[Any, Any] = derived["aico_user_meta"]  # pyright: ignore[reportExplicitAny, reportUnknownVariableType]
+            values["passthrough"] = meta.get("passthrough", False)  # pyright: ignore[reportUnknownMemberType]
+            values["piped_content"] = meta.get("piped_content")  # pyright: ignore[reportUnknownMemberType]
+            values["derived"] = None
+        return values
 
 
 class SessionView(BaseModel):

@@ -75,7 +75,7 @@ def complete_files_in_context(incomplete: str) -> list[str]:
         # Attempt to parse as a shared-history pointer
         if "aico_session_pointer_v1" in raw_text:
             try:
-                pointer = SessionPointer.model_validate_json(raw_text)
+                pointer = TypeAdapter(SessionPointer).validate_json(raw_text)
                 view_path = (session_file.parent / pointer.path).resolve()
                 if view_path.is_file():
                     view = load_view(view_path)

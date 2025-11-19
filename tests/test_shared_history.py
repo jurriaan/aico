@@ -4,6 +4,7 @@ import shlex
 from pathlib import Path
 
 import pytest
+from pydantic import TypeAdapter
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
@@ -15,9 +16,8 @@ from aico.historystore import (
     save_view,
     switch_active_pointer,
 )
-from aico.historystore.models import UserMetaEnvelope
 from aico.historystore.pointer import load_pointer
-from aico.lib.models import DerivedContent, Mode, TokenUsage, UserDerivedMeta
+from aico.lib.models import DerivedContent, Mode, TokenUsage
 
 # aico imports
 from aico.main import app
@@ -188,7 +188,7 @@ def test_load_pointer_missing_view_exits(tmp_path: Path) -> None:
 
     # Valid pointer JSON pointing to a non-existent view
     pointer = SessionPointer(type="aico_session_pointer_v1", path=".aico/sessions/missing.json")
-    pointer_file.write_text(pointer.model_dump_json(), encoding="utf-8")
+    pointer_file.write_bytes(TypeAdapter(SessionPointer).dump_json(pointer))
 
     # When using a shared-history-only command, missing view should cause a clear error and non-zero exit.
     result = runner.invoke(app, ["session-list"], catch_exceptions=False, env={"AICO_SESSION_FILE": str(pointer_file)})
@@ -265,12 +265,13 @@ def test_load_from_shared_history_restores_all_fields(tmp_path: Path) -> None:
     sessions_dir = project_dir / ".aico" / "sessions"
     store = HistoryStore(history_root)
 
-    user_derived = UserMetaEnvelope(aico_user_meta=UserDerivedMeta(passthrough=True, piped_content="piped"))
     asst_derived = DerivedContent(unified_diff="diff", display_content="display")
     asst_tokens = TokenUsage(prompt_tokens=1, completion_tokens=2, total_tokens=3)
 
     u_idx = store.append(
-        HistoryRecord(role="user", content="u", mode=Mode.CONVERSATION, timestamp="ts_u", derived=user_derived)
+        HistoryRecord(
+            role="user", content="u", mode=Mode.CONVERSATION, timestamp="ts_u", passthrough=True, piped_content="piped"
+        )
     )
     a_idx = store.append(
         HistoryRecord(
