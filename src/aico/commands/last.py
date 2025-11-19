@@ -5,12 +5,8 @@ import typer
 from rich.console import Console
 
 from aico.core.session_loader import load_session_and_resolve_indices
-from aico.lib.diffing import (
-    generate_display_items,
-    generate_unified_diff,
-)
+from aico.lib.diffing import recompute_derived_content
 from aico.lib.models import AssistantChatMessage, DisplayItem
-from aico.lib.session import build_original_file_contents
 from aico.utils import (
     is_terminal,
     reconstruct_display_content_for_piping,
@@ -98,21 +94,23 @@ def last(
 
     unified_diff: str | None = None
     display_content: str | list[DisplayItem] | None = None
+    derived_obj = None
 
     if recompute:
-        original_file_contents = build_original_file_contents(
-            context_files=session.data.context_files, session_root=session.root
+        derived_obj = recompute_derived_content(
+            assistant_content=target_msg.content,
+            context_files=session.data.context_files,
+            session_root=session.root,
         )
-        unified_diff = generate_unified_diff(original_file_contents, target_msg.content, session.root)
-        display_content = generate_display_items(original_file_contents, target_msg.content, session.root)
     else:
-        # Use stored data
-        if target_msg.derived:
-            unified_diff = target_msg.derived.unified_diff
-            display_content = target_msg.derived.display_content or target_msg.content
-        else:
-            unified_diff = None
-            display_content = target_msg.content
+        derived_obj = target_msg.derived
+
+    if derived_obj:
+        unified_diff = derived_obj.unified_diff
+        display_content = derived_obj.display_content or target_msg.content
+    else:
+        unified_diff = None
+        display_content = target_msg.content
 
     # Unified rendering logic
     if is_terminal():
