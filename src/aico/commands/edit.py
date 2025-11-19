@@ -46,7 +46,7 @@ def edit(
     target_message = session.data.chat_history[target_message_index]
     original_content = target_message.content
 
-    fd, temp_file_path_str = tempfile.mkstemp(suffix=".txt", text=True)
+    fd, temp_file_path_str = tempfile.mkstemp(suffix=".md", text=True)
     temp_file_path = Path(temp_file_path_str)
     try:
         with os.fdopen(fd, "w") as f:
