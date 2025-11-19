@@ -17,7 +17,7 @@ def init(
             "-m",
             help="The model to use for the session.",
         ),
-    ] = "openrouter/google/gemini-2.5-pro",
+    ] = "openrouter/google/gemini-3-pro-preview",
 ) -> None:
     """
     Initialize a new session in the current directory.

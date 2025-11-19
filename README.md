@@ -34,7 +34,7 @@ For example:
 You specify which model to use when you initialize a session:
 
 ```bash
-aico init --model "openrouter/google/gemini-2.5-pro"
+aico init --model "openrouter/google/gemini-3-pro-preview"
 ```
 
 For a complete list of supported providers and the environment variables they require, please refer to the [LiteLLM Provider documentation](https://docs.litellm.ai/docs/providers).
@@ -80,7 +80,7 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
 1. **Initialize a session in your project root.**
 
    ```bash
-   aico init --model "openrouter/google/gemini-2.5-pro"
+   aico init --model "openrouter/google/gemini-3-pro-preview"
    ```
 
 2. **Add files to the AI's context.**
