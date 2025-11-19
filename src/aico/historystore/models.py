@@ -7,7 +7,13 @@ from pydantic import BaseModel, Field, TypeAdapter, model_validator
 from pydantic.dataclasses import dataclass
 from pydantic_core import ArgsKwargs
 
-from aico.lib.models import DerivedContent, Mode, TokenUsage
+from aico.lib.models import (
+    AssistantChatMessage,
+    DerivedContent,
+    Mode,
+    TokenUsage,
+    UserChatMessage,
+)
 
 SHARD_SIZE = 10_000
 
@@ -55,6 +61,31 @@ class HistoryRecord:
             values["piped_content"] = meta.get("piped_content")  # pyright: ignore[reportUnknownMemberType]
             values["derived"] = None
         return values
+
+    @classmethod
+    def from_user_message(cls, msg: UserChatMessage) -> HistoryRecord:
+        return cls(
+            role="user",
+            content=msg.content,
+            mode=msg.mode,
+            timestamp=msg.timestamp,
+            passthrough=msg.passthrough,
+            piped_content=msg.piped_content,
+        )
+
+    @classmethod
+    def from_assistant_message(cls, msg: AssistantChatMessage) -> HistoryRecord:
+        return cls(
+            role="assistant",
+            content=msg.content,
+            mode=msg.mode,
+            model=msg.model,
+            timestamp=msg.timestamp,
+            token_usage=msg.token_usage,
+            cost=msg.cost,
+            duration_ms=msg.duration_ms,
+            derived=msg.derived,
+        )
 
 
 class SessionView(BaseModel):

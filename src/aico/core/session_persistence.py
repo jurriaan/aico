@@ -278,8 +278,8 @@ class SharedHistoryPersistence:
         store = HistoryStore(self._history_root)
         view = load_view(self._view_path_abs)
 
-        user_record = self._to_history_record_user(user_msg)
-        assistant_record = self._to_history_record_assistant(asst_msg)
+        user_record = HistoryRecord.from_user_message(user_msg)
+        assistant_record = HistoryRecord.from_assistant_message(asst_msg)
         _ = append_pair_to_view(store, view, user_record, assistant_record)
 
         save_view(self._view_path_abs, view)
@@ -353,29 +353,6 @@ class SharedHistoryPersistence:
     def _fail(self, message: str) -> None:
         typer.echo(f"Error: {message}", err=True)
         raise typer.Exit(code=1)
-
-    def _to_history_record_user(self, msg: UserChatMessage) -> HistoryRecord:
-        return HistoryRecord(
-            role="user",
-            content=msg.content,
-            mode=msg.mode,
-            timestamp=msg.timestamp,
-            passthrough=msg.passthrough,
-            piped_content=msg.piped_content,
-        )
-
-    def _to_history_record_assistant(self, msg: AssistantChatMessage) -> HistoryRecord:
-        return HistoryRecord(
-            role="assistant",
-            content=msg.content,
-            mode=msg.mode,
-            model=msg.model,
-            timestamp=msg.timestamp,
-            token_usage=msg.token_usage,
-            cost=msg.cost,
-            duration_ms=msg.duration_ms,
-            derived=msg.derived,
-        )
 
 
 def get_persistence(require_type: str = "any") -> StatefulSessionPersistence:

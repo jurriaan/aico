@@ -37,34 +37,14 @@ def from_legacy_session(
     message_indices: list[int] = []
 
     for msg in session_data.chat_history:
-        record: HistoryRecord | None = None
-
         if isinstance(msg, UserChatMessage):
-            record = HistoryRecord(
-                role="user",
-                content=msg.content,
-                mode=msg.mode,
-                timestamp=msg.timestamp,
-                passthrough=msg.passthrough,
-                piped_content=msg.piped_content,
-            )
+            record = HistoryRecord.from_user_message(msg)
         else:
             # AssistantChatMessage branch
-            record = HistoryRecord(
-                role="assistant",
-                content=msg.content,
-                mode=msg.mode,
-                timestamp=msg.timestamp,
-                model=msg.model,
-                token_usage=msg.token_usage,
-                cost=msg.cost,
-                duration_ms=msg.duration_ms,
-                derived=msg.derived,
-            )
+            record = HistoryRecord.from_assistant_message(msg)
 
-        if record:
-            idx = store.append(record)
-            message_indices.append(idx)
+        idx = store.append(record)
+        message_indices.append(idx)
 
     # Calculate history_start_pair from the legacy index if available on the SessionData object
     legacy_history_start_index = session_data.history_start_index or 0
