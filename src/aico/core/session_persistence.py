@@ -28,7 +28,6 @@ from aico.historystore.pointer import load_pointer as load_pointer_helper
 from aico.lib.history_utils import find_message_pairs, map_history_start_index_to_pair
 from aico.lib.models import (
     AssistantChatMessage,
-    MessagePairIndices,
     SessionData,
     UserChatMessage,
 )
@@ -43,12 +42,9 @@ from aico.lib.session import (
 
 
 @runtime_checkable
-class SessionPersistence(Protocol):
+class StatefulSessionPersistence(Protocol):
     def load(self) -> tuple[Path, SessionData]: ...
 
-
-@runtime_checkable
-class StatefulSessionPersistence(SessionPersistence, Protocol):
     def append_pair(self, user_msg: UserChatMessage, asst_msg: AssistantChatMessage) -> None: ...
 
     def edit_message(
@@ -381,67 +377,6 @@ class SharedHistoryPersistence:
             duration_ms=msg.duration_ms,
             derived=msg.derived,
         )
-
-
-def load_session_and_resolve_indices(
-    index_str: str,
-    persistence: SessionPersistence | None = None,
-) -> tuple[Path, SessionData, MessagePairIndices, int]:
-    """
-    Load the session, parse a user-provided index string, and resolve it to
-    a message pair using global pair indices (full history).
-
-    Supports:
-      - Positive indices: 0..N-1 over the full history.
-      - Negative indices: -1..-N counted from the end of the full history.
-
-    Error messages are kept compatible with legacy behavior.
-    """
-    persistence = persistence or get_persistence()
-
-    # For shared-history, resolve against the full history; for legacy, load already returns it.
-    if isinstance(persistence, SharedHistoryPersistence):
-        session_file, session_data = persistence.load_full_history()
-    else:
-        session_file, session_data = persistence.load()
-
-    try:
-        user_idx_val = int(index_str)
-    except ValueError:
-        print(f"Error: Invalid index '{index_str}'. Must be an integer.", file=sys.stderr)
-        raise typer.Exit(code=1) from None
-
-    pairs = find_message_pairs(session_data.chat_history)
-    num_pairs = len(pairs)
-
-    if num_pairs == 0:
-        print("Error: No message pairs found in history.", file=sys.stderr)
-        raise typer.Exit(code=1)
-
-    # Map negative indices to their positive counterparts.
-    if user_idx_val < 0:
-        if user_idx_val < -num_pairs:
-            if num_pairs == 1:
-                err_msg = f"Error: Pair at index {user_idx_val} not found. The only valid index is 0 (or -1)."
-            else:
-                valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
-                err_msg = f"Error: Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
-            print(err_msg, file=sys.stderr)
-            raise typer.Exit(code=1)
-        resolved_index = num_pairs + user_idx_val
-    else:
-        if user_idx_val >= num_pairs:
-            if num_pairs == 1:
-                err_msg = f"Error: Pair at index {user_idx_val} not found. The only valid index is 0 (or -1)."
-            else:
-                valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
-                err_msg = f"Error: Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
-            print(err_msg, file=sys.stderr)
-            raise typer.Exit(code=1)
-        resolved_index = user_idx_val
-
-    pair_indices = pairs[resolved_index]
-    return session_file, session_data, pair_indices, resolved_index
 
 
 def get_persistence(require_type: str = "any") -> StatefulSessionPersistence:

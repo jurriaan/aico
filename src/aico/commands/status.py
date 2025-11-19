@@ -9,7 +9,7 @@ from rich.table import Table
 from rich.text import Text
 
 from aico.core.session_context import summarize_active_window
-from aico.core.session_persistence import get_persistence
+from aico.core.session_loader import load_active_session
 from aico.historystore.pointer import InvalidPointerError, MissingViewError, load_pointer
 from aico.lib.models import SessionData, TokenInfo
 from aico.utils import (
@@ -64,12 +64,10 @@ def status() -> None:  # noqa: C901
     """
     Show session status and token usage.
     """
-    persistence = get_persistence()
-    session_file, session_data = persistence.load()
-    session_root = session_file.parent
+    session = load_active_session()
     console = Console()
 
-    model = session_data.model
+    model = session.data.model
 
     components: list[TokenInfo] = []
 
@@ -83,11 +81,11 @@ def status() -> None:  # noqa: C901
         components.append(TokenInfo(description="alignment prompts (worst-case)", tokens=align_tokens))
 
     # 3. Chat History
-    history_tokens = count_active_history_tokens(model, session_data)
+    history_tokens = count_active_history_tokens(model, session.data)
     history_component = TokenInfo(description="chat history", tokens=history_tokens)
 
     # 4. Context Files
-    file_components, skipped_files = count_context_files_tokens(model, session_data, session_root)
+    file_components, skipped_files = count_context_files_tokens(model, session.data, session.root)
     if skipped_files:
         skipped_list = " ".join(sorted(skipped_files))
         console.print(f"[yellow]Warning: Context files not found, skipped: {skipped_list}[/yellow]")
@@ -117,10 +115,10 @@ def status() -> None:  # noqa: C901
     max_input_tokens: int | None = model_info.get("max_input_tokens") if model_info else None
 
     # --- Rich Rendering ---
-    session_name = _get_session_name(session_file) or "main"
+    session_name = _get_session_name(session.file_path) or "main"
 
     header_title = f"Session '{session_name}'"
-    header_body = Text(session_data.model, justify="center")
+    header_body = Text(session.data.model, justify="center")
 
     console.print(Panel(header_body, title=header_title, border_style="dim"))
     console.print()
@@ -146,7 +144,7 @@ def status() -> None:  # noqa: C901
         history_component.description,
     )
 
-    if history_summary_text := _get_history_summary_text(session_data):
+    if history_summary_text := _get_history_summary_text(session.data):
         table.add_row("", "", history_summary_text)
 
     if file_components:

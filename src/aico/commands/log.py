@@ -2,7 +2,7 @@ from rich.console import Console
 from rich.table import Table
 
 from aico.core.session_context import active_message_indices, get_active_message_pairs
-from aico.core.session_persistence import get_persistence
+from aico.core.session_loader import load_active_session
 from aico.lib.history_utils import find_message_pairs
 from aico.lib.models import UserChatMessage
 
@@ -11,16 +11,15 @@ def log() -> None:
     """
     Display the active conversation log.
     """
-    persistence = get_persistence()
-    _, session_data = persistence.load()
-    chat_history = session_data.chat_history
+    session = load_active_session()
+    chat_history = session.data.chat_history
     console = Console()
 
     # Use centralized helper to get pairs in the active window with their absolute indices
-    active_pairs_with_indices = get_active_message_pairs(session_data)
+    active_pairs_with_indices = get_active_message_pairs(session.data)
 
     # Determine active indices using centralized helper
-    active_indices_set = set(active_message_indices(session_data, include_dangling=True))
+    active_indices_set = set(active_message_indices(session.data, include_dangling=True))
 
     if active_pairs_with_indices:
         table = Table(title="Active Context Log", show_header=True, header_style="bold", box=None, padding=(0, 1))
@@ -28,7 +27,7 @@ def log() -> None:
         table.add_column("Role")
         table.add_column("Message Snippet", overflow="ellipsis", min_width=20)
 
-        excluded_set = set(getattr(session_data, "excluded_pairs", []) or [])
+        excluded_set = set(getattr(session.data, "excluded_pairs", []) or [])
 
         for i, (pair_index, pair) in enumerate(active_pairs_with_indices):
             user_msg = chat_history[pair.user_index]

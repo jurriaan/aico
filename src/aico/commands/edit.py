@@ -9,7 +9,7 @@ from typing import Annotated
 
 import typer
 
-from aico.core.session_persistence import get_persistence, load_session_and_resolve_indices
+from aico.core.session_loader import load_session_and_resolve_indices
 from aico.lib.diffing import recompute_derived_content
 from aico.lib.models import AssistantChatMessage
 
@@ -32,10 +32,7 @@ def edit(
     """
     Open a message in your default editor ($EDITOR) to make corrections.
     """
-    persistence = get_persistence()
-    session_file, session_data, pair_indices, resolved_pair_index = load_session_and_resolve_indices(
-        index, persistence=persistence
-    )
+    session, pair_indices, resolved_pair_index = load_session_and_resolve_indices(index)
 
     message_type: str
     target_message_index: int
@@ -46,7 +43,7 @@ def edit(
         message_type = "response"
         target_message_index = pair_indices.assistant_index
 
-    target_message = session_data.chat_history[target_message_index]
+    target_message = session.data.chat_history[target_message_index]
     original_content = target_message.content
 
     fd, temp_file_path_str = tempfile.mkstemp(suffix=".txt", text=True)
@@ -84,16 +81,15 @@ def edit(
 
         # Invalidate derived content if editing an assistant response
         if isinstance(updated_message, AssistantChatMessage):
-            session_root = session_file.parent
             new_derived_content = recompute_derived_content(
                 assistant_content=new_content,
-                context_files=session_data.context_files,
-                session_root=session_root,
+                context_files=session.data.context_files,
+                session_root=session.root,
             )
             updated_message = replace(updated_message, derived=new_derived_content)
             new_asst_metadata = updated_message
 
-        persistence.edit_message(target_message_index, new_content, new_asst_metadata)
+        session.persistence.edit_message(target_message_index, new_content, new_asst_metadata)
 
         print(f"Updated {message_type} for message pair {resolved_pair_index}.")
 

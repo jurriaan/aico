@@ -6,7 +6,7 @@ import typer
 from rich.prompt import Prompt
 
 from aico.core.llm_executor import execute_interaction
-from aico.core.session_persistence import get_persistence
+from aico.core.session_loader import load_active_session
 from aico.lib.models import (
     AssistantChatMessage,
     DerivedContent,
@@ -32,9 +32,7 @@ def _invoke_llm_logic(
     """
     Core logic for invoking the LLM that can be shared by all command wrappers.
     """
-    persistence = get_persistence()
-    session_file, session_data = persistence.load()
-    session_root = session_file.parent
+    session = load_active_session()
     timestamp = datetime.now(UTC).isoformat()
 
     primary_prompt: str
@@ -61,14 +59,14 @@ def _invoke_llm_logic(
 
     try:
         interaction_result = execute_interaction(
-            session_data=session_data,
+            session_data=session.data,
             system_prompt=system_prompt,
             prompt_text=primary_prompt,
             piped_content=secondary_piped_content,
             mode=mode,
             passthrough=passthrough,
             no_history=no_history,
-            session_root=session_root,
+            session_root=session.root,
             model_override=model,
         )
     except Exception as e:
@@ -102,13 +100,13 @@ def _invoke_llm_logic(
         mode=mode,
         token_usage=interaction_result.token_usage,
         cost=interaction_result.cost,
-        model=model or session_data.model,
+        model=model or session.data.model,
         timestamp=assistant_response_timestamp,
         duration_ms=interaction_result.duration_ms,
         derived=derived_content,
     )
 
-    persistence.append_pair(user_msg, asst_msg)
+    session.persistence.append_pair(user_msg, asst_msg)
 
     if not is_terminal():
         if passthrough:

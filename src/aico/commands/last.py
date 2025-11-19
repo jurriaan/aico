@@ -4,7 +4,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from aico.core.session_persistence import load_session_and_resolve_indices
+from aico.core.session_loader import load_session_and_resolve_indices
 from aico.lib.diffing import (
     generate_display_items,
     generate_unified_diff,
@@ -72,20 +72,20 @@ def last(
     """
     from rich.markdown import Markdown
 
-    session_file, session_data, pair_indices, _ = load_session_and_resolve_indices(index)
+    session, pair_indices, _ = load_session_and_resolve_indices(index)
 
     if prompt:
         if recompute:
             print("Error: --recompute cannot be used with --prompt.", file=sys.stderr)
             raise typer.Exit(code=1)
 
-        target_user_msg = session_data.chat_history[pair_indices.user_index]
+        target_user_msg = session.data.chat_history[pair_indices.user_index]
         if target_user_msg.content:
             _render_content(target_user_msg.content, is_terminal() and not verbatim)
         return
 
     # --- Start of Assistant Message Handling ---
-    target_msg = session_data.chat_history[pair_indices.assistant_index]
+    target_msg = session.data.chat_history[pair_indices.assistant_index]
     if not isinstance(target_msg, AssistantChatMessage):
         # This is a safeguard; find_message_pairs should prevent this.
         print("Error: Internal error. Could not find a valid assistant message for this pair.", file=sys.stderr)
@@ -100,12 +100,11 @@ def last(
     display_content: str | list[DisplayItem] | None = None
 
     if recompute:
-        session_root = session_file.parent
         original_file_contents = build_original_file_contents(
-            context_files=session_data.context_files, session_root=session_root
+            context_files=session.data.context_files, session_root=session.root
         )
-        unified_diff = generate_unified_diff(original_file_contents, target_msg.content, session_root)
-        display_content = generate_display_items(original_file_contents, target_msg.content, session_root)
+        unified_diff = generate_unified_diff(original_file_contents, target_msg.content, session.root)
+        display_content = generate_display_items(original_file_contents, target_msg.content, session.root)
     else:
         # Use stored data
         if target_msg.derived:

@@ -2,7 +2,7 @@ from typing import Annotated
 
 import typer
 
-from aico.core.session_persistence import get_persistence
+from aico.core.session_loader import load_active_session
 from aico.historystore import switch_active_pointer
 from aico.historystore.pointer import load_pointer
 
@@ -13,13 +13,12 @@ def session_switch(
     """
     Switch the active session pointer to another existing view (branch).
     """
-    persistence = get_persistence(require_type="shared")
-    session_file, _ = persistence.load()
+    session = load_active_session(require_type="shared")
 
     # Validate pointer and resolve current active view (ensures shared-history)
-    _ = load_pointer(session_file)
+    _ = load_pointer(session.file_path)
 
-    sessions_dir = session_file.parent / ".aico" / "sessions"
+    sessions_dir = session.root / ".aico" / "sessions"
     if not sessions_dir.is_dir():
         typer.echo("Error: Sessions directory '.aico/sessions' not found.", err=True)
         raise typer.Exit(code=1)
@@ -29,5 +28,5 @@ def session_switch(
         typer.echo(f"Error: Session view '{name}' not found at {target_view_path}.", err=True)
         raise typer.Exit(code=1)
 
-    switch_active_pointer(session_file, target_view_path)
+    switch_active_pointer(session.file_path, target_view_path)
     print(f"Switched active session to: {name}")

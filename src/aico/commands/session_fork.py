@@ -2,7 +2,7 @@ from typing import Annotated
 
 import typer
 
-from aico.core.session_persistence import get_persistence
+from aico.core.session_loader import load_active_session
 from aico.historystore import HistoryStore, find_message_pairs_in_view, fork_view, load_view, switch_active_pointer
 from aico.historystore.pointer import load_pointer
 
@@ -24,14 +24,13 @@ def session_fork(
         typer.echo("Error: New session name is required.", err=True)
         raise typer.Exit(code=1)
 
-    persistence = get_persistence(require_type="shared")
-    session_file, _ = persistence.load()
+    session = load_active_session(require_type="shared")
 
     # At this point we know we are in a valid shared-history session.
-    active_view_path = load_pointer(session_file)
+    active_view_path = load_pointer(session.file_path)
 
-    sessions_dir = session_file.parent / ".aico" / "sessions"
-    history_root = session_file.parent / ".aico" / "history"
+    sessions_dir = session.root / ".aico" / "sessions"
+    history_root = session.root / ".aico" / "history"
     if not sessions_dir.is_dir() or not history_root.is_dir():
         typer.echo("Error: Shared-history directories missing (.aico/sessions or .aico/history).", err=True)
         raise typer.Exit(code=1)
@@ -58,7 +57,7 @@ def session_fork(
 
     new_view_path = fork_view(store, view, until_pair=until_pair, new_name=new_name, sessions_dir=sessions_dir)
 
-    switch_active_pointer(session_file, new_view_path)
+    switch_active_pointer(session.file_path, new_view_path)
 
     truncated_str = f" (truncated at pair {until_pair})" if until_pair is not None else ""
     print(f"Forked new session '{new_name}'{truncated_str} and switched to it.")

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import typer
 
-from aico.core.session_persistence import get_persistence
+from aico.core.session_loader import load_active_session
 from aico.historystore.pointer import load_pointer
 
 
@@ -10,13 +10,12 @@ def session_list() -> None:
     """
     List available session views (branches) for a shared-history session.
     """
-    persistence = get_persistence(require_type="shared")
-    session_file, _ = persistence.load()
+    session = load_active_session(require_type="shared")
 
     # Validate and resolve active view path via pointer helper
-    active_view_path = load_pointer(session_file)
+    active_view_path = load_pointer(session.file_path)
 
-    sessions_dir = session_file.parent / ".aico" / "sessions"
+    sessions_dir = session.root / ".aico" / "sessions"
     if not sessions_dir.is_dir():
         typer.echo("Error: Sessions directory '.aico/sessions' not found.", err=True)
         raise typer.Exit(code=1)
