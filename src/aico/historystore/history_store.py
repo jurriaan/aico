@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import ClassVar
 
 import regex as re
-from pydantic import TypeAdapter
 
 from .models import SHARD_SIZE, HistoryRecord, dumps_history_record, load_history_record
 
@@ -106,51 +105,47 @@ class HistoryStore:
         if not indices:
             return []
 
-        grouped: dict[int, list[tuple[int, int]]] = defaultdict(list)
-        for pos, idx in enumerate(indices):
-            shard_base = self._shard_base_for(idx)
-            grouped[shard_base].append((pos, self._local_offset(idx)))
+        # 1. Group needed offsets by shard to minimize file opens
+        # Use a set for offsets to handle duplicate requests efficiently
+        grouped_offsets: dict[int, set[int]] = defaultdict(set)
+        for idx in indices:
+            grouped_offsets[self._shard_base_for(idx)].add(self._local_offset(idx))
 
-        results: list[HistoryRecord | None] = [None] * len(indices)
+        # 2. Fetch records and store by global index
+        records_by_global_index: dict[int, HistoryRecord] = {}
 
-        for shard_base, positions in grouped.items():
+        for shard_base, offsets in grouped_offsets.items():
             shard_path = self._shard_path(shard_base)
             if not shard_path.is_file():
                 raise IndexError(f"Missing shard for indices in base {shard_base}")
 
-            offset_to_pos: dict[int, list[int]] = defaultdict(list)
-            for pos, off in positions:
-                offset_to_pos[off].append(pos)
+            # We stop reading the file once we've found all needed offsets for this shard
+            needed_count = len(offsets)
+            found_count = 0
 
-            needed_offsets_sorted = sorted(offset_to_pos.keys())
-
-            found_lines: list[str] = []
-            next_expected_idx = 0
-            with shard_path.open("r", encoding="utf-8") as f:
-                for i, line in enumerate(f):
-                    if next_expected_idx < len(needed_offsets_sorted) and i == needed_offsets_sorted[next_expected_idx]:
-                        found_lines.append(line)
-                        next_expected_idx += 1
-                    if next_expected_idx == len(needed_offsets_sorted):
-                        break
-
-            # Map found records back to their positions
             try:
-                list_of_records: list[HistoryRecord] = TypeAdapter(list[HistoryRecord]).validate_json(
-                    "[" + ",".join(found_lines) + "]"
-                )
-                for off, rec in zip(needed_offsets_sorted, list_of_records, strict=True):
-                    for pos in offset_to_pos[off]:
-                        results[pos] = rec
-            except json.JSONDecodeError as e:
+                with shard_path.open("r", encoding="utf-8") as f:
+                    for i, line in enumerate(f):
+                        if i in offsets:
+                            # Parse immediately line-by-line
+                            global_idx = shard_base + i
+                            records_by_global_index[global_idx] = load_history_record(line)
+                            found_count += 1
+
+                            if found_count == needed_count:
+                                break
+            except (ValueError, json.JSONDecodeError) as e:
+                # Catch both Pydantic ValidationErrors and raw JSON errors
                 raise ValueError(f"Corrupt JSON in shard {shard_path}: {e}") from e
 
-        # Ensure none are missing
-        if any(r is None for r in results):
-            missing_positions = [i for i, r in enumerate(results) if r is None]
-            raise IndexError(f"One or more indices were not found: positions {missing_positions}")
+        # 3. Reconstruct the result list in the original requested order
+        results: list[HistoryRecord] = []
+        for idx in indices:
+            if idx not in records_by_global_index:
+                raise IndexError(f"Record index {idx} not found in history store.")
+            results.append(records_by_global_index[idx])
 
-        return [rec for rec in results if rec is not None]
+        return results
 
     # ---------- Helpers ----------
 
