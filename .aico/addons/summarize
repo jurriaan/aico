@@ -27,14 +27,16 @@ if [ -z "$DUMP_HISTORY" ]; then
 fi
 
 # 2. Generate summary (captures stdout, hides stderr/token info)
-SYSTEM_PROMPT="You are an expert technical writer and minute-taker. Your task is to analyze the provided conversation log and produce a comprehensive, objective summary. Focus on capturing the rationale for key decisions, evolution of key concepts and approaches, development narrative, current state, and final outcomes, while preserving and integrating details from all prior exchanges for full continuity. The summary should be suitable for a new developer to get up to speed on the project's history without needing to read the entire log."
+SYSTEM_PROMPT="You are an expert technical writer. Your task is to produce a complete replacement for the \`PROJECT_SUMMARY.md\` file. You must interpret the conversation log provided on stdin and integrate it into the existing \`PROJECT_SUMMARY.md\` (found in the context files). The goal is to produce a full, valid Markdown document that preserves the structure, historical details, and rationale of the original while accurately reflecting the latest state and decisions. Do not shrink the summary; preserve detail."
 
-USER_PROMPT="Your goal is to synthesize a two-part document from the log provided on stdin.
+USER_PROMPT="Your goal is to output the full text of the updated \`PROJECT_SUMMARY.md\`. Do not output a diff or instructions to update the file, just the new file content.
 
-First, create a concise summary of the most recent developments from our immediate conversation under a \`### Recent Developments\` heading. This part is crucial for continuing our work.
-If applicable, include a concise summary of previous developments (mentioned in earlier summary documents) under this heading as well.
+1. **Recent Developments**: Start with \`### Recent Developments\`. Summarize the specific progress and decisions from the conversation log on stdin.
+2. **Comprehensive Project Summary**: Follow with \`### Comprehensive Project Summary\`. Create or update this section to act as a full onboarding document.
+   - **Content Scope**: Include the rationale for key decisions, evolution of key concepts and approaches, development narrative, current state, and final outcomes.
+   - **Preserve & Integrate**: Use the existing \`PROJECT_SUMMARY.md\` as the base. Preserve all valid historical details and context for full continuity. Weave new info into the narrative structure.
 
-Second, create a comprehensive, self-contained \`### Comprehensive Project Summary\` that serves as a full onboarding document. For this part, find and integrate the content of any previous summaries in the log with the project's current state (from files, the conversation log and recent decisions)."
+Output the complete markdown document."
 
 echo "Generating summary..."
 echo
