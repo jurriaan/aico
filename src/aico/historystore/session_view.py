@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from pydantic import TypeAdapter
+
 from aico.lib.history_utils import find_message_pairs_from_records
 from aico.lib.models import TokenUsage
 from aico.utils import atomic_write_text
@@ -16,14 +18,14 @@ def load_view(path: Path) -> SessionView:
     Load a SessionView from disk.
     """
     data = path.read_text(encoding="utf-8")
-    return SessionView.model_validate_json(data)
+    return TypeAdapter(SessionView).validate_json(data)
 
 
 def save_view(path: Path, view: SessionView) -> None:
     """
     Atomically save a SessionView to disk using a compact single-line JSON format.
     """
-    json_text = view.model_dump_json(indent=None)
+    json_text = TypeAdapter(SessionView).dump_json(view, indent=None)
     atomic_write_text(path, json_text)
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, TypeAdapter, model_validator
+from pydantic import Field, TypeAdapter, model_validator
 from pydantic.dataclasses import dataclass
 from pydantic_core import ArgsKwargs
 
@@ -88,7 +88,8 @@ class HistoryRecord:
         )
 
 
-class SessionView(BaseModel):
+@dataclass(slots=True)
+class SessionView:
     """
     Lightweight view/branch descriptor referencing global message indices.
 
