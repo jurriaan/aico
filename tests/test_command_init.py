@@ -32,7 +32,7 @@ def test_init_creates_session_file_in_empty_dir(tmp_path: Path) -> None:
 
         # AND the view file contains the default model
         view_data = json.loads(view_path.read_text())
-        assert view_data["model"] == "openrouter/google/gemini-2.5-pro"
+        assert view_data["model"] == "openrouter/google/gemini-3-pro-preview"
 
 
 def test_init_fails_if_session_already_exists(tmp_path: Path) -> None:
