@@ -94,10 +94,12 @@ def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) ->
         # AND the API was called with the correct context and prompt, including alignment
         mock_completion.assert_called_once()
         messages = mock_completion.call_args.kwargs["messages"]
-        assert len(messages) == 4
-        assert "conversational assistant" in messages[1]["content"]
-        assert '<file path="code.py">' in messages[-1]["content"]
-        assert f"<prompt>\n{prompt_text}\n</prompt>" in messages[-1]["content"]
+        assert len(messages) == 6
+        assert "This is the Ground Truth" in messages[1]["content"]
+        assert messages[2]["content"] == "I have read the current file state. I will use this block as the ground truth for all code generation."
+        assert "conversational assistant" in messages[3]["content"]
+        assert '<file path="code.py">' in messages[1]["content"]
+        assert prompt_text in messages[-1]["content"]
 
         # AND it prints token and cost info to stderr
         assert "Tokens: 100 sent, 20 received." in result.stderr
@@ -231,7 +233,7 @@ def test_ask_command_with_diff_response_saves_derived_content(tmp_path: Path, mo
 
         # AND the session file is updated with BOTH the raw content AND parsed diffs
         final_session = load_final_session(Path(td))
-        user_msg, assistant_msg = final_session.chat_history
+        user_msg, assistant_msg = final_session.chat_history[-2:]
         assert user_msg.content == "make a change"
         assert isinstance(assistant_msg, AssistantChatMessage)
         assert assistant_msg.content == llm_diff_response
@@ -299,7 +301,7 @@ def test_prompt_input_scenarios(
             assert f"<prompt>\n{expected_prompt}\n</prompt>" in user_message_xml
         else:
             assert "<stdin_content>" not in user_message_xml
-            assert f"<prompt>\n{expected_prompt}\n</prompt>" in user_message_xml
+            assert user_message_xml.strip() == expected_prompt.strip()
 
         # AND the session history was saved correctly
         final_session = load_final_session(Path(td))
@@ -519,7 +521,7 @@ def test_prompt_with_excluded_history_omits_messages(tmp_path: Path, mocker: Moc
         assert "<prompt>\nprompt 1\n</prompt>" in user_prompts
         assert "<prompt>\nprompt 2\n</prompt>" not in user_prompts
         assert "<prompt>\nprompt 3\n</prompt>" in user_prompts
-        assert "<prompt>\nprompt 4\n</prompt>" in user_prompts
+        assert user_prompts[-1] == "prompt 4"
 
 
 def test_prompt_no_history_flag_omits_history_from_llm_call(tmp_path: Path, mocker: MockerFixture) -> None:

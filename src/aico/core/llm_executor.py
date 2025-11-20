@@ -64,44 +64,60 @@ def _build_messages(
 ) -> list[LLMChatMessage]:
     messages: list[LLMChatMessage] = []
 
-    active_history = [] if no_history else get_active_history(session_data)
-
-    if passthrough:
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-
-        messages.extend(reconstruct_historical_messages(active_history))
-        messages.append({"role": "user", "content": prompt_text})
-        return messages
-
-    # --- Standard (non-passthrough) logic ---
+    # --- 1. System Prompt ---
     if mode == Mode.DIFF:
         system_prompt += DIFF_MODE_INSTRUCTIONS
-
-    user_prompt_parts: list[str] = []
-    if original_file_contents:
-        context_str = "<context>\n"
-        for relative_path_str, content in original_file_contents.items():
-            context_str += f'  <file path="{relative_path_str}">\n{content}\n</file>\n'
-        context_str += "</context>\n"
-        user_prompt_parts.append(context_str)
-
-    if piped_content:
-        user_prompt_parts.append(f"<stdin_content>\n{piped_content}\n</stdin_content>\n")
-
-    user_prompt_parts.append(f"<prompt>\n{prompt_text}\n</prompt>")
-    user_prompt_xml = "".join(user_prompt_parts)
 
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
 
-    messages.extend(reconstruct_historical_messages(active_history))
+    # --- 2. Context Injection (Ground Truth) ---
+    # We only do this if NOT in passthrough and if we actually have files.
+    if not passthrough and original_file_contents:
+        context_str = "<context>\n"
+        for relative_path_str, content in original_file_contents.items():
+            context_str += f'  <file path="{relative_path_str}">\n{content}\n</file>\n'
+        context_str += "</context>\n"
 
-    # Inject alignment prompts to enforce mode-specific behavior.
+        # The wrapper that enforces "Ground Truth"
+        context_wrapper = (
+            "The following XML block contains the CURRENT contents of the files in this session. "
+            "This is the Ground Truth.\n\n"
+            "Always refer to this block for the latest code state. "
+            "If code blocks in the conversation history conflict with this block, ignore the history "
+            "and use this block.\n\n"
+            f"{context_str}"
+        )
+
+        messages.append({"role": "user", "content": context_wrapper})
+
+        # The Anchor to lock it in and maintain User/Assistant turn structure
+        messages.append(
+            {
+                "role": "assistant",
+                "content": "I have read the current file state. I will use this block as the ground truth "
+                + "for all code generation.",
+            }
+        )
+
+    # --- 3. History Injection ---
+    active_history = [] if no_history else get_active_history(session_data)
+
+    # Inject alignment prompts
     if mode in ALIGNMENT_PROMPTS:
+        messages.extend(reconstruct_historical_messages(active_history))
         messages.extend([{"role": msg.role, "content": msg.content} for msg in ALIGNMENT_PROMPTS[mode]])
+    else:
+        messages.extend(reconstruct_historical_messages(active_history))
 
-    messages.append({"role": "user", "content": user_prompt_xml})
+    # --- 4. Final User Prompt ---
+    user_prompt = (
+        (f"<stdin_content>\n{piped_content}\n</stdin_content>\n<prompt>\n{prompt_text}\n</prompt>")
+        if piped_content is not None
+        else f"{prompt_text}"
+    )
+
+    messages.append({"role": "user", "content": user_prompt})
 
     return messages
 
