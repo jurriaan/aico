@@ -7,7 +7,7 @@ import typer
 from aico.core.session_loader import load_active_session
 from aico.lib.session import (
     complete_files_in_context,
-    get_relative_path_or_error,
+    validate_input_paths,
 )
 
 
@@ -22,22 +22,18 @@ def drop(
     """
     session = load_active_session()
 
-    files_to_drop: list[str] = []
     current_files = set(session.data.context_files)
-    errors_found = False
+    valid_rels, outside_root_errors = validate_input_paths(session.root, file_paths, require_file_exists=False)
+    errors_found = outside_root_errors
 
-    for file_path in file_paths:
-        relative_path_str = get_relative_path_or_error(file_path, session.root)
-
-        if not relative_path_str:
-            errors_found = True
-            continue
-
-        if relative_path_str in current_files:
-            files_to_drop.append(relative_path_str)
-            print(f"Dropped file from context: {relative_path_str}")
+    files_to_drop: list[str] = []
+    for i, rel in enumerate(valid_rels):
+        path = file_paths[i]
+        if rel in current_files:
+            files_to_drop.append(rel)
+            print(f"Dropped file from context: {rel}")
         else:
-            print(f"Error: File not in context: {file_path}", file=sys.stderr)
+            print(f"Error: File not in context: {path}", file=sys.stderr)
             errors_found = True
 
     if files_to_drop:

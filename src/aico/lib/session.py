@@ -60,6 +60,39 @@ def get_relative_path_or_error(file_path: Path, session_root: Path) -> str | Non
         return None
 
 
+def validate_input_paths(
+    session_root: Path,
+    input_paths: list[Path],
+    require_file_exists: bool = False,
+) -> tuple[list[str], bool]:
+    """
+    Validates paths: ensures they are relative to root, and optionally checks existence.
+    Returns a tuple of (list of valid relative path strings, boolean indicating if any error occurred).
+    Prints per-path errors to stderr.
+    """
+    valid_rels: list[str] = []
+    had_error = False
+
+    for path in input_paths:
+        # 1. Validate relative to root
+        rel = get_relative_path_or_error(path, session_root)
+        if not rel:
+            had_error = True
+            continue
+
+        # 2. Optionally validate existence on disk
+        # We use the resolved absolute path to be safe
+        abs_path = session_root / rel
+        if require_file_exists and not abs_path.is_file():
+            print(f"Error: File not found: {path}", file=sys.stderr)
+            had_error = True
+            continue
+
+        valid_rels.append(rel)
+
+    return valid_rels, had_error
+
+
 def complete_files_in_context(incomplete: str) -> list[str]:
     """Provides shell completion for filenames currently in the session context."""
     session_file = find_session_file()
