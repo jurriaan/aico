@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import TypeAdapter
+
 from aico.lib.history_utils import (
     find_message_pairs,
     find_message_pairs_from_records,
@@ -196,7 +198,8 @@ def to_legacy_session(store: HistoryStore, view: SessionView) -> dict[str, objec
     )
 
     # Dump to a dictionary that matches the old format.
-    legacy_dict = session_data.model_dump(
+    legacy_dict: dict[str, object] = TypeAdapter(SessionData).dump_python(  # pyright: ignore[reportAny]
+        session_data,
         exclude_defaults=True,
         exclude={"history_start_pair", "excluded_pairs", "total_pairs_in_history"},
     )

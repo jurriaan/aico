@@ -3,7 +3,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Literal, Protocol, TypedDict, runtime_checkable
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 from pydantic.dataclasses import dataclass
 
 
@@ -92,7 +92,8 @@ class MessagePairIndices:
     assistant_index: int
 
 
-class SessionData(BaseModel):
+@dataclass(slots=True)
+class SessionData:
     model: str
     context_files: list[str] = Field(default_factory=list)
     chat_history: list[ChatMessageHistoryItem] = Field(default_factory=list)
