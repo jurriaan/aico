@@ -82,7 +82,7 @@ SELECTED_FILES="$(
     | fzf \
         "${FZF_OPTS[@]}" \
         --bind "alt-c:clear-multi" \
-        --bind "load:transform:printf '+clear-multi';printf '+pos(%d)+select' $(seq 1 "$NUM_IN_CONTEXT" | tr '\n' ' ')" \
+        --bind "load:transform:printf '+clear-multi';printf '+pos(%d)+select' $(seq "$NUM_IN_CONTEXT" -1 1 | tr '\n' ' ')" \
         --bind "alt-o:clear-query+search()+bg-transform(printf 'trigger(load)')" 
 )"
 
