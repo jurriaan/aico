@@ -14,7 +14,7 @@ from aico.historystore import (
 )
 from aico.historystore.models import HistoryRecord
 from aico.lib.models import Mode, SessionData
-from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter
+from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter, save_session
 from aico.main import app
 
 runner = CliRunner()
@@ -39,6 +39,73 @@ def test_undo_default_marks_last_pair_excluded(session_with_two_pairs: Path) -> 
     # AND the last pair index is added to the excluded_pairs list
     final_session = load_session_data(session_file)
     assert final_session.excluded_pairs == [1]
+
+
+def test_undo_multiple_indices(session_with_two_pairs: Path) -> None:
+    # GIVEN a session with two pairs, none excluded
+    session_file = session_with_two_pairs
+
+    # WHEN `aico undo 0 1` is run
+    result = runner.invoke(app, ["undo", "0", "1"])
+
+    # THEN the command succeeds and both pairs are excluded
+    assert result.exit_code == 0
+    assert "Marked pairs as excluded: 0, 1" in result.stdout
+
+    # AND both indices are in excluded_pairs
+    final_session = load_session_data(session_file)
+    assert set(final_session.excluded_pairs) == {0, 1}
+
+
+def test_undo_negative_and_positive_mix(session_with_two_pairs: Path) -> None:
+    # GIVEN a session with two pairs
+    session_file = session_with_two_pairs
+
+    # WHEN `aico undo 0 -1` is run (-1 resolves to 1)
+    result = runner.invoke(app, ["undo", "0", "-1"])
+
+    # THEN both pairs are excluded
+    assert result.exit_code == 0
+    assert "Marked pairs as excluded: 0, 1" in result.stdout
+
+    final_session = load_session_data(session_file)
+    assert set(final_session.excluded_pairs) == {0, 1}
+
+
+def test_undo_idempotent_multiple(session_with_two_pairs: Path) -> None:
+    # GIVEN a session where pair 0 is already excluded
+    session_file = session_with_two_pairs
+    session_data = load_session_data(session_file)
+    session_data.excluded_pairs = [0]
+    save_session(session_file, session_data)
+
+    # WHEN `aico undo 0 1` is run (0 already excluded, 1 is new)
+    result = runner.invoke(app, ["undo", "0", "1"])
+
+    # THEN only the new one is reported as changed
+    assert result.exit_code == 0
+    assert "Marked pair at index 1 as excluded." in result.stdout
+
+    final_session = load_session_data(session_file)
+    assert set(final_session.excluded_pairs) == {0, 1}
+
+
+def test_undo_all_already_excluded(session_with_two_pairs: Path) -> None:
+    # GIVEN both pairs already excluded
+    session_file = session_with_two_pairs
+    session_data = load_session_data(session_file)
+    session_data.excluded_pairs = [0, 1]
+    save_session(session_file, session_data)
+
+    # WHEN `aico undo 0 1` is run
+    result = runner.invoke(app, ["undo", "0", "1"])
+
+    # THEN no changes, but still succeeds
+    assert result.exit_code == 0
+    assert "No changes made (specified pairs were already excluded)." in result.stdout
+
+    final_session = load_session_data(session_file)
+    assert set(final_session.excluded_pairs) == {0, 1}
 
 
 def test_undo_with_positive_index(session_with_two_pairs: Path) -> None:
@@ -111,7 +178,7 @@ def test_undo_on_already_excluded_pair_is_idempotent(session_with_two_pairs: Pat
 
     # THEN it succeeds but reports that no changes were made
     assert result2.exit_code == 0
-    assert "Pair at index 1 is already excluded. No changes made." in result2.stdout
+    assert "No changes made (specified pairs were already excluded)." in result2.stdout
 
 
 def test_undo_fails_with_invalid_index_format(session_with_two_pairs: Path) -> None:

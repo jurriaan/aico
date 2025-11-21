@@ -72,6 +72,72 @@ def test_redo_default_marks_last_pair_included(session_with_excluded_pairs: Path
     assert final_session.excluded_pairs == [0]
 
 
+def test_redo_multiple_indices(session_with_excluded_pairs: Path) -> None:
+    # GIVEN a session with two excluded pairs
+    session_file = session_with_excluded_pairs
+
+    # WHEN `aico redo 0 1` is run
+    result = runner.invoke(app, ["redo", "0", "1"])
+
+    # THEN both pairs are re-included (excluded_pairs empty)
+    assert result.exit_code == 0
+    assert "Re-included pairs: 0, 1" in result.stdout
+
+    final_session = _load_session_data(session_file)
+    assert final_session.excluded_pairs == []
+
+
+def test_redo_negative_and_positive_mix(session_with_excluded_pairs: Path) -> None:
+    # GIVEN a session with two excluded pairs
+    session_file = session_with_excluded_pairs
+
+    # WHEN `aico redo 0 -1` is run (-1 resolves to 1)
+    result = runner.invoke(app, ["redo", "0", "-1"])
+
+    # THEN both are re-included
+    assert result.exit_code == 0
+    assert "Re-included pairs: 0, 1" in result.stdout
+
+    final_session = _load_session_data(session_file)
+    assert final_session.excluded_pairs == []
+
+
+def test_redo_idempotent_multiple(session_with_excluded_pairs: Path) -> None:
+    # GIVEN a session where pair 1 is already included (only 0 excluded)
+    session_file = session_with_excluded_pairs
+    session_data = _load_session_data(session_file)
+    session_data.excluded_pairs = [0]  # 1 already included
+    save_session(session_file, session_data)
+
+    # WHEN `aico redo 0 1` is run
+    result = runner.invoke(app, ["redo", "0", "1"])
+
+    # THEN only the new one (0) is reported
+    assert result.exit_code == 0
+    assert "Re-included pair at index 0 in context." in result.stdout
+
+    final_session = _load_session_data(session_file)
+    assert final_session.excluded_pairs == []
+
+
+def test_redo_all_already_included(session_with_excluded_pairs: Path) -> None:
+    # GIVEN no pairs excluded
+    session_file = session_with_excluded_pairs
+    session_data = _load_session_data(session_file)
+    session_data.excluded_pairs = []
+    save_session(session_file, session_data)
+
+    # WHEN `aico redo 0 1` is run
+    result = runner.invoke(app, ["redo", "0", "1"])
+
+    # THEN no changes
+    assert result.exit_code == 0
+    assert "No changes made (specified pairs were already active)." in result.stdout
+
+    final_session = _load_session_data(session_file)
+    assert final_session.excluded_pairs == []
+
+
 def test_redo_with_positive_index(session_with_excluded_pairs: Path) -> None:
     # GIVEN a session with two excluded pairs
     session_file = session_with_excluded_pairs
@@ -133,8 +199,8 @@ def test_redo_on_already_active_pair_is_idempotent(session_with_excluded_pairs: 
     # GIVEN a session with two excluded pairs
     # WHEN `aico redo -1` is run the first time
     result1 = runner.invoke(app, ["redo", "-1"])
-    assert result1.exit_code == 0
     # The resolved index of -1 in a 2-pair list is 1.
+    assert result1.exit_code == 0
     assert "Re-included pair at index 1 in context." in result1.stdout
 
     # AND WHEN `aico redo -1` is run a second time
@@ -142,7 +208,7 @@ def test_redo_on_already_active_pair_is_idempotent(session_with_excluded_pairs: 
 
     # THEN it succeeds but reports that no changes were made
     assert result2.exit_code == 0
-    assert "Pair at index 1 is already active. No changes made." in result2.stdout
+    assert "No changes made (specified pairs were already active)." in result2.stdout
 
 
 def test_redo_fails_with_invalid_index_format(session_with_excluded_pairs: Path) -> None:

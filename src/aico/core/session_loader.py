@@ -39,6 +39,49 @@ def load_active_session(
     )
 
 
+def resolve_pair_index(session: ActiveSession, index_str: str) -> int:
+    """
+    Resolves a single user-provided index string against the loaded session.
+    Returns the absolute pair index. Exits if invalid.
+    """
+    try:
+        user_idx_val = int(index_str)
+    except ValueError:
+        print(f"Error: Invalid index '{index_str}'. Must be an integer.", file=sys.stderr)
+        sys.exit(1)
+
+    pairs = find_message_pairs(session.data.chat_history)
+    num_pairs = len(pairs)
+
+    if num_pairs == 0:
+        print("Error: No message pairs found in history.", file=sys.stderr)
+        sys.exit(1)
+
+    # Map negative indices to their positive counterparts.
+    if user_idx_val < 0:
+        if user_idx_val < -num_pairs:
+            if num_pairs == 1:
+                err_msg = f"Error: Pair at index {user_idx_val} not found. The only valid index is 0 (or -1)."
+            else:
+                valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
+                err_msg = f"Error: Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
+            print(err_msg, file=sys.stderr)
+            sys.exit(1)
+        resolved_index = num_pairs + user_idx_val
+    else:
+        if user_idx_val >= num_pairs:
+            if num_pairs == 1:
+                err_msg = f"Error: Pair at index {user_idx_val} not found. The only valid index is 0 (or -1)."
+            else:
+                valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
+                err_msg = f"Error: Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
+            print(err_msg, file=sys.stderr)
+            sys.exit(1)
+        resolved_index = user_idx_val
+
+    return resolved_index
+
+
 def load_session_and_resolve_indices(
     index_str: str,
 ) -> tuple[ActiveSession, MessagePairIndices, int]:
@@ -51,41 +94,9 @@ def load_session_and_resolve_indices(
       - Negative indices: -1..-N counted from the end of the full history.
     """
     session = load_active_session(full_history=True)
-
-    try:
-        user_idx_val = int(index_str)
-    except ValueError:
-        print(f"Error: Invalid index '{index_str}'. Must be an integer.", file=sys.stderr)
-        exit(1)
+    resolved_index = resolve_pair_index(session, index_str)
 
     pairs = find_message_pairs(session.data.chat_history)
-    num_pairs = len(pairs)
-
-    if num_pairs == 0:
-        print("Error: No message pairs found in history.", file=sys.stderr)
-        exit(1)
-
-    # Map negative indices to their positive counterparts.
-    if user_idx_val < 0:
-        if user_idx_val < -num_pairs:
-            if num_pairs == 1:
-                err_msg = f"Error: Pair at index {user_idx_val} not found. The only valid index is 0 (or -1)."
-            else:
-                valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
-                err_msg = f"Error: Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
-            print(err_msg, file=sys.stderr)
-            exit(1)
-        resolved_index = num_pairs + user_idx_val
-    else:
-        if user_idx_val >= num_pairs:
-            if num_pairs == 1:
-                err_msg = f"Error: Pair at index {user_idx_val} not found. The only valid index is 0 (or -1)."
-            else:
-                valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
-                err_msg = f"Error: Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
-            print(err_msg, file=sys.stderr)
-            exit(1)
-        resolved_index = user_idx_val
-
     pair_indices = pairs[resolved_index]
+
     return session, pair_indices, resolved_index
