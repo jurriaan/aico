@@ -1,7 +1,7 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from enum import Enum
 from pathlib import Path
-from typing import Literal, Protocol, TypedDict, runtime_checkable
+from typing import Literal, TypedDict
 
 from pydantic import Field
 from pydantic.dataclasses import dataclass
@@ -33,17 +33,9 @@ class TokenUsage:
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
-
-
-@dataclass(slots=True, frozen=True)
-class UserChatMessage:
-    role: Literal["user"]
-    content: str
-    mode: Mode
-    timestamp: str
-    piped_content: str | None = None
-    passthrough: bool = False
-    is_excluded: bool = Field(default=False, exclude=True)  # Legacy flag; kept for in-memory compatibility
+    cached_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    cost: float | None = None
 
 
 class DisplayItem(TypedDict):
@@ -67,6 +59,17 @@ class TokenInfo:
 @dataclass(slots=True, frozen=True)
 class ContextFilesResponse:
     context_files: list[str]
+
+
+@dataclass(slots=True, frozen=True)
+class UserChatMessage:
+    role: Literal["user"]
+    content: str
+    mode: Mode
+    timestamp: str
+    piped_content: str | None = None
+    passthrough: bool = False
+    is_excluded: bool = Field(default=False, exclude=True)  # Legacy flag; kept for in-memory compatibility
 
 
 @dataclass(slots=True, frozen=True)
@@ -165,28 +168,6 @@ class LLMChatMessage(TypedDict):
     content: str
 
 
-@runtime_checkable
-class LiteLLMUsage(Protocol):
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-
-
-@runtime_checkable
-class LiteLLMDelta(Protocol):
-    content: str | None
-
-
-@runtime_checkable
-class LiteLLMStreamChoice(Protocol):
-    delta: LiteLLMDelta
-
-
-@runtime_checkable
-class LiteLLMChoiceContainer(Protocol):
-    choices: Sequence[LiteLLMStreamChoice]
-
-
 type FileContents = Mapping[str, str]
 
 
@@ -196,6 +177,13 @@ class AddonInfo:
     path: Path
     help_text: str
     source: Literal["project", "user"]
+
+
+@dataclass(slots=True, frozen=True)
+class ModelInfo:
+    max_input_tokens: int | None = None
+    input_cost_per_token: float | None = None
+    output_cost_per_token: float | None = None
 
 
 @dataclass(slots=True, frozen=True)

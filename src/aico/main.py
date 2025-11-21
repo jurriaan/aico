@@ -1,4 +1,3 @@
-import warnings
 from typing import final, override
 
 import regex as re
@@ -66,10 +65,6 @@ _ = app.command("session-new")(session_new)
 _ = app.command("migrate-shared-history")(migrate_shared_history)
 _ = app.command("dump-context")(dump_context)
 register_addon_commands(app)
-
-
-# Suppress warnings from litellm, see https://github.com/BerriAI/litellm/issues/11759
-warnings.filterwarnings("ignore", category=UserWarning)
 
 
 # Workaround for `no_args_is_help` not working, keep this until #1240 in typer is fixed

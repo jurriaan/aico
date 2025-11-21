@@ -16,15 +16,17 @@ runner = CliRunner()
 
 
 def test_aico_session_file_env_var_works(tmp_path: Path, mocker: MockerFixture) -> None:
+    from aico.lib.model_info import ModelInfo
+
     # GIVEN a session file at a non-standard location
     session_dir = tmp_path / "custom" / "location"
     session_dir.mkdir(parents=True)
     session_file = session_dir / SESSION_FILE_NAME
     save_session(session_file, SessionData(model="test-model", context_files=[], chat_history=[]))
 
-    # AND litellm dependencies are mocked
+    # Avoid token counting and model fetch overhead
     mocker.patch("aico.utils.count_tokens_for_messages", return_value=10)
-    mocker.patch("litellm.get_model_info", return_value=None)
+    mocker.patch("aico.lib.model_info.get_model_info", return_value=ModelInfo())
 
     # WHEN AICO_SESSION_FILE is set to that absolute path
     with runner.isolated_filesystem(temp_dir=tmp_path):
@@ -67,14 +69,16 @@ def test_aico_session_file_env_var_fails_for_nonexistent_file(tmp_path: Path, mo
 
 
 def test_aico_session_file_env_var_not_set_uses_upward_search(tmp_path: Path, mocker: MockerFixture) -> None:
+    from aico.lib.model_info import ModelInfo
+
     # GIVEN a session file in the current directory (normal case)
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, SessionData(model="upward-search-model", context_files=[], chat_history=[]))
 
-        # AND litellm dependencies are mocked
+        # AND dependencies are mocked
         mocker.patch("aico.utils.count_tokens_for_messages", return_value=10)
-        mocker.patch("litellm.get_model_info", return_value=None)
+        mocker.patch("aico.lib.model_info.get_model_info", return_value=ModelInfo())
 
         # AND AICO_SESSION_FILE is not set
         # WHEN we run aico status
@@ -126,16 +130,19 @@ def test_get_active_history_filters_and_slices() -> None:
 
 
 def test_calculate_and_display_cost_logic(mocker: MockerFixture) -> None:
-    # GIVEN
+    from aico.lib.model_info import ModelInfo
     from aico.lib.models import UserChatMessage
 
+    # GIVEN
     mocker.patch("aico.utils.is_terminal", return_value=False)
     mock_print = mocker.patch("builtins.print")
 
-    # Mock the entire litellm module by injecting a mock into sys.modules.
-    mock_litellm = mocker.MagicMock()
-    mock_litellm.completion_cost.return_value = 0.50
-    mocker.patch.dict("sys.modules", {"litellm": mock_litellm})
+    # Mock ModelInfo to return costs that result in 0.50 total
+    # 100 prompt * 0.002 = 0.20
+    # 50 completion * 0.006 = 0.30
+    # Total = 0.50
+    mock_model_info = ModelInfo(input_cost_per_token=0.002, output_cost_per_token=0.006)
+    mocker.patch("aico.utils.get_model_info", return_value=mock_model_info)
 
     chat_history: Sequence[ChatMessageHistoryItem] = [
         UserChatMessage(role="user", content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
@@ -168,12 +175,6 @@ def test_calculate_and_display_cost_logic(mocker: MockerFixture) -> None:
     # THEN the returned cost for the new message is correct
     assert message_cost == 0.50
 
-    # AND the cost calculation for the new message was called once
-    mock_litellm.completion_cost.assert_called_once()
-    actual_call_args = mock_litellm.completion_cost.call_args.kwargs["completion_response"]
-    assert actual_call_args["usage"]["prompt_tokens"] == 100
-    assert actual_call_args["model"] == model_name
-
     # AND the printed output string to stderr is correctly formatted
     # Historical window cost = 1.0 (a1) + 2.0 (a2) = 3.0
     # Total current chat cost = 3.0 (history) + 0.5 (new message) = 3.50
@@ -182,16 +183,11 @@ def test_calculate_and_display_cost_logic(mocker: MockerFixture) -> None:
 
 
 def test_count_tokens_for_messages(mocker: MockerFixture) -> None:
-    # GIVEN a mocked litellm.token_counter
-    mock_litellm_counter = mocker.patch("litellm.token_counter", return_value=123)
-
     # WHEN calling count_tokens_for_messages
+    # content length is 11 ("hello world")
     messages: list[LLMChatMessage] = [{"role": "user", "content": "hello world"}]
     model = "test-model"
     token_count = count_tokens_for_messages(model, messages)
 
-    # THEN litellm.token_counter is called with the correct arguments
-    mock_litellm_counter.assert_called_once_with(model=model, messages=messages)
-
-    # AND the result is returned
-    assert token_count == 123
+    # THEN heuristic is applied: 11 // 4 = 2
+    assert token_count == 2

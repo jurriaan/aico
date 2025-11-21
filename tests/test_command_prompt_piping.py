@@ -1,19 +1,23 @@
 # pyright: standard
 
 from pathlib import Path
+from typing import Any
 
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
 from aico.main import app
 
+from .mocks import MockLLMUsage
+
 runner = CliRunner()
 
 
-def _create_mock_stream_chunk(content: str | None, mocker: MockerFixture) -> object:
-    """Creates a mock stream chunk that conforms to the LiteLLMChoiceContainer protocol."""
+def _create_mock_stream_chunk(content: str | None, mocker: MockerFixture) -> Any:
+    """Creates a mock stream chunk."""
     mock_delta = mocker.MagicMock()
     mock_delta.content = content
+    mock_delta.reasoning_content = None
 
     mock_choice = mocker.MagicMock()
     mock_choice.delta = mock_delta
@@ -39,20 +43,16 @@ def setup_piping_test(
 
     # For these tests, we are always in a non-TTY (piped) environment
     mocker.patch("aico.commands.prompt.is_terminal", return_value=False)
+    mocker.patch("aico.core.llm_executor.is_terminal", return_value=False)
 
-    mock_completion = mocker.patch("litellm.completion")
+    mock_client = mocker.MagicMock()
+    mocker.patch("aico.core.provider_router.create_client", return_value=(mock_client, "test-model", {}))
+
+    mock_usage = MockLLMUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20, cost=0.005)
     mock_chunk = _create_mock_stream_chunk(llm_response_content, mocker=mocker)
-    mock_stream = mocker.MagicMock()
-    mock_stream.__iter__.return_value = iter([mock_chunk])
-    # The usage data is an attribute of the stream, not the chunk
-    mock_stream.usage = mocker.MagicMock()
-    mock_stream.usage.prompt_tokens = 10
-    mock_stream.usage.completion_tokens = 10
-    mock_stream.usage.total_tokens = 20
-    mock_completion.return_value = mock_stream
+    mock_chunk.usage = mock_usage
 
-    # Mock cost calculation to avoid API calls
-    mocker.patch("litellm.completion_cost", return_value=0.001)
+    mock_client.chat.completions.create.return_value = iter([mock_chunk])
 
 
 def test_gen_successful_diff_piped(tmp_path: Path, mocker: MockerFixture) -> None:

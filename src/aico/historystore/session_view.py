@@ -1,13 +1,11 @@
-from __future__ import annotations
-
 import json
 from pathlib import Path
 
 from pydantic import TypeAdapter
 
+from aico.lib.atomic_io import atomic_write_text
 from aico.lib.history_utils import find_message_pairs_from_records
 from aico.lib.models import TokenUsage
-from aico.utils import atomic_write_text
 
 from .history_store import HistoryStore
 from .models import HistoryDerived, HistoryRecord, SessionView

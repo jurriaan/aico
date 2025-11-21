@@ -1,9 +1,12 @@
+# pyright: standard
+
 import linecache
 import os
 import shlex
 import subprocess
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -20,9 +23,6 @@ from aico.historystore.pointer import load_pointer
 from aico.lib.history_utils import find_message_pairs
 from aico.lib.models import (
     AssistantChatMessage,
-    LiteLLMChoiceContainer,
-    LiteLLMDelta,
-    LiteLLMStreamChoice,
     Mode,
     SessionData,
     UserChatMessage,
@@ -187,25 +187,29 @@ def given_history_with_specific_content(
 
 @given(parsers.parse("for this scenario, the LLM will stream the response:"))
 def given_llm_will_stream_response(mocker: MockerFixture, docstring: str) -> None:
-    mock_completion = mocker.patch("litellm.completion", autospec=True)
+    mock_client = mocker.MagicMock()
+    _ = mocker.patch("aico.core.provider_router.create_client", return_value=(mock_client, "test-model", {}))
 
-    def response_generator() -> Generator[LiteLLMChoiceContainer, None, None]:
+    def response_generator() -> Generator[Any, None, None]:
         chunk_size = 10
         response_text = docstring
         for i in range(0, len(response_text), chunk_size):
             chunk_content = response_text[i : i + chunk_size]
-            delta = mocker.MagicMock(spec=LiteLLMDelta)
-            delta.content = chunk_content
-            choice = mocker.MagicMock(spec=LiteLLMStreamChoice)
-            choice.delta = delta
-            container = mocker.MagicMock(spec=LiteLLMChoiceContainer)
-            container.choices = [choice]
-            container.model = "test-model-response"
-            yield container
 
-    mock_completion.return_value = response_generator()
-    # Mock cost calculation, which happens after generation
-    _ = mocker.patch("litellm.completion_cost", return_value=0.01)
+            # Build a mock structure that mimics OpenAI ChatCompletionChunk
+            delta = mocker.MagicMock()
+            delta.content = chunk_content
+
+            choice = mocker.MagicMock()
+            choice.delta = delta
+
+            chunk = mocker.MagicMock()
+            chunk.choices = [choice]
+            chunk.usage = None
+
+            yield chunk
+
+    mock_client.chat.completions.create.return_value = response_generator()
 
 
 @given("for this scenario, the token counter will report pre-defined counts")
@@ -222,27 +226,25 @@ def given_mocked_token_counts(mocker: MockerFixture) -> None:
 
 
 @given(parsers.parse('the model "{model_name}" has a known cost per token'))
-def given_model_has_cost(mocker: MockerFixture, model_name: str) -> None:  # pyright: ignore[reportUnusedParameter]
-    # This step mocks both cost calculation and model info retrieval
-    mock_cost = mocker.patch(
-        "litellm.completion_cost",
-        # Use a simple, predictable cost for testing
-        side_effect=lambda completion_response: float(completion_response["usage"]["prompt_tokens"]) * 0.0001,  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
-    )
-    mock_model_info = mocker.patch(
-        "litellm.get_model_info", return_value={"max_input_tokens": 8192, "input_cost_per_token": 0.0001}
+def given_model_has_cost(mocker: MockerFixture, model_name: str) -> None:
+    # Mock the component cost calculator in utils to return simple predictable costs
+    # Mock the component cost calculator in utils
+    _ = mocker.patch(
+        "aico.utils.compute_component_cost",
+        side_effect=lambda model, prompt_tokens, completion_tokens=0: float(prompt_tokens + completion_tokens) * 0.0001,
     )
 
-    # Make these mocks available to the test case context
-    mocker.patch.dict(
-        "sys.modules",
-        {
-            "litellm": mocker.MagicMock(
-                completion_cost=mock_cost,
-                get_model_info=mock_model_info,
-            )
-        },
-    )
+    # Also mock get_model_info to return a ModelInfo with max_input_tokens
+    # and default costs so that the status bar (Context Window) and costs render.
+    from aico.lib.model_info import ModelInfo
+
+    def fake_get_model_info(model_id: str) -> ModelInfo:
+        if model_id == "test-model-with-cost":
+            return ModelInfo(max_input_tokens=8192, input_cost_per_token=0.0001, output_cost_per_token=0.0001)
+        return ModelInfo()
+
+    _ = mocker.patch("aico.lib.model_info.get_model_info", side_effect=fake_get_model_info)
+    _ = mocker.patch("aico.commands.status.get_model_info", side_effect=fake_get_model_info)
 
 
 # WHEN steps

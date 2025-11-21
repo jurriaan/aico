@@ -9,8 +9,8 @@ from pydantic import TypeAdapter, ValidationError
 
 from aico.historystore import load_view
 from aico.historystore.pointer import SessionPointer
+from aico.lib.atomic_io import atomic_write_text
 from aico.lib.models import FileContents, SessionData
-from aico.utils import atomic_write_text
 
 SESSION_FILE_NAME = ".ai_session.json"
 

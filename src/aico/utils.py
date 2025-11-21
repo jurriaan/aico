@@ -1,21 +1,21 @@
-import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from tempfile import mkstemp
-from typing import Literal, cast
+from typing import Literal
 
 from rich.console import Console, Group, RenderableType
 from rich.syntax import Syntax
 from rich.text import Text
 
 from aico.core.session_context import active_message_indices, get_start_message_index
+from aico.lib.model_info import get_model_info
 from aico.lib.models import (
     AssistantChatMessage,
     ChatMessageHistoryItem,
     DisplayItem,
     LLMChatMessage,
     Mode,
+    ModelInfo,
     SessionData,
     TokenInfo,
     TokenUsage,
@@ -141,12 +141,24 @@ def calculate_and_display_cost(
     token_usage: TokenUsage,
     model_name: str,
     session_data: SessionData,
+    exact_cost: float | None = None,
 ) -> float | None:
     """Calculates the message cost and displays token/cost information."""
-    message_cost = compute_component_cost(model_name, token_usage.prompt_tokens, token_usage.completion_tokens)
+    model = get_model_info(model_name)
+
+    # Prefer usage.cost (OpenRouter injection) or exact_cost passed in
+    message_cost = token_usage.cost if token_usage.cost is not None else exact_cost
+    if message_cost is None:
+        # Fallback to estimating cost if available (stub for now until cleanup)
+        message_cost = compute_component_cost(model, token_usage.prompt_tokens, token_usage.completion_tokens)
 
     prompt_tokens_str = format_tokens(token_usage.prompt_tokens)
+    if token_usage.cached_tokens:
+        prompt_tokens_str += f" ({format_tokens(token_usage.cached_tokens)} cached)"
+
     completion_tokens_str = format_tokens(token_usage.completion_tokens)
+    if token_usage.reasoning_tokens:
+        completion_tokens_str += f" ({format_tokens(token_usage.reasoning_tokens)} reasoning)"
 
     cost_str: str = ""
     if message_cost is not None:
@@ -172,31 +184,33 @@ def calculate_and_display_cost(
     return message_cost
 
 
-def count_tokens_for_messages(model: str, messages: list[LLMChatMessage]) -> int:
+def count_tokens_for_messages(model: str, messages: list[LLMChatMessage]) -> int:  # pyright: ignore[reportUnusedParameter]
     """
-    Counts the total number of tokens in a list of messages.
-    Each message is expected to be a dictionary with 'role' and 'content' keys.
+    Estimates the number of tokens in a list of messages using a heuristic (chars / 4).
     """
-    import litellm
+    # Rough estimate: 4 characters per token
+    total_chars = sum(len(m.get("content", "")) for m in messages)
+    return total_chars // 4
 
-    return cast(int, litellm.token_counter(model=model, messages=messages))  # pyright: ignore[reportPrivateImportUsage,  reportUnknownMemberType, reportUnnecessaryCast]
 
+def compute_component_cost(model: ModelInfo, prompt_tokens: int, completion_tokens: int = 0) -> float | None:
+    input_cost = model.input_cost_per_token
+    output_cost = model.output_cost_per_token
 
-def compute_component_cost(model: str, prompt_tokens: int, completion_tokens: int = 0) -> float | None:
-    import litellm
-
-    mock_response = {
-        "usage": {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": prompt_tokens + completion_tokens,
-        },
-        "model": model,
-    }
-    try:
-        return litellm.completion_cost(completion_response=mock_response)  # pyright: ignore[reportPrivateImportUsage, reportUnknownMemberType]
-    except Exception:
+    # If basic input cost information is missing, we can't estimate
+    if input_cost is None:
         return None
+
+    cost = prompt_tokens * input_cost
+
+    if completion_tokens > 0:
+        if output_cost is not None:
+            cost += completion_tokens * output_cost
+        else:
+            # If we have completion tokens but no output cost, we can't provide a total estimate
+            return None
+
+    return cost
 
 
 def count_system_tokens(model: str) -> int:
@@ -239,20 +253,3 @@ def count_context_files_tokens(
             # or symlink loops which should result in the file being skipped/warned.
             skipped_files.append(file_path_str)
     return file_infos, skipped_files
-
-
-def atomic_write_text(path: Path, text: str | bytes, encoding: str = "utf-8") -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = mkstemp(suffix=path.suffix, prefix=path.name + ".tmp", dir=path.parent)
-    tmp_path = Path(tmp)
-    try:
-        with os.fdopen(fd, "w", encoding=encoding) as f:
-            match text:
-                case str():
-                    _ = f.write(text)
-                case bytes():
-                    _ = f.write(text.decode(encoding))
-
-        os.replace(tmp_path, path)
-    finally:
-        tmp_path.unlink(missing_ok=True)

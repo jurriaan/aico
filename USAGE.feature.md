@@ -57,9 +57,9 @@ Understanding context size is crucial for managing API costs and model performan
                                      └─ Active window: 1 pair (ID 0), 1 sent.
                                         (Use `aico log`, `undo`, and `set-history` to manage)
   ────────────── ───────────────── ────────────────────────────────── Context Files (1) ──────────────────────────────────
-             200           $0.0200 CONVENTIONS.md
+             200          $0.02000 CONVENTIONS.md
   ────────────── ───────────────── ───────────────────────────────────────────────────────────────────────────────────────
-             425           $0.0425 Total
+             425          $0.04250 Total
   
   ╭─────────────────────────────────────────────────── Context Window ───────────────────────────────────────────────────╮
   │                                         (425 of 8,192 used - 95% remaining)                                          │

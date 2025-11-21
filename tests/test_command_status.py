@@ -14,8 +14,10 @@ runner = CliRunner()
 def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
     """
     Tests that the status command shows tokens, costs, and context window
-    info when all data is available from litellm.
+    info when all data is available.
     """
+    from aico.lib.model_info import ModelInfo
+
     # GIVEN a session with context files and history
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
@@ -43,14 +45,17 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
         )
         save_session(session_dir / SESSION_FILE_NAME, session_data)
 
-        # Mocks for litellm. The status command will get tokens for:
-        # system prompt, alignment prompts (x2), chat history, and context files (x1)
-        mocker.patch("litellm.token_counter", side_effect=[100, 30, 40, 50, 20])
-        mocker.patch(
-            "litellm.completion_cost",
-            side_effect=lambda completion_response: float(completion_response["usage"]["prompt_tokens"]) * 0.0001,
+        # Mock token counting to return fixed values:
+        # system prompt (100), alignment 1 (30), alignment 2 (40), chat history (50), context files (20)
+        mocker.patch("aico.utils.count_tokens_for_messages", side_effect=[100, 30, 40, 50, 20])
+
+        # Mock model info to return cost and window info
+        mock_info = ModelInfo(
+            max_input_tokens=8192,
+            input_cost_per_token=0.0001,
+            output_cost_per_token=0.0001,
         )
-        mocker.patch("litellm.get_model_info", return_value={"max_input_tokens": 8192, "input_cost_per_token": 0.0001})
+        mocker.patch("aico.commands.status.get_model_info", return_value=mock_info)
 
         # WHEN `aico status` is run
         result = runner.invoke(app, ["status"])
@@ -90,15 +95,19 @@ def test_status_handles_unknown_model(tmp_path: Path, mocker) -> None:
     """
     Tests that the status command handles cases where model info (cost, context) is unavailable.
     """
+    from aico.lib.model_info import ModelInfo
+
     # GIVEN a session with an unknown model
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
         session_data = SessionData(model="unknown-model", context_files=[], chat_history=[])
         save_session(session_dir / SESSION_FILE_NAME, session_data)
 
-        mocker.patch("litellm.token_counter", return_value=10)
-        mocker.patch("litellm.get_model_info", return_value=None)
-        mocker.patch("litellm.completion_cost", side_effect=Exception("No cost info"))
+        # Mock token counting
+        mocker.patch("aico.utils.count_tokens_for_messages", return_value=10)
+
+        # Mock model info to return empty info (no cost, no window)
+        mocker.patch("aico.lib.model_info.get_model_info", return_value=ModelInfo())
 
         # WHEN `aico status` is run
         result = runner.invoke(app, ["status"])
@@ -121,6 +130,8 @@ def test_status_omits_excluded_messages(tmp_path: Path, mocker) -> None:
     Tests that `aico status` correctly excludes messages marked with is_excluded=True
     from its token calculation and updates the summary text.
     """
+    from aico.lib.model_info import ModelInfo
+
     # GIVEN a session with a mix of active and excluded history
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
@@ -153,11 +164,11 @@ def test_status_omits_excluded_messages(tmp_path: Path, mocker) -> None:
         save_session(session_dir / SESSION_FILE_NAME, session_data)
 
         # AND the token counter is mocked
-        mock_token_counter = mocker.patch("litellm.token_counter")
+        mock_token_counter = mocker.patch("aico.utils.count_tokens_for_messages")
         # system, align-convo, align-diff, chat history for active messages
         mock_token_counter.side_effect = [100, 50, 40, 20]
-        mocker.patch("litellm.completion_cost", return_value=None)
-        mocker.patch("litellm.get_model_info", return_value={"max_input_tokens": 1000})
+
+        mocker.patch("aico.lib.model_info.get_model_info", return_value=ModelInfo(max_input_tokens=1000))
 
         # WHEN `aico status` is run
         result = runner.invoke(app, ["status"])
@@ -180,13 +191,15 @@ def test_status_omits_excluded_messages(tmp_path: Path, mocker) -> None:
         # AND the reconstructed messages passed to the token counter should not contain the excluded message
         # system, align1, align2, history
         history_call = mock_token_counter.call_args_list[3]
-        messages_arg = history_call.kwargs["messages"]
+        messages_arg = history_call.args[1]
         assert len(messages_arg) == 2
         assert "active message" in messages_arg[0]["content"]
         assert "active resp" in messages_arg[1]["content"]
 
 
 def test_status_history_summary_logic(tmp_path: Path, mocker) -> None:
+    from aico.lib.model_info import ModelInfo
+
     # GIVEN a session with 3 pairs, start index at 2 (msg index), one pair excluded
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
@@ -218,8 +231,8 @@ def test_status_history_summary_logic(tmp_path: Path, mocker) -> None:
             excluded_pairs=[2],
         )
         save_session(session_dir / SESSION_FILE_NAME, session_data)
-        mocker.patch("litellm.token_counter", return_value=10)
-        mocker.patch("litellm.get_model_info", return_value=None)
+        mocker.patch("aico.utils.count_tokens_for_messages", return_value=10)
+        mocker.patch("aico.lib.model_info.get_model_info", return_value=ModelInfo())
 
         # WHEN `aico status` is run
         result = runner.invoke(app, ["status"])
@@ -230,6 +243,8 @@ def test_status_history_summary_logic(tmp_path: Path, mocker) -> None:
 
 
 def test_status_handles_dangling_messages(tmp_path: Path, mocker) -> None:
+    from aico.lib.model_info import ModelInfo
+
     # GIVEN a session with a dangling user message
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
@@ -238,8 +253,8 @@ def test_status_handles_dangling_messages(tmp_path: Path, mocker) -> None:
         ]
         session_data = SessionData(model="test-model", chat_history=history, context_files=[])
         save_session(session_dir / SESSION_FILE_NAME, session_data)
-        mocker.patch("litellm.token_counter", return_value=10)
-        mocker.patch("litellm.get_model_info", return_value=None)
+        mocker.patch("aico.utils.count_tokens_for_messages", return_value=10)
+        mocker.patch("aico.lib.model_info.get_model_info", return_value=ModelInfo())
 
         # WHEN `aico status` is run
         result = runner.invoke(app, ["status"])

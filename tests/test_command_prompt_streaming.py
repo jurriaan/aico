@@ -1,6 +1,7 @@
 # pyright: standard
 
 from pathlib import Path
+from typing import Any
 
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
@@ -10,10 +11,11 @@ from aico.main import app
 runner = CliRunner()
 
 
-def _create_mock_stream_chunk(content: str | None, mocker: MockerFixture, usage: object | None = None) -> object:
-    """Creates a mock stream chunk that conforms to the LiteLLMChoiceContainer protocol."""
+def _create_mock_stream_chunk(content: str | None, mocker: MockerFixture, usage: Any | None = None) -> Any:
+    """Creates a mock stream chunk."""
     mock_delta = mocker.MagicMock()
     mock_delta.content = content
+    mock_delta.reasoning_content = None
 
     mock_choice = mocker.MagicMock()
     mock_choice.delta = mock_delta
@@ -38,20 +40,18 @@ def setup_streaming_test(
             (tmp_path / filename).write_text(content)
             runner.invoke(app, ["add", filename])
 
-    mock_completion = mocker.patch("litellm.completion")
+    mock_client = mocker.MagicMock()
+    mocker.patch("aico.core.provider_router.create_client", return_value=(mock_client, "test-model", {}))
 
     mock_chunks = [_create_mock_stream_chunk(content, mocker=mocker) for content in llm_response_chunks]
 
-    mock_stream = mocker.MagicMock()
-    mock_stream.__iter__.return_value = iter(mock_chunks)
-    mock_stream.usage = mocker.MagicMock()
-    mock_stream.usage.prompt_tokens = 100
-    mock_stream.usage.completion_tokens = 20
-    mock_stream.usage.total_tokens = 120
-    mock_completion.return_value = mock_stream
-    mocker.patch("litellm.completion_cost", return_value=0.001)
+    # Simulate usage arriving in the last chunk if needed, or separately
+    # For simplicity in streaming tests, we just attach a usage chunk at the end
+    # or assume test infrastructure ignores precise usage unless specified
 
-    return mock_completion
+    mock_client.chat.completions.create.return_value = iter(mock_chunks)
+
+    return mock_client.chat.completions.create
 
 
 def _run_multiple_patches_test(

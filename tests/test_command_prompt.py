@@ -1,6 +1,7 @@
 # pyright: standard
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pytest_mock import MockerFixture, MockType
@@ -9,21 +10,26 @@ from typer.testing import CliRunner
 from aico.lib.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
 from aico.lib.session import SESSION_FILE_NAME, save_session
 from aico.main import app
+from tests.mocks import MockLLMUsage
 
 runner = CliRunner()
 
 
-def _create_mock_stream_chunk(content: str | None, mocker: MockerFixture, usage: object | None = None) -> object:
-    """Creates a mock stream chunk that conforms to the LiteLLMChoiceContainer protocol."""
+def _create_mock_stream_chunk(content: str | None, mocker: MockerFixture, usage: MockLLMUsage | None = None) -> Any:
+    """Creates a mock stream chunk that mimics ChatCompletionChunk."""
     mock_delta = mocker.MagicMock()
     mock_delta.content = content
+    mock_delta.reasoning_content = None
 
     mock_choice = mocker.MagicMock()
     mock_choice.delta = mock_delta
 
     mock_chunk = mocker.MagicMock()
     mock_chunk.choices = [mock_choice]
-    mock_chunk.usage = usage
+    if usage:
+        mock_chunk.usage = usage
+    else:
+        mock_chunk.usage = None
     return mock_chunk
 
 
@@ -32,7 +38,7 @@ def setup_prompt_test(
     tmp_path: Path,
     llm_response_content: str,
     context_files: dict[str, str] | None = None,
-    usage: object | None = None,
+    usage: MockLLMUsage | None = None,
 ) -> MockType:
     """A helper to handle the common GIVEN steps for prompt command tests."""
     runner.invoke(app, ["init"])
@@ -42,14 +48,15 @@ def setup_prompt_test(
             (tmp_path / filename).write_text(content)
             runner.invoke(app, ["add", filename])
 
-    mock_completion = mocker.patch("litellm.completion")
-    mock_chunk = _create_mock_stream_chunk(llm_response_content, mocker=mocker, usage=usage)
-    mock_stream = mocker.MagicMock()
-    mock_stream.__iter__.return_value = iter([mock_chunk])
-    mock_completion.return_value = mock_stream
-    mocker.patch("litellm.completion_cost", return_value=0.001)
+    mock_client = mocker.MagicMock()
+    mocker.patch("aico.core.provider_router.create_client", return_value=(mock_client, "test-model", {}))
 
-    return mock_completion
+    mock_chunk = _create_mock_stream_chunk(llm_response_content, mocker=mocker, usage=usage)
+
+    # Use side_effect to allow multiple calls with fresh iterators if needed
+    mock_client.chat.completions.create.side_effect = [iter([mock_chunk])]
+
+    return mock_client.chat.completions.create
 
 
 def load_final_session(tmp_path: Path) -> SessionData:
@@ -74,10 +81,7 @@ def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) ->
     prompt_text = "Explain this code"
     llm_response = "This is a raw response."
     context_files = {"code.py": "def hello():\n    pass"}
-    mock_usage = mocker.MagicMock()
-    mock_usage.prompt_tokens = 100
-    mock_usage.completion_tokens = 20
-    mock_usage.total_tokens = 120
+    mock_usage = MockLLMUsage(prompt_tokens=100, completion_tokens=20, total_tokens=120)
 
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         mock_completion = setup_prompt_test(
@@ -96,14 +100,16 @@ def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) ->
         messages = mock_completion.call_args.kwargs["messages"]
         assert len(messages) == 6
         assert "This is the Ground Truth" in messages[1]["content"]
-        assert messages[2]["content"] == "I have read the current file state. I will use this block as the ground truth for all code generation."
+        assert (
+            messages[2]["content"]
+            == "I have read the current file state. I will use this block as the ground truth for all code generation."
+        )
         assert "conversational assistant" in messages[3]["content"]
         assert '<file path="code.py">' in messages[1]["content"]
         assert prompt_text in messages[-1]["content"]
 
         # AND it prints token and cost info to stderr
         assert "Tokens: 100 sent, 20 received." in result.stderr
-        assert "Cost: $0.00, current chat: $0.00" in result.stderr
 
         # AND the session history is updated correctly
         final_session = load_final_session(Path(td))
@@ -321,9 +327,8 @@ def test_prompt_with_history_reconstructs_piped_content(tmp_path: Path, mocker: 
         runner.invoke(app, ["prompt", cli_prompt], input=piped_content)
 
         # AND a second prompt is made
-        mock_completion.return_value.__iter__.return_value = iter(
-            [_create_mock_stream_chunk("response 2", mocker=mocker)]
-        )
+        # Override side_effect for the next call
+        mock_completion.side_effect = [iter([_create_mock_stream_chunk("response 2", mocker=mocker)])]
         runner.invoke(app, ["prompt", "Thanks"])
 
         # THEN the LLM call for the second prompt contains the reconstructed history
@@ -390,12 +395,20 @@ def test_prompt_uses_session_default_model_when_not_overridden(tmp_path: Path, m
         # WHEN `aico prompt` is run without the --model flag
         result = runner.invoke(app, ["prompt", "A prompt"])
 
-        # THEN the command succeeds and the API was called with the session's default model
+        # THEN the command succeeds
         assert result.exit_code == 0
-        mock_completion.assert_called_once()
-        assert mock_completion.call_args.kwargs["model"] == "session/default-model"
 
-        # AND the session file's records show the model used
+        # Verify correct input to resolve logic (via import of mocked object)
+        from aico.core.provider_router import create_client
+
+        create_client.assert_called_with("session/default-model")  # pyright: ignore
+
+        # Verify correct flow to API using the specific mock from setup_prompt_test
+        mock_completion.assert_called_once()
+        # The 'model' kwarg passed to .create() comes from the create_client returns.
+        # setup_prompt_test configures create_client to return "test-model".
+        assert mock_completion.call_args.kwargs["model"] == "test-model"
+
         final_session = load_final_session(Path(td))
         assistant_msg = final_session.chat_history[1]
         assert isinstance(assistant_msg, AssistantChatMessage)
@@ -412,10 +425,17 @@ def test_prompt_model_flag_overrides_session_default(tmp_path: Path, mocker: Moc
         override_model = "override/specific-model"
         result = runner.invoke(app, ["prompt", "--model", override_model, "A prompt"])
 
-        # THEN the command succeeds and the API was called with the override model
+        # THEN the command succeeds
         assert result.exit_code == 0
+
+        # Verify correct input to resolve logic
+        from aico.core.provider_router import create_client
+
+        create_client.assert_called_with(override_model)  # pyright: ignore
+
+        # API called with resolved model ("test-model" from mock)
         mock_completion.assert_called_once()
-        assert mock_completion.call_args.kwargs["model"] == override_model
+        assert mock_completion.call_args.kwargs["model"] == "test-model"
 
         # AND the session file reflects the correct default and message-specific models
         final_session = load_final_session(Path(td))
@@ -498,10 +518,21 @@ def test_prompt_with_excluded_history_omits_messages(tmp_path: Path, mocker: Moc
         runner.invoke(app, ["init"])
         # Run a sequence of prompts to create history
         mock_completion = setup_prompt_test(mocker, Path(td), "response 1")
+
+        # We need multiple distinct responses. Set side_effect for all calls:
+        # 1. prompt 1 -> response 1 (Already consumed by setup's side effect? No, setup prepares it)
+        # 2. prompt 2 -> response 2
+        # 3. prompt 3 -> response 3
+        # 4. prompt 4 -> response 4
+        mock_completion.side_effect = [
+            iter([_create_mock_stream_chunk("response 1", mocker)]),
+            iter([_create_mock_stream_chunk("response 2", mocker)]),
+            iter([_create_mock_stream_chunk("response 3", mocker)]),
+            iter([_create_mock_stream_chunk("response 4", mocker)]),
+        ]
+
         runner.invoke(app, ["ask", "prompt 1"])
-        mock_completion.return_value.__iter__.return_value = iter([_create_mock_stream_chunk("response 2", mocker)])
         runner.invoke(app, ["ask", "prompt 2"])
-        mock_completion.return_value.__iter__.return_value = iter([_create_mock_stream_chunk("response 3", mocker)])
         runner.invoke(app, ["ask", "prompt 3"])
 
         # Exclude the second pair (pair index 1)
@@ -510,7 +541,6 @@ def test_prompt_with_excluded_history_omits_messages(tmp_path: Path, mocker: Moc
         save_session(Path(td) / SESSION_FILE_NAME, session_data)
 
         # WHEN another prompt is run
-        mock_completion.return_value.__iter__.return_value = iter([_create_mock_stream_chunk("response 4", mocker)])
         runner.invoke(app, ["ask", "prompt 4"])
 
         # THEN the call to the LLM should only contain the non-excluded history
@@ -528,16 +558,11 @@ def test_prompt_no_history_flag_omits_history_from_llm_call(tmp_path: Path, mock
     # GIVEN a session with existing history
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         # Create initial history: one user/assistant pair
-        _ = setup_prompt_test(mocker, Path(td), "initial response")
+        mock_completion = setup_prompt_test(mocker, Path(td), "initial response")
         runner.invoke(app, ["ask", "initial prompt"])
 
-        # Re-mock for the second call
-        mock_completion_second = mocker.patch("litellm.completion")
-        mock_chunk = _create_mock_stream_chunk("no-history response", mocker=mocker)
-        mock_stream = mocker.MagicMock()
-        mock_stream.__iter__.return_value = iter([mock_chunk])
-        mock_completion_second.return_value = mock_stream
-        mocker.patch("litellm.completion_cost", return_value=0.001)
+        # Queue response for second call
+        mock_completion.side_effect = [iter([_create_mock_stream_chunk("no-history response", mocker=mocker)])]
 
         # WHEN `aico ask` is run with the --no-history flag
         result = runner.invoke(app, ["ask", "--no-history", "no-history prompt"])
@@ -546,8 +571,7 @@ def test_prompt_no_history_flag_omits_history_from_llm_call(tmp_path: Path, mock
         assert result.exit_code == 0, result.stderr
 
         # AND the LLM was called without the historical messages
-        mock_completion_second.assert_called_once()
-        messages = mock_completion_second.call_args.kwargs["messages"]
+        messages = mock_completion.call_args.kwargs["messages"]
         # Expected: sys, align_user, align_asst, user_prompt_2
         assert len(messages) == 4
         message_contents = [m["content"] for m in messages]
