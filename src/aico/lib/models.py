@@ -176,7 +176,7 @@ class AddonInfo:
     name: str
     path: Path
     help_text: str
-    source: Literal["project", "user"]
+    source: Literal["project", "user", "bundled"]
 
 
 @dataclass(slots=True, frozen=True)

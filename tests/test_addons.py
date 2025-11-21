@@ -133,6 +133,11 @@ def test_discover_addons(tmp_path: Path, mocker: MockerFixture) -> None:
     save_session(session_file, SessionData(model="test", chat_history=[], context_files=[]))
     mocker.patch("aico.addons.find_session_file", return_value=session_file)
 
+    # Mock the home directory to control user addons path
+    user_home_dir = tmp_path / "user_home"
+    user_home_dir.mkdir()
+    mocker.patch("pathlib.Path.home", return_value=user_home_dir)
+
     # AND project addons
     project_addons_dir = tmp_path / ".aico" / "addons"
     project_addons_dir.mkdir(parents=True)
@@ -142,17 +147,59 @@ def test_discover_addons(tmp_path: Path, mocker: MockerFixture) -> None:
     non_executable_path.write_text("...")
 
     # AND user addons
-    user_addons_dir = tmp_path / "user_home" / ".config" / "aico" / "addons"
+    user_addons_dir = user_home_dir / ".config" / "aico" / "addons"
     user_addons_dir.mkdir(parents=True)
-    mocker.patch("pathlib.Path.home", return_value=tmp_path / "user_home")
     user_addon_a_path = _create_addon(user_addons_dir, "a-addon", "User A help")
-    _create_addon(user_addons_dir, "collision-addon", "User collision help")
+    _create_addon(
+        user_addons_dir, "collision-addon", "User collision help"
+    )  # This is overridden by project collision-addon
+
+    # Mock `importlib.resources.files` to point to a temporary bundled_addons directory
+    mock_bundled_resources_path = tmp_path / "src" / "aico" / "bundled_addons"
+    mock_bundled_resources_path.mkdir(parents=True, exist_ok=True)
+    _create_addon(mock_bundled_resources_path, "commit", "Bundled commit help")
+    _create_addon(mock_bundled_resources_path, "manage-context", "Bundled manage-context help")
+    _create_addon(mock_bundled_resources_path, "summarize", "Bundled summarize help")
+
+    # This mock needs to return an object that behaves like a Traversable, specifically `is_dir()` and `iterdir()`.
+    # `files` returns a Traversable, which in a real scenario would represent a directory in the package.
+    # The `iterdir` method of the mock should return mock Traversable items for each file.
+    mock_bundled_traversable = mocker.MagicMock(spec=Path)  # Using Path as spec for real methods like is_dir
+    mock_bundled_traversable.is_dir.return_value = True
+
+    # Create mock Traversable objects for bundled addons
+    mock_commit_item = mocker.MagicMock(spec=Path, name="commit")  # Use Path as spec for is_file()
+    mock_commit_item.name = "commit"
+    mock_commit_item.is_file.return_value = True
+    mock_commit_item.read_bytes.return_value = (
+        b'#!/bin/sh\n[ "$1" = "--usage" ] && echo "Bundled commit help" || exit 0'
+    )
+
+    mock_manage_context_item = mocker.MagicMock(spec=Path, name="manage-context")
+    mock_manage_context_item.name = "manage-context"
+    mock_manage_context_item.is_file.return_value = True
+    mock_manage_context_item.read_bytes.return_value = (
+        b'#!/bin/sh\n[ "$1" = "--usage" ] && echo "Bundled manage-context help" || exit 0'
+    )
+
+    mock_summarize_item = mocker.MagicMock(spec=Path, name="summarize")
+    mock_summarize_item.name = "summarize"
+    mock_summarize_item.is_file.return_value = True
+    mock_summarize_item.read_bytes.return_value = (
+        b'#!/bin/sh\n[ "$1" = "--usage" ] && echo "Bundled summarize help" || exit 0'
+    )
+
+    mock_bundled_traversable.iterdir.return_value = [mock_commit_item, mock_manage_context_item, mock_summarize_item]
+    mocker.patch("importlib.resources.files", return_value=mock_bundled_traversable)
+
+    # Mock the _get_user_cache_dir to ensure _extract_bundled_addon puts files where we expect
+    mocker.patch("aico.addons._get_user_cache_dir", return_value=tmp_path / "cache" / "aico" / "bundled_addons")
 
     # WHEN addons are discovered
     addons = discover_addons()
 
-    # THEN the correct addons are found, with project addons overriding user addons
-    assert len(addons) == 3
+    # THEN the correct addons are found, with project addons overriding user addons and bundled addons
+    assert len(addons) == 6  # 3 project/user, 3 bundled
 
     # AND the list is sorted by name
     assert addons[0].name == "a-addon"
@@ -165,7 +212,19 @@ def test_discover_addons(tmp_path: Path, mocker: MockerFixture) -> None:
     assert addons[1].help_text == "Project collision help"  # Project wins
     assert addons[1].source == "project"
 
-    assert addons[2].name == "z-addon"
-    assert addons[2].path == project_addon_z_path.resolve()
-    assert addons[2].help_text == "Project Z help"
-    assert addons[2].source == "project"
+    assert addons[2].name == "commit"
+    assert addons[2].help_text == "Bundled commit help"
+    assert addons[2].source == "bundled"
+
+    assert addons[3].name == "manage-context"
+    assert addons[3].help_text == "Bundled manage-context help"
+    assert addons[3].source == "bundled"
+
+    assert addons[4].name == "summarize"
+    assert addons[4].help_text == "Bundled summarize help"
+    assert addons[4].source == "bundled"
+
+    assert addons[5].name == "z-addon"
+    assert addons[5].path == project_addon_z_path.resolve()
+    assert addons[5].help_text == "Project Z help"
+    assert addons[5].source == "project"

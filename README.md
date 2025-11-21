@@ -63,6 +63,7 @@ aico init --model "openrouter/google/gemini-3-pro-preview"
 - **Context Management:** Explicitly `add` and `drop` files to control exactly what the AI sees.
 - **History Control:** Easily manage how much of the conversation history is included in the next prompt to balance context-awareness with cost.
 - **Cost and Token Tracking:** See token usage and estimated cost for each interaction.
+- **Standard Tooling:** Includes built-in commands for `commit` generation, session `summarize`ation, and interactive context management.
 - **Editor-Agnostic:** Because it's a CLI tool, `aico` works with any code editor, from Vim to VSCode.
 
 ## Shared-History Sessions
@@ -151,22 +152,41 @@ For more detailed usage examples and scenarios, see [USAGE.feature.md](USAGE.fea
 
 ## Addons: Extending `aico`
 
-You can extend `aico` with custom commands using a simple addon system, making it easy to create custom workflows.
+`aico` comes with a set of standard addons enabled by default, but also allows you to create custom commands using a simple script-based system.
+
+### Standard Addons
+
+These commands are built-in but implemented as addons, meaning you can inspect or override them if needed.
+
+- [`aico commit`](.aico/addons/commit): Generates a Conventional Commit message for staged changes, using both your `git diff` and the `aico` conversation log for context.
+- [`aico summarize`](.aico/addons/summarize): Archives history as timestamped `.aico/summaries/YYYYMMDDTHHMMSS_PROJECT_SUMMARY.md`, symlinks `PROJECT_SUMMARY.md` at root, resets active history, adds to context.
+- [`aico manage-context`](.aico/addons/manage-context): Lets you interactively manage the session context using `git ls-files` and `fzf`, preselecting files already in context so you can quickly add or drop files without remembering exact paths.
+
+### Customizing and Overriding
+
+`aico` looks for addons in the following order. The first one found wins, allowing you to override standard addons with your own versions.
+
+1.  **Project-specific:** `./.aico/addons/` (Highest priority)
+2.  **User-specific:** `~/.config/aico/addons/`
+3.  **Bundled:** Built-in defaults (Lowest priority)
 
 ### Creating Your Own Addon
 
-An addon can be any executable script (e.g., a shell script, Python file) that meets three simple requirements:
+An addon is simply an executable script placed in one of the addon directories.
 
-1.  It must be placed in an addon directory (`./.aico/addons/` for project-specific or `~/.config/aico/addons/` for global).
-2.  It must be executable (`chmod +x my-addon`).
-3.  It must respond to a `--usage` flag by printing a single line of help text.
+1.  **Create a script** (e.g., `my-command`):
+    ```bash
+    #!/bin/bash
+    # Use AICO_SESSION_FILE to read the current session state
+    echo "Current session: $AICO_SESSION_FILE"
+    ```
+2.  **Make it executable**: `chmod +x my-command`
+3.  **Add help text**: The script must print a single line of help text when run with `--usage`.
+    ```bash
+    if [ "$1" == "--usage" ]; then
+      echo "My custom command description"
+      exit 0
+    fi
+    ```
 
-The best way to learn how to write an addon is to inspect the examples provided in this repository.
-
-### Example Addons
-
-The repository includes two addons that serve as practical examples:
-
-- [`commit`](.aico/addons/commit): Generates a Conventional Commit message for staged changes, using both your `git diff` and the `aico` conversation log for context.
-- [`summarize`](.aico/addons/summarize): Archives history as timestamped `.aico/summaries/YYYYMMDDTHHMMSS_PROJECT_SUMMARY.md`, symlinks `PROJECT_SUMMARY.md` at root, resets active history, adds to context.
-- [`manage-context`](.aico/addons/manage-context): Lets you interactively manage the session context using `git ls-files` and `fzf`, preselecting files already in context so you can quickly add or drop files without remembering exact paths.
+For complex addons, you can write them in Python and leverage `aico`'s internal libraries (the `PYTHONPATH` is automatically propagated).

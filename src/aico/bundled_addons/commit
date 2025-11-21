@@ -42,7 +42,7 @@ AUTHORS=()
 
 # Check if --usage flag is passed and show help text
 if [[ "$1" == "--usage" ]]; then
-  echo "Generates a Conventional Commit message for staged changes."
+  echo "Generates a Conventional Commit message for staged changes." 
   exit 0
 fi
 
@@ -125,7 +125,7 @@ EOF
 AI_COMMIT_MSG=$(echo "$PROMPT" | aico prompt --passthrough --no-history --system-prompt "$SYSTEM_PROMPT" --model "$MODEL_NAME" 2>/dev/null)
 
 # 5. Assemble the final commit message and execute git commit
-COMMIT_ARGS=("--file" "-" "--edit")
+COMMIT_ARGS=("-v" "--file" "-" "--edit")
 if [ ${#AUTHORS[@]} -gt 0 ]; then
   COMMIT_ARGS+=("--author=${AUTHORS[0]}")
 fi
