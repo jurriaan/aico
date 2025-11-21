@@ -47,15 +47,54 @@ These records explain the motivation and consequences of key architectural decis
 -   **Decision:** We explicitly standardized on a **message pair** (one user prompt and its corresponding assistant response) as the atomic unit of the conversation. The `aico log` command was designed to display a clear `ID` for each pair. All other history commands (`last`, `undo`, `set-history`) were unified to consume this exact pair ID as their primary argument.
 -   **Rationale:** This provides a consistent and logical mental model for the user. They learn one concept—the pair ID from `aico log`—and can apply it everywhere, reducing cognitive load. It avoids the ambiguity of a raw message index where a user might accidentally target their own prompt when they meant to target the AI's response or vice-versa. Treating the prompt/response as a single, atomic unit is more intuitive for operations like "undoing" a conversational turn.
 
+### ADR-007: Offline-First Model Metadata
+
+-   **Context:** To provide cost estimates and context window warnings (`aico status`), the tool needs up-to-date model pricing data.
+-   **Decision:** We implemented a lazy-loading, file-based cache in `~/.cache/aico/` that fetches pricing data from OpenRouter/LiteLLM APIs periodically (TTL 14 days).
+-   **Rationale:** This ensures `aico` remains fast and usable offline. We avoid blocking the CLI startup on network calls. If the cache is missing or the network is down, the tool degrades gracefully (showing no cost info) rather than crashing or hanging.
+
+### ADR-008: The Shared-History Architecture (Pointer-View-Store)
+
+-   **Context:** As sessions grow, the legacy single-file JSON format (`.ai_session.json`) becomes inefficient to read/write. Furthermore, users requested git-like features: the ability to "branch" a conversation to try different solutions without duplicating the entire history data.
+-   **Decision:** We implemented a three-tier storage architecture:
+    1.  **Pointer:** A tiny `.ai_session.json` file that contains only a reference to the active view.
+    2.  **View:** A lightweight JSON file (in `.aico/sessions/`) that defines a "branch." It holds metadata (model, context files) and an ordered list of integer IDs referencing messages in the store.
+    3.  **Store:** An append-only, sharded log (in `.aico/history/*.jsonl`) that holds the actual immutable message content.
+-   **Rationale:**
+    -   **Performance:** Appending a message requires only writing to the current 10k-line shard and updating the lightweight view, making I/O constant-time rather than linear to session size.
+    -   **Branching:** Creating a new branch is cheap (creating a small JSON view) because the heavy message content is referenced by ID, not copied.
+    -   **Immutability:** Message content is never overwritten, only appended. Edits create new records, preserving a traceable lineage of the conversation.
+
+### ADR-009: Process-Based Addon System
+
+-   **Context:** Users need to extend `aico` with custom workflows (e.g., generating commits, summarizing history), but we wanted to avoid the complexity and fragility of a plugin API that runs arbitrary user code inside the main process.
+-   **Decision:** We implemented addons as **executable scripts** (subprocesses) rather than internal Python plugins. We use `os.execvpe` to hand over control to the addon.
+-   **Rationale:**
+    -   **Isolation:** Addons cannot crash the main `aico` process or corrupt its memory.
+    -   **Language Agnostic:** Users can write addons in Bash, Python, Ruby, or Rust; `aico` simply executes them.
+    -   **Simplicity:** The "API" is simply the environment variables (like `AICO_SESSION_FILE`) passed to the subprocess. This adheres to the Unix philosophy of small tools working together.
+
+### ADR-010: "Ground Truth" Context Anchoring
+
+-   **Context:** As conversation history grows, LLMs often "forget" the current state of files or hallucinate that they have applied patches that were merely discussed.
+-   **Decision:** We inject the file context wrapped in XML tags (`<context>`) followed immediately by a **forced assistant response** (pre-filled message) stating: *"I have read the current file state. I will use this block as the ground truth..."*
+-   **Rationale:**
+    -   **Combatting Hallucination:** By forcing the model to "acknowledge" the read, we significantly reduce the likelihood of it relying on outdated code snippets found earlier in the chat history.
+    -   **Turn Alignment:** Inserting a fake assistant response maintains the strict User/Assistant turn structure required by the API while effectively making the file context "stick" more strongly than a system prompt alone.
+    -   **Caching:** The structured prompt topology (System → Context/Anchor → History → Alignment → Final) enables effective prompt caching in supported models/providers by isolating stable context prefixes.
+
 ## Project Philosophy & Vision
 
-### Dependency Rationale: Why `litellm`?
+### Dependency Rationale: Moving to Standard `openai` SDK
 
-`litellm` is a hard dependency used for all LLM interactions. This was a pragmatic choice.
+We explicitly migrated away from `litellm` to the standard `openai` Python library.
 
--   **Pros:** It provides crucial, non-trivial functionality out of the box: provider abstraction (supporting OpenAI, Anthropic, OpenRouter, etc.), token counting, and cost estimation. Implementing this ourselves would be a significant effort.
--   **Cons:** Its codebase is not as clean as our project's standards, and its type hinting is incomplete, requiring us to create defensive boundaries.
--   **Conclusion:** We accept the trade-off. The immediate benefits of its features outweigh the cost of managing the dependency.
+-   **Context:** Initially, we used `litellm` for its multi-provider abstraction and built-in cost tracking. However, we found its dependency footprint too heavy and its type hinting insufficient for our strict standards.
+-   **Decision:** We now use the official `openai` library combined with a custom, lightweight **Provider Router**.
+-   **Rationale:**
+    -   **Stability & Standards:** The `openai` library is the industry standard. It offers superior type safety (essential for our `basedpyright` workflow), stable API contracts, and minimal overhead.
+    -   **Explicit Control:** By implementing our own thin router (`src/aico/core/provider_router.py`), we have precise control over how requests are directed (e.g., to OpenRouter or direct to OpenAI) without opaque middleware.
+    -   **Lightweight Metadata:** Instead of relying on a heavy library for model costs, we implemented a targeted metadata service (`src/aico/lib/model_info.py`) that caches only the data we need (context windows and pricing) from upstream sources.
 
 ### Error Handling Philosophy: Fail Fast
 

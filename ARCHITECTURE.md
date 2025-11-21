@@ -39,8 +39,12 @@ The application is composed of several distinct components, each with a clear ro
 
 These are specialized components that handle the most complex processing tasks.
 
--   **LLM Interaction Engine:** This is the single entry point for all communication with the Large Language Model. It builds the full prompt (including system instructions, file context, and chat history), sends the request to the `litellm` library, and processes the response as a stream for real-time user feedback. It is also responsible for coordinating with the Diff & Patch Engine.
+-   **LLM Interaction Engine:** This is the single entry point for all communication with the Large Language Model. It builds the full prompt (including system instructions, file context, and chat history) and orchestrates the request-response cycle. It relies on the **Provider Router** to instantiate the correct API client and processes the streaming response for real-time user feedback.
     -   **Implementation:** This logic is located in `src/aico/core/llm_executor.py`.
+
+-   **Provider Router & Model Info:** This layer abstracts the differences between API providers.
+    -   **Router:** Determines whether to route requests to OpenAI direct or OpenRouter based on the model string prefix (`openai/` vs `openrouter/`) and configures the HTTP client accordingly. Located in `src/aico/core/provider_router.py`.
+    -   **Model Metadata Service:** Fetches and caches model capabilities (context window size) and pricing data to `~/.cache/aico/`. This allows `aico status` to provide cost estimates without blocking on network calls or requiring a heavy dependency. Located in `src/aico/lib/model_info.py`.
 
 -   **Diff & Patch Engine:** This engine processes the raw text from the LLM to find and parse structured `SEARCH/REPLACE` blocks. It can apply these blocks to in-memory file content to generate both machine-readable unified diffs (for piping) and human-readable, rich-formatted output (for terminal display).
     -   **Implementation:** This is a dedicated, specialized component located in `src/aico/lib/diffing.py`.
@@ -58,7 +62,7 @@ The components work together in a predictable sequence. The lifecycle of a typic
 2.  **State Loading:** The command uses the **State Persistence Layer** to find and load the `.ai_session.json` file into memory as a structured Pydantic object. Most commands load only the active window; history-indexing commands that accept pair IDs use the full-history path to resolve indices globally.
 3.  **Context Building:** The command reads the files specified in the session state from disk.
 4.  **Prompt Construction:** The **LLM Interaction Engine** assembles the final prompt, combining system instructions, file contents, active chat history, and the new user instruction into a single request.
-5.  **LLM Streaming & Parsing:** The request is sent to the LLM. As the response streams back:
+5.  **LLM Streaming & Parsing:** The **Provider Router** initializes the API client, and the request is sent. As the response streams back:
     -   The **Diff & Patch Engine** live-parses the stream for `SEARCH/REPLACE` blocks.
     -   A live renderer displays conversational text and formatted diffs to the user in real-time.
 6.  **State Saving:** After the full response is received, the user's prompt and the assistant's complete response are appended to the chat history. The **State Persistence Layer** then saves the updated session object back to disk atomically.

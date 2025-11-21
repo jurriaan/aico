@@ -3,3 +3,5 @@ __pycache__
 .aico/sessions
 .aico/history
 .aico/summaries
+.ai_session.json
+tmp
