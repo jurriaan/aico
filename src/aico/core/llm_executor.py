@@ -168,7 +168,11 @@ def _handle_unified_streaming(
     session_root: Path,
 ) -> tuple[str, list[DisplayItem] | None, TokenUsage | None, float | None]:
     from openai import Stream
-    from openai.types.chat import ChatCompletionChunk, ChatCompletionMessageParam, ChatCompletionStreamOptionsParam
+    from openai.types.chat import (
+        ChatCompletionChunk,
+        ChatCompletionMessageParam,
+        ChatCompletionStreamOptionsParam,
+    )
 
     from aico.core.provider_router import create_client
 

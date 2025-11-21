@@ -50,7 +50,7 @@ def test_undo_multiple_indices(session_with_two_pairs: Path) -> None:
 
     # THEN the command succeeds and both pairs are excluded
     assert result.exit_code == 0
-    assert "Marked pairs as excluded: 0, 1" in result.stdout
+    assert "Marked 2 pairs as excluded: 0, 1" in result.stdout
 
     # AND both indices are in excluded_pairs
     final_session = load_session_data(session_file)
@@ -66,10 +66,40 @@ def test_undo_negative_and_positive_mix(session_with_two_pairs: Path) -> None:
 
     # THEN both pairs are excluded
     assert result.exit_code == 0
-    assert "Marked pairs as excluded: 0, 1" in result.stdout
+    assert "Marked 2 pairs as excluded: 0, 1" in result.stdout
 
     final_session = load_session_data(session_file)
     assert set(final_session.excluded_pairs) == {0, 1}
+
+
+def test_undo_range_syntax(session_with_two_pairs: Path) -> None:
+    # GIVEN a session with two pairs
+    session_file = session_with_two_pairs
+
+    # WHEN `aico undo 0..1` is run
+    result = runner.invoke(app, ["undo", "0..1"])
+
+    # THEN both pairs are excluded
+    assert result.exit_code == 0
+    assert "Marked 2 pairs as excluded: 0, 1" in result.stdout
+
+    final_session = load_session_data(session_file)
+    assert final_session.excluded_pairs == [0, 1]
+
+
+def test_undo_negative_range(session_with_two_pairs: Path) -> None:
+    # GIVEN a session with two pairs
+    session_file = session_with_two_pairs
+
+    # WHEN `aico undo -2..-1` is run
+    result = runner.invoke(app, ["undo", "-2..-1"])
+
+    # THEN both pairs are excluded
+    assert result.exit_code == 0
+    assert "Marked 2 pairs as excluded: 0, 1" in result.stdout
+
+    final_session = load_session_data(session_file)
+    assert final_session.excluded_pairs == [0, 1]
 
 
 def test_undo_idempotent_multiple(session_with_two_pairs: Path) -> None:
@@ -191,6 +221,24 @@ def test_undo_fails_with_invalid_index_format(session_with_two_pairs: Path) -> N
     assert "Error: Invalid index 'abc'. Must be an integer." in result.stderr
 
 
+def test_undo_mixed_sign_range_fails_safely(session_with_two_pairs: Path) -> None:
+    """
+    Ensures that ambiguous mixed-sign ranges (e.g. 0..-1) are NOT expanded
+    incorrectly, but instead cause a validation error.
+    """
+    # GIVEN a session with pairs 0 and 1
+
+    # WHEN running undo with a mixed-sign range
+    result = runner.invoke(app, ["undo", "0..-1"])
+
+    # THEN the command should fail
+    assert result.exit_code == 1
+
+    # AND the error should come from resolve_pair_index rejecting the unexpanded string
+    # (It sees "0..-1" as a string, tries to convert to int, and fails)
+    assert "Error: Invalid index '0..-1'" in result.stderr
+
+
 def test_undo_can_exclude_pair_before_active_window_shared_history(tmp_path: Path) -> None:
     # GIVEN a shared-history session with 2 pairs and an active window starting at pair 1
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
@@ -205,7 +253,7 @@ def test_undo_can_exclude_pair_before_active_window_shared_history(tmp_path: Pat
             model="test-model",
             context_files=[],
             message_indices=[],
-            history_start_pair=1,
+            history_start_pair=1,  # Active window starts at pair 1
             excluded_pairs=[],
         )
 

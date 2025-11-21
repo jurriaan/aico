@@ -1,3 +1,4 @@
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,57 @@ class ActiveSession:
     file_path: Path
     data: SessionData
     root: Path
+
+
+def expand_index_ranges(indices: list[str]) -> list[str]:
+    """
+    Expands index strings into individual IDs, supporting Git-style ranges.
+
+    Syntax:
+      - Single: "1", "-1"
+      - Range:  "start..end" (Inclusive on both ends)
+
+    Constraint:
+      Start and End must have the same sign to avoid ambiguous wrapping.
+
+    Examples:
+      - "1..3"    -> ["1", "2", "3"]  (Allowed)
+      - "-3..-1"  -> ["-3", "-2", "-1"] (Allowed)
+      - "1..-1"   -> ["1..-1"] (Ignored, treated as literal)
+    """
+    if not indices:
+        return ["-1"]
+
+    expanded: list[str] = []
+    range_pattern = re.compile(r"^(-?\d+)\.\.(-?\d+)$")
+
+    for item in indices:
+        match = range_pattern.match(item)
+        if match:
+            start_str, end_str = match.groups()
+            try:
+                start, end = int(start_str), int(end_str)
+
+                # ENFORCE SAME SIGN:
+                # Check if one is negative and the other is non-negative.
+                # Note: 0 is treated as non-negative.
+                if (start < 0) != (end < 0):
+                    # Mixed signs (e.g. 2..-2) are ambiguous without list length.
+                    # Treat as literal (which will likely fail validation later).
+                    expanded.append(item)
+                    continue
+
+                # Determine direction
+                step = 1 if start <= end else -1
+
+                # Inclusive range generation
+                expanded.extend(str(i) for i in range(start, end + step, step))
+            except ValueError:
+                expanded.append(item)
+        else:
+            expanded.append(item)
+
+    return expanded
 
 
 def load_active_session(

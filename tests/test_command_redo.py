@@ -81,7 +81,7 @@ def test_redo_multiple_indices(session_with_excluded_pairs: Path) -> None:
 
     # THEN both pairs are re-included (excluded_pairs empty)
     assert result.exit_code == 0
-    assert "Re-included pairs: 0, 1" in result.stdout
+    assert "Re-included 2 pairs: 0, 1" in result.stdout
 
     final_session = _load_session_data(session_file)
     assert final_session.excluded_pairs == []
@@ -96,7 +96,37 @@ def test_redo_negative_and_positive_mix(session_with_excluded_pairs: Path) -> No
 
     # THEN both are re-included
     assert result.exit_code == 0
-    assert "Re-included pairs: 0, 1" in result.stdout
+    assert "Re-included 2 pairs: 0, 1" in result.stdout
+
+    final_session = _load_session_data(session_file)
+    assert final_session.excluded_pairs == []
+
+
+def test_redo_range_syntax(session_with_excluded_pairs: Path) -> None:
+    # GIVEN a session with two excluded pairs
+    session_file = session_with_excluded_pairs
+
+    # WHEN `aico redo 0..1` is run
+    result = runner.invoke(app, ["redo", "0..1"])
+
+    # THEN both pairs are re-included
+    assert result.exit_code == 0
+    assert "Re-included 2 pairs: 0, 1" in result.stdout
+
+    final_session = _load_session_data(session_file)
+    assert final_session.excluded_pairs == []
+
+
+def test_redo_negative_range(session_with_excluded_pairs: Path) -> None:
+    # GIVEN a session with two excluded pairs
+    session_file = session_with_excluded_pairs
+
+    # WHEN `aico redo -2..-1` is run
+    result = runner.invoke(app, ["redo", "-2..-1"])
+
+    # THEN both pairs are re-included
+    assert result.exit_code == 0
+    assert "Re-included 2 pairs: 0, 1" in result.stdout
 
     final_session = _load_session_data(session_file)
     assert final_session.excluded_pairs == []

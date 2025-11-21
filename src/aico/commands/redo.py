@@ -2,15 +2,18 @@ from typing import Annotated
 
 import typer
 
-from aico.core.session_loader import load_active_session, resolve_pair_index
+from aico.core.session_loader import expand_index_ranges, load_active_session, resolve_pair_index
 
 
 def redo(
     indices: Annotated[
         list[str] | None,
         typer.Argument(
-            help="Indices of the message pairs to redo. Use negative numbers to count from the end "
-            + "(e.g., -1 for the last pair). Defaults to -1 (last).",
+            help=(
+                "Indices of the message pairs to redo. "
+                "Supports single IDs ('1', '-1'), lists ('1' '5'), "
+                "and inclusive ranges ('1..5', '-3..-1'). Defaults to -1 (last)."
+            ),
         ),
     ] = None,
 ) -> None:
@@ -20,10 +23,13 @@ def redo(
     if not indices:
         indices = ["-1"]
 
+    # 1. Expand ranges
+    expanded_indices = expand_index_ranges(indices)
+
     session = load_active_session(full_history=True)
 
     resolved_indices: list[int] = []
-    for idx_str in indices:
+    for idx_str in expanded_indices:
         resolved_indices.append(resolve_pair_index(session, idx_str))
 
     current_excluded = set(session.data.excluded_pairs)
@@ -45,4 +51,4 @@ def redo(
         print(f"Re-included pair at index {actually_changed[0]} in context.")
     else:
         changed_str = ", ".join(map(str, sorted(actually_changed)))
-        print(f"Re-included pairs: {changed_str}")
+        print(f"Re-included {len(actually_changed)} pairs: {changed_str}.")
