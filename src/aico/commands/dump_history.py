@@ -1,5 +1,25 @@
+from collections.abc import Sequence
+
 from aico.core.session_loader import load_active_session
-from aico.utils import format_history_to_markdown, get_active_history
+from aico.lib.models import ChatMessageHistoryItem
+from aico.utils import get_active_history
+
+
+def format_history_to_markdown(history: Sequence[ChatMessageHistoryItem]) -> str:
+    """
+    Converts a list of chat messages to a markdown format with role comments.
+    """
+    log_parts: list[str] = []
+
+    for i, message in enumerate(history):
+        # Add a separator between messages, but not before the first one.
+        if i > 0:
+            log_parts.append("\n\n")
+
+        log_parts.append(f"<!-- llm-role: {message.role} -->\n")
+        log_parts.append(message.content)
+
+    return "".join(log_parts)
 
 
 def dump_history() -> None:

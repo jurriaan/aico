@@ -3,8 +3,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-import typer
-
 from aico.core.session_persistence import (
     SharedHistoryPersistence,
     StatefulSessionPersistence,
@@ -58,14 +56,14 @@ def load_session_and_resolve_indices(
         user_idx_val = int(index_str)
     except ValueError:
         print(f"Error: Invalid index '{index_str}'. Must be an integer.", file=sys.stderr)
-        raise typer.Exit(code=1) from None
+        exit(1)
 
     pairs = find_message_pairs(session.data.chat_history)
     num_pairs = len(pairs)
 
     if num_pairs == 0:
         print("Error: No message pairs found in history.", file=sys.stderr)
-        raise typer.Exit(code=1)
+        exit(1)
 
     # Map negative indices to their positive counterparts.
     if user_idx_val < 0:
@@ -76,7 +74,7 @@ def load_session_and_resolve_indices(
                 valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
                 err_msg = f"Error: Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
             print(err_msg, file=sys.stderr)
-            raise typer.Exit(code=1)
+            exit(1)
         resolved_index = num_pairs + user_idx_val
     else:
         if user_idx_val >= num_pairs:
@@ -86,7 +84,7 @@ def load_session_and_resolve_indices(
                 valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
                 err_msg = f"Error: Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
             print(err_msg, file=sys.stderr)
-            raise typer.Exit(code=1)
+            exit(1)
         resolved_index = user_idx_val
 
     pair_indices = pairs[resolved_index]
