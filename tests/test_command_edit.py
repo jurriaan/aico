@@ -179,6 +179,23 @@ def test_edit_fails_if_editor_not_found(session_with_two_pairs: Path, mocker: Mo
     assert "Please set the $EDITOR environment variable." in result.stderr
 
 
+def test_edit_negative_index(session_with_two_pairs: Path, mocker: MockerFixture) -> None:
+    # GIVEN a session with two pairs
+    session_file = session_with_two_pairs
+    _ = mocker.patch("subprocess.run", new=mock_editor("Updated last response"))
+
+    # WHEN `aico edit -1` is run (negative index without --)
+    result = runner.invoke(app, ["edit", "-1"])
+
+    # THEN the command succeeds and edits the last pair
+    assert result.exit_code == 0
+    assert "Updated response for message pair 1." in result.stdout
+
+    # AND the last response is updated
+    final_session = load_session_data(session_file)
+    assert final_session.chat_history[-1].content == "Updated last response"
+
+
 def test_edit_response_recomputes_derived_content_on_change(
     session_with_context_file: Path, mocker: MockerFixture
 ) -> None:
