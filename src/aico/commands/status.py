@@ -134,7 +134,7 @@ def status() -> None:  # noqa: C901
     table.add_column(width=11, justify="right")
     table.add_column(no_wrap=True, overflow="ellipsis")
 
-    table.add_row(Text("Tokens", style="bold"), Text("Cost", style="bold"), Text("Component", style="bold"))
+    table.add_row(Text("Tokens (approx.)", style="bold"), Text("Cost", style="bold"), Text("Component", style="bold"))
     table.add_row(Rule(style="dim"), Rule(style="dim"), Rule(style="dim"))
 
     for component in components:
@@ -168,7 +168,7 @@ def status() -> None:  # noqa: C901
 
     table.add_row(Rule(style="dim"), Rule(style="dim"), Rule(style="dim"))
     table.add_row(
-        Text(f"{total_tokens:,}", style="bold"),
+        Text(f"~{total_tokens:,}", style="bold"),
         Text(_format_cost(total_cost), style="bold") if has_cost_info else "",
         Text("Total", style="bold"),
     )

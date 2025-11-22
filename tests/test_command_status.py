@@ -67,7 +67,7 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
         # Check titles and headers
         assert "Session 'main'" in output
         assert "test-model-with-cost" in output
-        assert "Tokens" in output and "Cost" in output and "Component" in output
+        assert "Tokens" in output and "(approx.)" in output and "Cost" in output and "Component" in output
 
         # Check component costs and tokens
         # Tokens: 100(sys) + 40(max of 30,40 for align) + 50(hist) + 20(file) = 210
@@ -83,7 +83,7 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
         assert "Context Files (1)" in output
 
         # Check total
-        assert "210" in output and "Total" in output and "$0.0210" in output
+        assert "~210" in output and "Total" in output and "$0.0210" in output
 
         # Check context window
         assert "Context Window" in output
@@ -117,7 +117,7 @@ def test_status_handles_unknown_model(tmp_path: Path, mocker) -> None:
         output = result.stdout
         assert "10" in output and "system prompt" in output
         # Total tokens: 10(sys) + 10(align) = 20
-        assert "20" in output and "Total" in output
+        assert "~20" in output and "Total" in output
 
         # AND no cost or context window information is displayed
         assert "Cost" in output  # The column header still exists
@@ -171,7 +171,7 @@ def test_status_omits_excluded_messages(tmp_path: Path, mocker) -> None:
         mocker.patch("aico.lib.model_info.get_model_info", return_value=ModelInfo(max_input_tokens=1000))
 
         # WHEN `aico status` is run
-        result = runner.invoke(app, ["status"])
+        result = runner.invoke(app, ["status"], env={"COLUMNS": "120"})
 
         # THEN the command succeeds
         assert result.exit_code == 0
@@ -183,7 +183,7 @@ def test_status_omits_excluded_messages(tmp_path: Path, mocker) -> None:
 
         # AND the total should reflect only the active messages
         # The max alignment prompt tokens will be 50. Total = 100(sys) + 50(align) + 20(hist) = 170.
-        assert "170" in output and "Total" in output
+        assert "~170" in output and "Total" in output
 
         # AND the history summary text correctly reports the exclusion
         assert "Active window: 2 pairs (IDs 0-1), 1 sent (1 excluded" in output
