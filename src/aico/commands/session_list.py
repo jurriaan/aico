@@ -7,9 +7,6 @@ from aico.historystore.pointer import load_pointer
 
 
 def session_list() -> None:
-    """
-    List available session views (branches) for a shared-history session.
-    """
     session = load_active_session(require_type="shared")
 
     # Validate and resolve active view path via pointer helper

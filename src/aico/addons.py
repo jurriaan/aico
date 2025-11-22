@@ -1,14 +1,14 @@
-import contextlib
 import importlib.resources
 import os
 import stat
 import subprocess
 import sys
+from functools import lru_cache
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Literal
 
-from typer import Context, Typer
+import click
 
 from aico.lib.atomic_io import atomic_write_text
 from aico.lib.models import AddonInfo
@@ -109,6 +109,7 @@ def _scan_dir_for_addons(
         found_addons[addon_name] = AddonInfo(name=addon_name, path=file_path, help_text=help_text, source=source)
 
 
+@lru_cache(maxsize=1)
 def discover_addons() -> list[AddonInfo]:
     """Scans addon directories for executable scripts and returns info about them."""
     found_addons: dict[str, AddonInfo] = {}
@@ -147,32 +148,21 @@ def execute_addon(addon: AddonInfo, args: list[str]) -> None:
         sys.exit(1)
 
 
-def register_addon_commands(app: Typer) -> None:
-    """
-    Registers the addons command group with the main application.
-    """
-    addons: list[AddonInfo] = []
+def create_click_command(addon: AddonInfo) -> click.Command:
+    """Creates a Click command compatible with Typer/Rich for the addon."""
 
-    with contextlib.suppress(Exception):
-        addons = discover_addons()
+    def run_addon() -> None:
+        # When invoked via click/typer, args are in ctx.args
+        execute_addon(addon, click.get_current_context().args)
 
-    def build_addon_command(addon: AddonInfo):
-        def newfunc(context: Context) -> None:
-            return execute_addon(addon, context.args)
-
-        return newfunc
-
-    command_names = {cmd.name for cmd in app.registered_commands if cmd.name}
-    for addon in addons:
-        if addon.name not in command_names:
-            addon_command = build_addon_command(addon)
-
-            addon_command.__name__ = addon.name
-            addon_command.__doc__ = addon.help_text
-            _ = app.command(
-                name=addon.name,
-                help=addon.help_text,
-                rich_help_panel="Addons",
-                add_help_option=False,
-                context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
-            )(addon_command)
+    # We attach rich_help_panel attribute so Typer's Rich formatter picks it up
+    cmd = click.Command(
+        name=addon.name,
+        callback=run_addon,
+        help=addon.help_text,
+        context_settings={"ignore_unknown_options": True, "allow_extra_args": True},
+        add_help_option=False,
+    )
+    # Monkey-patch rich panel for Typer's rich help generation
+    cmd.__setattr__("rich_help_panel", "Addons")
+    return cmd

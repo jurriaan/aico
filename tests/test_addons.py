@@ -5,7 +5,7 @@ import typer
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
-from aico.addons import discover_addons, execute_addon, register_addon_commands
+from aico.addons import create_click_command, discover_addons, execute_addon
 from aico.lib.models import AddonInfo, SessionData
 from aico.lib.session import SESSION_FILE_NAME, save_session
 
@@ -20,62 +20,60 @@ def _create_addon(dir_path: Path, name: str, help_text: str) -> Path:
     return addon_path
 
 
-def test_register_addon_and_execute(tmp_path: Path, mocker: MockerFixture) -> None:
-    # GIVEN a Typer app and a mocked `execute_addon`
-    app = typer.Typer()
+def test_create_addon_command_execution(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN an addon info and mocked execute_addon
+    addon_path = tmp_path / "addon2"
+    addon_info = AddonInfo(name="addon2", path=addon_path, help_text="Addon 2", source="project")
     mock_execute = mocker.patch("aico.addons.execute_addon")
 
-    # AND multiple fake addons are discovered
-    addon1_path = tmp_path / "addon1"
-    addon1_info = AddonInfo(name="addon1", path=addon1_path, help_text="Addon 1", source="project")
-    addon2_path = tmp_path / "addon2"
-    addon2_info = AddonInfo(name="addon2", path=addon2_path, help_text="Addon 2", source="project")
-    mocker.patch("aico.addons.discover_addons", return_value=[addon1_info, addon2_info])
+    # WHEN creating a command from the addon info
+    cmd = create_click_command(addon_info)
 
-    # WHEN addons are registered with the app
-    register_addon_commands(app)
+    # AND invoking it directly
+    from click.testing import CliRunner as ClickRunner
 
-    # AND the second addon command is invoked
-    result = runner.invoke(app, ["addon2", "arg1", "--flag"])
+    result = ClickRunner().invoke(cmd, ["arg1", "--flag"])
 
     # THEN the command invocation succeeds
     assert result.exit_code == 0
 
-    # AND `execute_addon` was called with the correct AddonInfo for the second addon
-    mock_execute.assert_called_once_with(addon2_info, ["arg1", "--flag"])
+    # AND `execute_addon` was called with the correct AddonInfo
+    mock_execute.assert_called_once_with(addon_info, ["arg1", "--flag"])
 
 
-def test_register_addon_does_not_override_builtin(tmp_path: Path, mocker: MockerFixture) -> None:
-    # GIVEN a Typer app with a built-in command
-    app = typer.Typer()
+def test_alias_group_prioritizes_builtin(tmp_path: Path, mocker: MockerFixture) -> None:
+    from aico.main import AliasGroup
 
-    @app.command(name="dummy")
-    def _dummy() -> None:
-        pass
+    # GIVEN a Typer app using AliasGroup with a built-in command
+    app = typer.Typer(cls=AliasGroup)
 
     @app.command(name="init")
     def _init() -> None:
         """A built-in command."""
         print("built-in init called")
 
+    @app.command(name="secondary")
+    def secondary() -> None:
+        """A built-in command."""
+        print("built-in secondary called")
+
     # AND an addon with the same name as the built-in
     addon_info = AddonInfo(name="init", path=tmp_path / "init", help_text="addon init help", source="project")
     mocker.patch("aico.addons.discover_addons", return_value=[addon_info])
+    mock_execute = mocker.patch("aico.addons.execute_addon")
 
-    # WHEN addons are registered
-    register_addon_commands(app)
-
-    # AND the command is invoked
+    # WHEN the command is invoked
     result = runner.invoke(app, ["init"])
+    print(result.stdout)
+    print(result.stderr)
 
     # THEN the built-in function was called, not the addon
-    print("Result:", result.stderr)
     assert result.exit_code == 0
     assert "built-in init called" in result.stdout
+    mock_execute.assert_not_called()
 
     # AND the help text shows the built-in command, not the addon
     help_result = runner.invoke(app, ["--help"])
-    assert "Usage: root" in help_result.stdout
     assert "A built-in command." in help_result.stdout
     assert "addon init help" not in help_result.stdout
 
@@ -161,36 +159,9 @@ def test_discover_addons(tmp_path: Path, mocker: MockerFixture) -> None:
     _create_addon(mock_bundled_resources_path, "manage-context", "Bundled manage-context help")
     _create_addon(mock_bundled_resources_path, "summarize", "Bundled summarize help")
 
-    # This mock needs to return an object that behaves like a Traversable, specifically `is_dir()` and `iterdir()`.
-    # `files` returns a Traversable, which in a real scenario would represent a directory in the package.
-    # The `iterdir` method of the mock should return mock Traversable items for each file.
-    mock_bundled_traversable = mocker.MagicMock(spec=Path)  # Using Path as spec for real methods like is_dir
-    mock_bundled_traversable.is_dir.return_value = True
-
-    # Create mock Traversable objects for bundled addons
-    mock_commit_item = mocker.MagicMock(spec=Path, name="commit")  # Use Path as spec for is_file()
-    mock_commit_item.name = "commit"
-    mock_commit_item.is_file.return_value = True
-    mock_commit_item.read_bytes.return_value = (
-        b'#!/bin/sh\n[ "$1" = "--usage" ] && echo "Bundled commit help" || exit 0'
-    )
-
-    mock_manage_context_item = mocker.MagicMock(spec=Path, name="manage-context")
-    mock_manage_context_item.name = "manage-context"
-    mock_manage_context_item.is_file.return_value = True
-    mock_manage_context_item.read_bytes.return_value = (
-        b'#!/bin/sh\n[ "$1" = "--usage" ] && echo "Bundled manage-context help" || exit 0'
-    )
-
-    mock_summarize_item = mocker.MagicMock(spec=Path, name="summarize")
-    mock_summarize_item.name = "summarize"
-    mock_summarize_item.is_file.return_value = True
-    mock_summarize_item.read_bytes.return_value = (
-        b'#!/bin/sh\n[ "$1" = "--usage" ] && echo "Bundled summarize help" || exit 0'
-    )
-
-    mock_bundled_traversable.iterdir.return_value = [mock_commit_item, mock_manage_context_item, mock_summarize_item]
-    mocker.patch("importlib.resources.files", return_value=mock_bundled_traversable)
+    # Since pathlib.Path implements the Traversable protocol, we can just return
+    # the path to the temp directory we created.
+    mocker.patch("importlib.resources.files", return_value=mock_bundled_resources_path)
 
     # Mock the _get_user_cache_dir to ensure _extract_bundled_addon puts files where we expect
     mocker.patch("aico.addons._get_user_cache_dir", return_value=tmp_path / "cache" / "aico" / "bundled_addons")

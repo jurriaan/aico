@@ -1,29 +1,11 @@
-from typing import Annotated
-
 import typer
 
 from aico.core.session_loader import expand_index_ranges, load_active_session, resolve_pair_index
 
 
 def undo(
-    indices: Annotated[
-        list[str] | None,
-        typer.Argument(
-            help=(
-                "The indices of the message pairs to undo. "
-                "Supports single IDs ('1', '-1'), lists ('1' '5'), "
-                "and inclusive ranges ('1..5', '-3..-1'). Default: -1."
-            ),
-        ),
-    ] = None,
+    indices: list[str] | None,
 ) -> None:
-    """
-    Exclude one or more message pairs from the context [default: last].
-
-    This command performs a "soft delete" on the pairs at the given INDICES.
-    The messages are not removed from the history, but are flagged to be
-    ignored when building the context for the next prompt.
-    """
     if not indices:
         indices = ["-1"]
 

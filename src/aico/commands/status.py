@@ -76,9 +76,6 @@ def _get_history_summary_text(session_data: SessionData) -> Text | None:
 
 
 def status() -> None:  # noqa: C901
-    """
-    Show session status and token usage.
-    """
     session = load_active_session()
     console = Console()
 
@@ -115,8 +112,10 @@ def status() -> None:  # noqa: C901
     for component in all_components_with_tokens:
         component.cost = compute_component_cost(model_info, component.tokens)
         if component.cost is not None:
-            has_cost_info = True
             total_cost += component.cost
+
+    if model_info.input_cost_per_token is not None or model_info.output_cost_per_token is not None:
+        has_cost_info = True
 
     # 6. Context Window Info
     max_input_tokens: int | None = model_info.max_input_tokens

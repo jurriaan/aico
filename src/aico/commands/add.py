@@ -7,13 +7,11 @@ from aico.lib.session import validate_input_paths
 
 
 def add(file_paths: list[Path]) -> None:
-    """
-    Add file(s) to the session context.
-    """
+    np_file_paths = file_paths
     session = load_active_session()
 
     current_files = set(session.data.context_files)
-    valid_rels, errors_found = validate_input_paths(session.root, file_paths, require_file_exists=True)
+    valid_rels, errors_found = validate_input_paths(session.root, np_file_paths, require_file_exists=True)
 
     files_to_add: list[str] = []
     for rel in valid_rels:

@@ -5,7 +5,6 @@ import sys
 import tempfile
 from dataclasses import replace
 from pathlib import Path
-from typing import Annotated
 
 import typer
 
@@ -15,23 +14,9 @@ from aico.lib.models import AssistantChatMessage
 
 
 def edit(
-    index: Annotated[
-        str,
-        typer.Argument(
-            help="Index of the message pair to edit (e.g., -1 for last).",
-        ),
-    ] = "-1",
-    prompt: Annotated[
-        bool,
-        typer.Option(
-            "--prompt",
-            help="Edit the user prompt instead of the assistant response.",
-        ),
-    ] = False,
+    index: str,
+    prompt: bool,
 ) -> None:
-    """
-    Open a message in your default editor ($EDITOR) to make corrections.
-    """
     session, pair_indices, resolved_pair_index = load_session_and_resolve_indices(index)
 
     message_type: str

@@ -1,6 +1,5 @@
 import sys
 from datetime import UTC, datetime
-from typing import Annotated
 
 import typer
 from rich.prompt import Prompt
@@ -13,7 +12,6 @@ from aico.lib.models import (
     Mode,
     UserChatMessage,
 )
-from aico.prompts import DEFAULT_SYSTEM_PROMPT
 from aico.utils import (
     is_input_terminal,
     is_terminal,
@@ -119,72 +117,30 @@ def _invoke_llm_logic(
 
 
 def ask(
-    cli_prompt_text: Annotated[str | None, typer.Argument(help="The user's instruction for the AI.")] = None,
-    system_prompt: Annotated[str, typer.Option(help="The system prompt to guide the AI.")] = DEFAULT_SYSTEM_PROMPT,
-    passthrough: Annotated[
-        bool,
-        typer.Option(
-            help="Send a raw prompt, bypassing all context and formatting.",
-        ),
-    ] = False,
-    no_history: Annotated[
-        bool,
-        typer.Option(
-            "--no-history",
-            help="Do not include chat history in the prompt for this request.",
-        ),
-    ] = False,
-    model: Annotated[str | None, typer.Option(help="The model to use for this request")] = None,
+    cli_prompt_text: str | None,
+    system_prompt: str,
+    passthrough: bool,
+    no_history: bool,
+    model: str | None,
 ) -> None:
-    """
-    Have a conversation for planning and discussion.
-    """
     _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.CONVERSATION, passthrough, no_history, model)
 
 
 def generate_patch(
-    cli_prompt_text: Annotated[str | None, typer.Argument(help="The user's instruction for the AI.")] = None,
-    system_prompt: Annotated[str, typer.Option(help="The system prompt to guide the AI.")] = DEFAULT_SYSTEM_PROMPT,
-    passthrough: Annotated[
-        bool,
-        typer.Option(
-            help="Send a raw prompt, bypassing all context and formatting.",
-        ),
-    ] = False,
-    no_history: Annotated[
-        bool,
-        typer.Option(
-            "--no-history",
-            help="Do not include chat history in the prompt for this request.",
-        ),
-    ] = False,
-    model: Annotated[str | None, typer.Option(help="The model to use for this request")] = None,
+    cli_prompt_text: str | None,
+    system_prompt: str,
+    passthrough: bool,
+    no_history: bool,
+    model: str | None,
 ) -> None:
-    """
-    Generate code modifications as a unified diff.
-    """
     _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.DIFF, passthrough, no_history, model)
 
 
 def prompt(
-    cli_prompt_text: Annotated[str | None, typer.Argument(help="The user's instruction for the AI.")] = None,
-    system_prompt: Annotated[str, typer.Option(help="The system prompt to guide the AI.")] = DEFAULT_SYSTEM_PROMPT,
-    passthrough: Annotated[
-        bool,
-        typer.Option(
-            help="Send a raw prompt, bypassing all context and formatting.",
-        ),
-    ] = False,
-    no_history: Annotated[
-        bool,
-        typer.Option(
-            "--no-history",
-            help="Do not include chat history in the prompt for this request.",
-        ),
-    ] = False,
-    model: Annotated[str | None, typer.Option(help="The model to use for this request")] = None,
+    cli_prompt_text: str | None,
+    system_prompt: str,
+    passthrough: bool,
+    no_history: bool,
+    model: str | None,
 ) -> None:
-    """
-    Send a raw prompt to the AI.
-    """
     _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.RAW, passthrough, no_history, model)

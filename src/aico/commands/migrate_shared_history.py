@@ -1,6 +1,5 @@
 import json
 import sys
-from typing import Annotated
 
 import typer
 from pydantic import TypeAdapter, ValidationError
@@ -11,37 +10,10 @@ from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter, find_session
 
 
 def migrate_shared_history(
-    name: Annotated[
-        str,
-        typer.Option(
-            "--name",
-            "-n",
-            help="Name for the new session view (branch).",
-        ),
-    ] = "main",
-    backup: Annotated[
-        bool,
-        typer.Option(
-            "--backup/--no-backup",
-            help="Create a backup of the legacy session file before migrating.",
-        ),
-    ] = True,
-    force: Annotated[
-        bool,
-        typer.Option(
-            "--force",
-            help="Overwrite an existing view file with the same name if it exists.",
-        ),
-    ] = False,
+    name: str,
+    backup: bool,
+    force: bool,
 ) -> None:
-    """
-    Migrate a legacy single-file session (.ai_session.json) to the shared-history format.
-
-    Creates:
-      - .aico/history/ (sharded history records)
-      - .aico/sessions/<name>.json (session view)
-      - Rewrites .ai_session.json as a pointer to the new view
-    """
     session_file = find_session_file()
     if not session_file:
         print(

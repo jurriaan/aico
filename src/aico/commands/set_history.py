@@ -1,32 +1,11 @@
-from typing import Annotated
-
-import typer
-
 from aico.core.session_context import resolve_start_pair_index
 from aico.core.session_loader import load_active_session
 from aico.lib.history_utils import find_message_pairs
 
 
 def set_history(
-    pair_index_str: Annotated[
-        str,
-        typer.Argument(
-            ...,
-            help="The pair index to set as the start of the active context. "
-            + "Use 0 to make the full history active. "
-            + "Use negative numbers to count from the end. "
-            + "Use the 'clear' to clear the context.",
-        ),
-    ],
+    pair_index_str: str,
 ) -> None:
-    """
-    Set the active window of the conversation history.
-
-    Use `aico log` to see available pair indices.
-
-    - `aico set-history 0` makes the full history active.
-    - `aico set-history clear` clears the context for the next prompt.
-    """
     session = load_active_session(full_history=True)
 
     num_pairs = len(find_message_pairs(session.data.chat_history))

@@ -2,7 +2,6 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-import regex
 from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
@@ -167,6 +166,7 @@ def _handle_unified_streaming(
     messages: list[LLMChatMessage],
     session_root: Path,
 ) -> tuple[str, list[DisplayItem] | None, TokenUsage | None, float | None]:
+    import regex
     from openai import Stream
     from openai.types.chat import (
         ChatCompletionChunk,

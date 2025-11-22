@@ -23,9 +23,6 @@ def format_history_to_markdown(history: Sequence[ChatMessageHistoryItem]) -> str
 
 
 def dump_history() -> None:
-    """
-    Export active chat history to stdout in a machine-readable format.
-    """
     session = load_active_session()
     active_history = get_active_history(session.data)
     markdown_log = format_history_to_markdown(active_history)

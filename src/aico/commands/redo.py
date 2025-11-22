@@ -1,25 +1,11 @@
-from typing import Annotated
-
 import typer
 
 from aico.core.session_loader import expand_index_ranges, load_active_session, resolve_pair_index
 
 
 def redo(
-    indices: Annotated[
-        list[str] | None,
-        typer.Argument(
-            help=(
-                "Indices of the message pairs to redo. "
-                "Supports single IDs ('1', '-1'), lists ('1' '5'), "
-                "and inclusive ranges ('1..5', '-3..-1'). Defaults to -1 (last)."
-            ),
-        ),
-    ] = None,
+    indices: list[str] | None,
 ) -> None:
-    """
-    Re-include one or more message pairs in context.
-    """
     if not indices:
         indices = ["-1"]
 

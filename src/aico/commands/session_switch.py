@@ -1,5 +1,3 @@
-from typing import Annotated
-
 import typer
 
 from aico.core.session_loader import load_active_session
@@ -8,11 +6,8 @@ from aico.historystore.pointer import load_pointer
 
 
 def session_switch(
-    name: Annotated[str, typer.Argument(help="Name of the session view (branch) to activate.")],
+    name: str,
 ) -> None:
-    """
-    Switch the active session pointer to another existing view (branch).
-    """
     session = load_active_session(require_type="shared")
 
     # Validate pointer and resolve current active view (ensures shared-history)

@@ -55,7 +55,7 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
             input_cost_per_token=0.0001,
             output_cost_per_token=0.0001,
         )
-        mocker.patch("aico.commands.status.get_model_info", return_value=mock_info)
+        mocker.patch("aico.lib.model_info.get_model_info", return_value=mock_info)
 
         # WHEN `aico status` is run
         result = runner.invoke(app, ["status"])

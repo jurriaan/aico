@@ -1,25 +1,17 @@
 import sys
 from pathlib import Path
-from typing import Annotated
 
 import typer
 
 from aico.core.session_loader import load_active_session
 from aico.lib.session import (
-    complete_files_in_context,
     validate_input_paths,
 )
 
 
 def drop(
-    file_paths: Annotated[
-        list[Path],
-        typer.Argument(autocompletion=complete_files_in_context),
-    ],
+    file_paths: list[Path],
 ) -> None:
-    """
-    Remove file(s) from the session context.
-    """
     session = load_active_session()
 
     current_files = set(session.data.context_files)

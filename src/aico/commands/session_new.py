@@ -1,5 +1,3 @@
-from typing import Annotated
-
 import typer
 
 from aico.core.session_loader import load_active_session
@@ -8,19 +6,9 @@ from aico.historystore.pointer import load_pointer
 
 
 def session_new(
-    name: Annotated[str, typer.Argument(help="Name for the new, empty session view (branch).")],
-    model: Annotated[
-        str | None,
-        typer.Option(
-            "--model",
-            "-m",
-            help="The model to use for the new session. If omitted, inherits from the current session.",
-        ),
-    ] = None,
+    name: str,
+    model: str | None,
 ) -> None:
-    """
-    Create a new, empty session view (branch) and switch to it.
-    """
     if not name.strip():
         typer.echo("Error: New session name is required.", err=True)
         raise typer.Exit(code=1)

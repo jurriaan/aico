@@ -1,5 +1,3 @@
-from typing import Annotated
-
 import typer
 
 from aico.core.session_loader import load_active_session
@@ -8,18 +6,9 @@ from aico.historystore.pointer import load_pointer
 
 
 def session_fork(
-    new_name: Annotated[str, typer.Argument(help="Name for the new forked session view (branch).")],
-    until_pair: Annotated[
-        int | None,
-        typer.Option(
-            "--until-pair",
-            help="Optional pair index to truncate history at (inclusive). If omitted, full history is copied.",
-        ),
-    ] = None,
+    new_name: str,
+    until_pair: int | None,
 ) -> None:
-    """
-    Create a new session view (branch) optionally truncated at a given pair index, then switch to it.
-    """
     if not new_name.strip():
         typer.echo("Error: New session name is required.", err=True)
         raise typer.Exit(code=1)

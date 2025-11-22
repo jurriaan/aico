@@ -1,5 +1,4 @@
 import sys
-from typing import Annotated
 
 import typer
 from rich.console import Console
@@ -28,44 +27,11 @@ def _render_content(content: str, use_rich_markdown: bool) -> None:
 
 
 def last(
-    index: Annotated[
-        str,
-        typer.Argument(
-            help="The index of the message pair to show. Use negative numbers to count from the end "
-            + "(e.g., -1 for the last pair).",
-        ),
-    ] = "-1",
-    prompt: Annotated[
-        bool,
-        typer.Option(
-            "--prompt",
-            help="Show the user prompt instead of the assistant response.",
-        ),
-    ] = False,
-    verbatim: Annotated[
-        bool,
-        typer.Option(
-            "--verbatim",
-            help="Show the verbatim response from the AI with no processing.",
-        ),
-    ] = False,
-    recompute: Annotated[
-        bool,
-        typer.Option(
-            "--recompute",
-            "-r",
-            help="Recalculate the response against the current state of files. Only valid for assistant responses.",
-        ),
-    ] = False,
+    index: str,
+    prompt: bool,
+    verbatim: bool,
+    recompute: bool,
 ) -> None:
-    """
-    Output the last response or diff to stdout.
-
-    By default, it shows the assistant response from the last pair.
-    Use INDEX to select a specific pair (e.g., 0 for the first, -1 for the last).
-    Use --prompt to see the user's prompt instead of the AI's response.
-    Use --recompute to re-apply an AI's instructions to the current file state.
-    """
     from rich.markdown import Markdown
 
     session, pair_indices, _ = load_session_and_resolve_indices(index)

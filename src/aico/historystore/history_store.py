@@ -6,9 +6,6 @@ from collections import defaultdict
 from collections.abc import Sequence
 from contextlib import suppress
 from pathlib import Path
-from typing import ClassVar
-
-import regex as re
 
 from .models import SHARD_SIZE, HistoryRecord, dumps_history_record, load_history_record
 
@@ -21,8 +18,6 @@ class HistoryStore:
     - Physically shards files by SHARD_SIZE lines each: 0.jsonl, 10000.jsonl, ...
     - No meta.json; state is derived from the filesystem.
     """
-
-    _SHARD_RE: ClassVar[re.Pattern[str]] = re.compile(r"^(\d+)\.jsonl$")
 
     root: Path
     shard_size: int
@@ -193,10 +188,11 @@ class HistoryStore:
         for entry in self.root.iterdir():
             if not entry.is_file():
                 continue
-            m = self._SHARD_RE.match(entry.name)
-            if not m:
+
+            if not entry.name.endswith(".jsonl"):
                 continue
-            base = int(m.group(1))
+
+            base = int(entry.name[:-6])
             files.append((base, entry))
         files.sort(key=lambda t: t[0])
         return files

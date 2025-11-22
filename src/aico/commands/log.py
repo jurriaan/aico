@@ -8,9 +8,6 @@ from aico.lib.models import UserChatMessage
 
 
 def log() -> None:
-    """
-    Display the active conversation log.
-    """
     session = load_active_session()
     chat_history = session.data.chat_history
     console = Console()
