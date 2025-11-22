@@ -1,16 +1,13 @@
-import json
 import os
 import sys
-from json import JSONDecodeError
 from pathlib import Path
 
 import typer
 from pydantic import TypeAdapter, ValidationError
 
 from aico.historystore import load_view
-from aico.historystore.pointer import SessionPointer
 from aico.lib.atomic_io import atomic_write_text
-from aico.lib.models import FileContents, SessionData
+from aico.lib.models import FileContents, SessionData, SessionPointer
 
 SESSION_FILE_NAME = ".ai_session.json"
 
@@ -109,11 +106,11 @@ def complete_files_in_context(incomplete: str) -> list[str]:
         if "aico_session_pointer_v1" in raw_text:
             try:
                 pointer = TypeAdapter(SessionPointer).validate_json(raw_text)
-                view_path = (session_file.parent / pointer.path).resolve()
+                view_path = (session_file.parent / pointer["path"]).resolve()
                 if view_path.is_file():
                     view = load_view(view_path)
                     context_files = view.context_files
-            except (ValidationError, json.JSONDecodeError):
+            except ValidationError:
                 # It looked like a pointer but wasn't. Fall through to legacy parsing.
                 pass
 
@@ -122,7 +119,7 @@ def complete_files_in_context(incomplete: str) -> list[str]:
             session_data = SessionDataAdapter.validate_json(raw_text)
             context_files = session_data.context_files
 
-    except (ValidationError, JSONDecodeError, OSError):
+    except (ValidationError, OSError):
         return []
 
     # Build the list of completions, prioritizing prefix matches

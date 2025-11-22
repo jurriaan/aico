@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import json
 import os
 from collections import defaultdict
 from collections.abc import Sequence
 from contextlib import suppress
 from pathlib import Path
+
+from pydantic import ValidationError
 
 from .models import SHARD_SIZE, HistoryRecord, dumps_history_record, load_history_record
 
@@ -86,7 +87,7 @@ class HistoryStore:
                 for i, line in enumerate(f):
                     if i == local_offset:
                         return load_history_record(line)
-        except json.JSONDecodeError as e:
+        except ValidationError as e:
             raise ValueError(f"Corrupt JSON in shard {shard_path}: {e}") from e
 
         raise IndexError(f"Record index {index} out of range (offset not found).")
@@ -129,7 +130,7 @@ class HistoryStore:
 
                             if found_count == needed_count:
                                 break
-            except (ValueError, json.JSONDecodeError) as e:
+            except (ValueError, ValidationError) as e:
                 # Catch both Pydantic ValidationErrors and raw JSON errors
                 raise ValueError(f"Corrupt JSON in shard {shard_path}: {e}") from e
 

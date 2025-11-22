@@ -14,6 +14,11 @@ class Mode(str, Enum):
     RAW = "raw"
 
 
+class SessionPointer(TypedDict):
+    type: Literal["aico_session_pointer_v1"]
+    path: str
+
+
 @dataclass(slots=True, frozen=True)
 class BasicUserChatMessage:
     content: str

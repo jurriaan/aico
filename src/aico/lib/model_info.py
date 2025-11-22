@@ -1,4 +1,3 @@
-import json
 import os
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -58,7 +57,7 @@ def _fetch_litellm_data() -> bytes | None:
         response = httpx.get(LITELLM_MODEL_COST_MAP_URL, timeout=3.0, follow_redirects=True)
         _ = response.raise_for_status()
         return response.content
-    except (httpx.HTTPError, json.JSONDecodeError, OSError):
+    except (httpx.HTTPError, OSError):
         # Fail silently on network/parsing errors to maintain offline flow
         return None
 
@@ -71,7 +70,7 @@ def _fetch_openrouter_data() -> bytes | None:
         response = httpx.get(OPENROUTER_MODELS_URL, timeout=3.0, follow_redirects=True)
         _ = response.raise_for_status()
         return response.content
-    except (httpx.HTTPError, json.JSONDecodeError, OSError):
+    except (httpx.HTTPError, OSError):
         # Fail silently on network/parsing errors to maintain offline flow
         return None
 
@@ -83,7 +82,7 @@ def _load_cache(cache_file: Path) -> ModelCache | None:
     try:
         content = cache_file.read_text(encoding="utf-8")
         return TypeAdapter(ModelCache).validate_json(content)
-    except (ValidationError, json.JSONDecodeError, OSError):
+    except (ValidationError, OSError):
         return None
 
 

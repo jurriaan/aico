@@ -1,6 +1,5 @@
 import sys
 from dataclasses import replace
-from json import JSONDecodeError
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -21,13 +20,13 @@ from aico.historystore.models import HistoryRecord, SessionView
 from aico.historystore.pointer import (
     InvalidPointerError,
     MissingViewError,
-    SessionPointer,
 )
 from aico.historystore.pointer import load_pointer as load_pointer_helper
 from aico.lib.history_utils import find_message_pairs, map_history_start_index_to_pair
 from aico.lib.models import (
     AssistantChatMessage,
     SessionData,
+    SessionPointer,
     UserChatMessage,
 )
 from aico.lib.session import (
@@ -78,7 +77,7 @@ class LegacyJsonPersistence:
 
         try:
             session_data = SessionDataAdapter.validate_json(session_file.read_text())
-        except (ValidationError, JSONDecodeError) as e:
+        except ValidationError as e:
             print("Error: Session file is corrupt or has an invalid format", file=sys.stderr)
             print(e, file=sys.stderr)
             raise typer.Exit(code=1) from e

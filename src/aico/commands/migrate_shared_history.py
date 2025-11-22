@@ -1,11 +1,10 @@
-import json
 import sys
 
 import typer
 from pydantic import TypeAdapter, ValidationError
 
 from aico.historystore import from_legacy_session, switch_active_pointer
-from aico.historystore.pointer import SessionPointer
+from aico.lib.models import SessionPointer
 from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter, find_session_file
 
 
@@ -39,7 +38,7 @@ def migrate_shared_history(
 
     try:
         session_data = SessionDataAdapter.validate_json(raw_text)
-    except (ValidationError, json.JSONDecodeError) as e:
+    except ValidationError as e:
         print(f"Error: Failed to parse session file as a valid legacy session {session_file}: {e}", file=sys.stderr)
         raise typer.Exit(code=1) from e
 

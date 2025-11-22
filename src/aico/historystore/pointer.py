@@ -1,15 +1,9 @@
-import json
 from pathlib import Path
-from typing import Literal, final
+from typing import final
 
 from pydantic import TypeAdapter, ValidationError
-from pydantic.dataclasses import dataclass
 
-
-@dataclass(frozen=True, slots=True)
-class SessionPointer:
-    type: Literal["aico_session_pointer_v1"]
-    path: str
+from aico.lib.models import SessionPointer
 
 
 @final
@@ -46,14 +40,18 @@ def load_pointer(pointer_file: Path) -> Path:
     """
     try:
         raw_text = pointer_file.read_text(encoding="utf-8")
+
         pointer = TypeAdapter(SessionPointer).validate_json(raw_text)
-    except (ValidationError, json.JSONDecodeError) as e:
+
+        if pointer["type"] != "aico_session_pointer_v1":
+            raise InvalidPointerError(pointer_file)
+    except ValidationError as e:
         raise InvalidPointerError(pointer_file, e) from e
     except OSError:
         # Propagate IO errors; callers decide how to surface them.
         raise
 
-    view_path_abs = (pointer_file.parent / pointer.path).resolve()
+    view_path_abs = (pointer_file.parent / pointer["path"]).resolve()
     if not view_path_abs.is_file():
         raise MissingViewError(view_path_abs)
     return view_path_abs

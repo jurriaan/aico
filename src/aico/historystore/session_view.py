@@ -1,11 +1,10 @@
-import json
 from pathlib import Path
 
 from pydantic import TypeAdapter
 
 from aico.lib.atomic_io import atomic_write_text
 from aico.lib.history_utils import find_message_pairs_from_records
-from aico.lib.models import TokenUsage
+from aico.lib.models import SessionPointer, TokenUsage
 
 from .history_store import HistoryStore
 from .models import HistoryDerived, HistoryRecord, SessionView
@@ -145,6 +144,6 @@ def switch_active_pointer(pointer_file: Path, new_view_path: Path) -> None:
     except ValueError:
         rel_path = str(new_view_path.resolve())
 
-    data = {"type": "aico_session_pointer_v1", "path": rel_path}
-    json_text = json.dumps(data, separators=(",", ":"))
+    data = SessionPointer(type="aico_session_pointer_v1", path=rel_path)
+    json_text = TypeAdapter(SessionPointer).dump_json(data, indent=None)
     atomic_write_text(pointer_file, json_text)
