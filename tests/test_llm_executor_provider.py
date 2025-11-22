@@ -6,7 +6,7 @@ from unittest import mock
 
 from openai.types.chat import ChatCompletionChunk
 
-from aico.core.llm_executor import _handle_unified_streaming
+from aico.core.llm_executor import _handle_unified_streaming, _process_chunk
 
 
 def create_mock_chunk(content: str | None, usage_data: dict[str, Any] | None = None) -> Any:
@@ -18,7 +18,14 @@ def create_mock_chunk(content: str | None, usage_data: dict[str, Any] | None = N
 
     if content is not None:
         container = mock.MagicMock()
-        container.delta = mock.MagicMock(content=content, reasoning_content=None)
+        # Explicitly set optional fields to None to avoid MagicMock autovivification
+        # confusing the getattr() checks in _process_chunk
+        container.delta = mock.MagicMock(
+            content=content,
+            reasoning_content=None,
+            reasoning=None,
+            reasoning_details=None,
+        )
         chunk.choices = [container]
     else:
         # Usage chunk typically has empty choices
@@ -122,3 +129,88 @@ def test_handle_unified_streaming_openrouter(tmp_path: Path) -> None:
         # Verify extra_body was passed
         _, kwargs = mock_client.chat.completions.create.call_args
         assert kwargs["extra_body"] == {"usage": {"include": True}}
+
+
+def test_process_chunk_reasoning_variants(tmp_path: Path) -> None:
+    """
+    Verifies that _process_chunk correctly extracts reasoning from various
+    schema locations (standard fields, legacy fields, and complex details arrays).
+    """
+    # 1. Standard Field (e.g. DeepSeek)
+    chunk_standard = create_mock_chunk("")
+    chunk_standard.choices[0].delta.reasoning = "DeepSeek thinking"
+    _, _, reasoning, _ = _process_chunk(chunk_standard)
+    assert reasoning == "DeepSeek thinking"
+
+    # 2. Legacy/Proxy Field
+    chunk_legacy = create_mock_chunk("")
+    chunk_legacy.choices[0].delta.reasoning = None
+    chunk_legacy.choices[0].delta.reasoning_content = "Legacy thinking"
+    _, _, reasoning, _ = _process_chunk(chunk_legacy)
+    assert reasoning == "Legacy thinking"
+
+    # 3. Reasoning Details (Text) - e.g. Anthropic
+    chunk_details_text = create_mock_chunk("")
+    detail_text = mock.MagicMock()
+    detail_text.type = "reasoning.text"
+    detail_text.text = "Step 1: Analyze"
+    chunk_details_text.choices[0].delta.reasoning_details = [detail_text]
+
+    _, _, reasoning, _ = _process_chunk(chunk_details_text)
+    assert reasoning == "Step 1: Analyze"
+
+    # 4. Reasoning Details (Summary) - e.g. O1/O3
+    chunk_details_summary = create_mock_chunk("")
+    detail_summary = mock.MagicMock()
+    detail_summary.type = "reasoning.summary"
+    detail_summary.summary = "Calculated the trajectory"
+    chunk_details_summary.choices[0].delta.reasoning_details = [detail_summary]
+
+    _, _, reasoning, _ = _process_chunk(chunk_details_summary)
+    assert reasoning == "Calculated the trajectory"
+
+    # 5. Concatenation (Mixed) & Ignoring unknown types
+    chunk_mixed = create_mock_chunk("")
+    chunk_mixed.choices[0].delta.reasoning = "Base reasoning. "
+
+    detail_1 = mock.MagicMock()
+    detail_1.type = "reasoning.text"
+    detail_1.text = "Detail 1."
+
+    detail_encrypted = mock.MagicMock()
+    detail_encrypted.type = "reasoning.encrypted"  # Should be ignored
+    detail_encrypted.text = "Secret"
+
+    # Provide details list
+    chunk_mixed.choices[0].delta.reasoning_details = [detail_1, detail_encrypted]
+
+    _, _, reasoning, _ = _process_chunk(chunk_mixed)
+    assert reasoning == "Base reasoning. Detail 1."
+
+
+def test_extract_reasoning_header() -> None:
+    from aico.core.llm_executor import extract_reasoning_header
+
+    # Single Markdown header
+    assert extract_reasoning_header("### Planning\nNext steps") == "Planning"
+
+    # Single bold
+    assert extract_reasoning_header("**Analysis** in progress") == "Analysis"
+
+    # Multiple headers, last wins
+    assert extract_reasoning_header("## First\n### Second\n**Final**") == "Final"
+
+    # Incremental across "chunks"
+    buffer1 = "### Plan"
+    buffer2 = buffer1 + "\n**Exec**"
+    assert extract_reasoning_header(buffer2) == "Exec"
+
+    # No match
+    assert extract_reasoning_header("Plain text without headers") is None
+
+    # Malformed/incomplete
+    assert extract_reasoning_header("**Unclosed") is None
+    assert extract_reasoning_header("#### ") is None  # Empty header
+
+    # Edge: trailing stars
+    assert extract_reasoning_header("**Bold***") == "Bold"

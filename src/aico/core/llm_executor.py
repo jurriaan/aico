@@ -1,7 +1,8 @@
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
+import regex
 from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
@@ -67,6 +68,18 @@ def _build_token_usage(usage: "CompletionUsage") -> TokenUsage:
     )
 
 
+@runtime_checkable
+class ReasoningSummary(Protocol):
+    type: str
+    summary: str
+
+
+@runtime_checkable
+class ReasoningText(Protocol):
+    type: str
+    text: str
+
+
 def _process_chunk(chunk: "ChatCompletionChunk") -> tuple[str | None, TokenUsage | None, str | None, float | None]:
     token_usage: TokenUsage | None = None
     cost: float | None = None
@@ -84,8 +97,18 @@ def _process_chunk(chunk: "ChatCompletionChunk") -> tuple[str | None, TokenUsage
         choice = chunk.choices[0]
         delta = choice.delta
         content = delta.content
-        # OpenAI SDK doesn't standardize reasoning_content yet, but check just in case/for future or proxies
-        reasoning = getattr(delta, "reasoning_content", None)
+
+        reasoning = getattr(delta, "reasoning", None) or getattr(delta, "reasoning_content", None)
+
+        if details := getattr(delta, "reasoning_details", None):
+            for detail in details:  # pyright: ignore[reportAny]
+                match detail:
+                    case ReasoningText(type="reasoning.text", text=str(text)):
+                        reasoning = (reasoning or "") + text
+                    case ReasoningSummary(type="reasoning.summary", summary=str(summary)):
+                        reasoning = (reasoning or "") + summary
+                    case _:  # pyright: ignore[reportAny]
+                        pass
 
     return content, token_usage, reasoning, cost
 
@@ -160,16 +183,34 @@ def _build_messages(
     return messages
 
 
+def extract_reasoning_header(reasoning_buffer: str) -> str | None:
+    """Extracts the last Markdown header (#) or bold (**text**) from the reasoning buffer for spinner."""
+    matches = list(
+        regex.finditer(
+            r"(?:^#{1,6}\s+(?P<header>.+)$)|(?:^\*\*\s*(?P<bold>.+?)\s*\*\*)",
+            reasoning_buffer,
+            regex.MULTILINE,
+        )
+    )
+    if matches:
+        last_match = matches[-1]
+        text = last_match.group("header") or last_match.group("bold")
+        if text:
+            return text.strip()
+    return None
+
+
 def _handle_unified_streaming(
     model_name: str,
     original_file_contents: FileContents,
     messages: list[LLMChatMessage],
     session_root: Path,
 ) -> tuple[str, list[DisplayItem] | None, TokenUsage | None, float | None]:
-    import regex
     from openai import Stream
     from openai.types.chat import (
-        ChatCompletionChunk,
+        ChatCompletionChunk as Chunk,
+    )
+    from openai.types.chat import (
         ChatCompletionMessageParam,
         ChatCompletionStreamOptionsParam,
     )
@@ -195,7 +236,7 @@ def _handle_unified_streaming(
         live.update(rich_spinner, refresh=True)
 
     stream = cast(
-        Stream[ChatCompletionChunk],
+        Stream[Chunk],
         client.chat.completions.create(
             model=actual_model,
             messages=cast(list[ChatCompletionMessageParam], messages),
@@ -224,11 +265,8 @@ def _handle_unified_streaming(
 
             elif not full_llm_response_buffer and reasoning_content:
                 reasoning_buffer += reasoning_content
-                headers = list(regex.finditer(r"^\*\*(.*?)\*\*", reasoning_buffer, regex.MULTILINE))
-                if headers:
-                    last_header_text = headers[-1].group(1)
-                    if last_header_text:
-                        rich_spinner.update(text=last_header_text)
+                if header := extract_reasoning_header(reasoning_buffer):
+                    rich_spinner.update(text=header)
         live.stop()
     else:
         for chunk in stream:
