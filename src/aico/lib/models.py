@@ -1,10 +1,11 @@
 from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Literal, TypedDict
 
 from pydantic import Field
-from pydantic.dataclasses import dataclass
+from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 
 class Mode(str, Enum):
@@ -56,12 +57,11 @@ class TokenInfo:
     cost: float | None = None
 
 
-@dataclass(slots=True, frozen=True)
-class ContextFilesResponse:
+class ContextFilesResponse(TypedDict):
     context_files: list[str]
 
 
-@dataclass(slots=True, frozen=True)
+@pydantic_dataclass(slots=True, frozen=True)
 class UserChatMessage:
     role: Literal["user"]
     content: str
@@ -72,7 +72,7 @@ class UserChatMessage:
     is_excluded: bool = Field(default=False, exclude=True)  # Legacy flag; kept for in-memory compatibility
 
 
-@dataclass(slots=True, frozen=True)
+@pydantic_dataclass(slots=True, frozen=True)
 class AssistantChatMessage:
     role: Literal["assistant"]
     content: str
@@ -95,7 +95,7 @@ class MessagePairIndices:
     assistant_index: int
 
 
-@dataclass(slots=True)
+@pydantic_dataclass(slots=True)
 class SessionData:
     model: str
     context_files: list[str] = Field(default_factory=list)
