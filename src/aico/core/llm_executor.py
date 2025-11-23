@@ -1,6 +1,6 @@
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, cast
 
 import regex
 from rich.console import Console
@@ -8,6 +8,8 @@ from rich.live import Live
 from rich.spinner import Spinner
 
 from aico.aico_live_render import AicoLiveRender
+from aico.core.provider_router import get_provider_for_model
+from aico.core.providers.base import LLMProvider
 from aico.lib.diffing import (
     generate_display_items,
     generate_unified_diff,
@@ -34,83 +36,7 @@ from aico.utils import (
 )
 
 if TYPE_CHECKING:
-    from openai.types.chat import ChatCompletionChunk
-    from openai.types.completion_usage import CompletionUsage
-
-
-def _build_token_usage(usage: "CompletionUsage") -> TokenUsage:
-    # Pydantic models from OpenAI SDK, but safeguard access
-    prompt_details = getattr(usage, "prompt_tokens_details", None)
-    completion_details = getattr(usage, "completion_tokens_details", None)
-
-    cached_tokens: int | None = None
-    reasoning_tokens: int | None = None
-    cost: float | None = None
-
-    if prompt_details:
-        cached_tokens = getattr(prompt_details, "cached_tokens", None)  # pyright: ignore[reportAny]
-
-    if completion_details:
-        reasoning_tokens = getattr(completion_details, "reasoning_tokens", None)  # pyright: ignore[reportAny]
-
-    # OpenRouter custom field 'cost' injected into the usage object
-    cost_val = getattr(usage, "cost", None)
-    if isinstance(cost_val, float | int):
-        cost = float(cost_val)
-
-    return TokenUsage(
-        prompt_tokens=usage.prompt_tokens,
-        completion_tokens=usage.completion_tokens,
-        total_tokens=usage.total_tokens,
-        cached_tokens=cached_tokens,
-        reasoning_tokens=reasoning_tokens,
-        cost=cost,
-    )
-
-
-@runtime_checkable
-class ReasoningSummary(Protocol):
-    type: str
-    summary: str
-
-
-@runtime_checkable
-class ReasoningText(Protocol):
-    type: str
-    text: str
-
-
-def _process_chunk(chunk: "ChatCompletionChunk") -> tuple[str | None, TokenUsage | None, str | None, float | None]:
-    token_usage: TokenUsage | None = None
-    cost: float | None = None
-
-    # Check for usage block (typically last chunk in OpenRouter/OpenAI streams)
-    if chunk.usage:
-        token_usage = _build_token_usage(chunk.usage)
-        cost = token_usage.cost
-
-    # Check for content delta
-    content: str | None = None
-    reasoning: str | None = None
-
-    if chunk.choices:
-        choice = chunk.choices[0]
-        delta = choice.delta
-        content = delta.content
-
-        reasoning = getattr(delta, "reasoning", None) or getattr(delta, "reasoning_content", None)
-
-        if details := getattr(delta, "reasoning_details", None):
-            for detail in details:  # pyright: ignore[reportAny]
-                match detail:
-                    case ReasoningText(type="reasoning.text", text=str(text)):
-                        reasoning = (reasoning or "") + text
-                    case ReasoningSummary(type="reasoning.summary", summary=str(summary)):
-                        reasoning = (reasoning or "") + summary
-                    case _:  # pyright: ignore[reportAny]
-                        pass
-
-    return content, token_usage, reasoning, cost
+    pass
 
 
 def _build_messages(
@@ -201,21 +127,16 @@ def extract_reasoning_header(reasoning_buffer: str) -> str | None:
 
 
 def _handle_unified_streaming(
-    model_name: str,
+    provider: LLMProvider,
+    clean_model_id: str,
     original_file_contents: FileContents,
     messages: list[LLMChatMessage],
     session_root: Path,
 ) -> tuple[str, list[DisplayItem] | None, TokenUsage | None, float | None]:
-    from openai import Stream
-    from openai.types.chat import (
-        ChatCompletionChunk as Chunk,
-    )
     from openai.types.chat import (
         ChatCompletionMessageParam,
         ChatCompletionStreamOptionsParam,
     )
-
-    from aico.core.provider_router import create_client
 
     full_llm_response_buffer: str = ""
     token_usage: TokenUsage | None = None
@@ -223,7 +144,7 @@ def _handle_unified_streaming(
     live: Live | None = None
 
     # Create configured client and get resolved model/params
-    client, actual_model, extra_kwargs = create_client(model_name)
+    client, actual_model, extra_kwargs = provider.configure_request(clean_model_id)
 
     # OpenAI native usage requirement
     stream_options: ChatCompletionStreamOptionsParam = {"include_usage": True}
@@ -235,49 +156,47 @@ def _handle_unified_streaming(
         live.start()
         live.update(rich_spinner, refresh=True)
 
-    stream = cast(
-        Stream[Chunk],
-        client.chat.completions.create(
-            model=actual_model,
-            messages=cast(list[ChatCompletionMessageParam], messages),
-            stream=True,
-            stream_options=stream_options,
-            **extra_kwargs,  # pyright: ignore[reportArgumentType, reportCallIssue]
-        ),
+    stream = client.chat.completions.create(
+        model=actual_model,
+        messages=cast(list[ChatCompletionMessageParam], messages),
+        stream=True,
+        stream_options=stream_options,
+        **extra_kwargs,  # pyright: ignore[reportAny]
     )
 
     if live:
         reasoning_buffer = ""
         for chunk in stream:
-            delta, t_usage, reasoning_content, t_cost = _process_chunk(chunk)
-            if t_usage:
-                token_usage = t_usage
-            if t_cost is not None:
-                exact_cost = t_cost
-
-            if delta:
-                full_llm_response_buffer += delta
+            normalized_chunk = provider.process_chunk(chunk)
+            if normalized_chunk.content:
+                full_llm_response_buffer += normalized_chunk.content
 
                 display_items = generate_display_items(original_file_contents, full_llm_response_buffer, session_root)
                 renderable_group = render_display_items_to_rich(display_items)
 
                 live.update(renderable_group, refresh=True)
 
-            elif not full_llm_response_buffer and reasoning_content:
-                reasoning_buffer += reasoning_content
+            if normalized_chunk.token_usage:
+                token_usage = normalized_chunk.token_usage
+            if normalized_chunk.cost is not None:
+                exact_cost = normalized_chunk.cost
+
+            elif not full_llm_response_buffer and normalized_chunk.reasoning:
+                reasoning_buffer += normalized_chunk.reasoning
                 if header := extract_reasoning_header(reasoning_buffer):
                     rich_spinner.update(text=header)
         live.stop()
     else:
         for chunk in stream:
-            delta, t_usage, _, t_cost = _process_chunk(chunk)
-            if t_usage:
-                token_usage = t_usage
-            if t_cost is not None:
-                exact_cost = t_cost
+            normalized_chunk = provider.process_chunk(chunk)
 
-            if delta:
-                full_llm_response_buffer += delta
+            if normalized_chunk.content:
+                full_llm_response_buffer += normalized_chunk.content
+
+            if normalized_chunk.token_usage:
+                token_usage = normalized_chunk.token_usage
+            if normalized_chunk.cost is not None:
+                exact_cost = normalized_chunk.cost
 
     # Warnings collection
     if full_llm_response_buffer:
@@ -312,6 +231,7 @@ def execute_interaction(
     Returns an InteractionResult object with structured fields.
     """
     model_name = model_override or session_data.model
+    provider, clean_model_id = get_provider_for_model(model_name)
 
     if passthrough:
         original_file_contents: FileContents = {}
@@ -333,7 +253,7 @@ def execute_interaction(
 
     start_time = time.monotonic()
     llm_response_content, display_items, token_usage, exact_cost = _handle_unified_streaming(
-        model_name, original_file_contents, messages, session_root
+        provider, clean_model_id, original_file_contents, messages, session_root
     )
     duration_ms = int((time.monotonic() - start_time) * 1000)
 

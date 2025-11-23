@@ -4,83 +4,44 @@ from unittest import mock
 import pytest
 from openai import OpenAI
 
-from aico.core.provider_router import create_client, resolve_provider_config
+from aico.core.provider_router import get_provider_for_model
+from aico.core.providers.openai import OpenAIProvider
+from aico.core.providers.openrouter import OpenRouterProvider
 
 
-def test_resolve_openrouter_defaults() -> None:
-    with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-test"}, clear=True):
-        api_key, base_url, model, is_or = resolve_provider_config("openrouter/google/gemini-flash")
-        assert api_key == "sk-or-test"
-        assert base_url == "https://openrouter.ai/api/v1"
-        assert model == "google/gemini-flash"
-        assert is_or is True
+def test_get_provider_for_model_openai():
+    provider, clean_model = get_provider_for_model("openai/gpt-4o")
+    assert isinstance(provider, OpenAIProvider)
+    assert clean_model == "gpt-4o"
 
 
-def test_resolve_openrouter_override_base() -> None:
-    with mock.patch.dict(
-        os.environ,
-        {"OPENROUTER_API_KEY": "sk-or-test", "OPENROUTER_API_BASE": "https://custom.or/v1"},
-        clear=True,
-    ):
-        _, base_url, _, _ = resolve_provider_config("openrouter/foo")
-        assert base_url == "https://custom.or/v1"
+def test_get_provider_for_model_openrouter():
+    provider, clean_model = get_provider_for_model("openrouter/anthropic/claude-3.5-sonnet")
+    assert isinstance(provider, OpenRouterProvider)
+    assert clean_model == "anthropic/claude-3.5-sonnet"
 
 
-def test_resolve_openai_prefix() -> None:
-    with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-oa-test"}, clear=True):
-        api_key, base_url, model, is_or = resolve_provider_config("openai/gpt-4o")
-        assert api_key == "sk-oa-test"
-        assert base_url is None  # Defaults to library default
-        assert model == "gpt-4o"
-        assert is_or is False
+def test_get_provider_for_model_invalid_prefix():
+    with pytest.raises(ValueError, match="Unrecognized model provider format"):
+        _ = get_provider_for_model("invalid/model")
 
 
-def test_resolve_openai_implicit_fails() -> None:
-    with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-oa-test"}, clear=True):
-        with pytest.raises(ValueError) as excinfo:
-            _ = resolve_provider_config("gpt-4o")
-        assert (
-            "Unrecognized model provider format for 'gpt-4o'. Please use 'openrouter/<model>' or 'openai/<model>', "
-            + "or ensure the model is supported."
-            in str(excinfo.value)
-        )
+def test_openai_provider_configure_request():
+    with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}):
+        provider = OpenAIProvider()
+        client, model_id, kwargs = provider.configure_request("gpt-4o")
+        assert isinstance(client, OpenAI)
+        assert client.api_key == "sk-test"
+        assert model_id == "gpt-4o"
+        assert kwargs == {}
 
 
-def test_resolve_openai_override_base() -> None:
-    with mock.patch.dict(
-        os.environ,
-        {"OPENAI_API_KEY": "sk-oa-test", "OPENAI_BASE_URL": "http://localhost:11434/v1"},
-        clear=True,
-    ):
-        _, base_url, _, _ = resolve_provider_config("openai/gpt-4o")
-        assert base_url == "http://localhost:11434/v1"
-
-
-def test_missing_key_exits() -> None:
-    with mock.patch.dict(os.environ, {}, clear=True):
-        with pytest.raises(ValueError) as excinfo:
-            _ = resolve_provider_config("openrouter/foo")
-        assert "OpenRouter requires the environment variable 'OPENROUTER_API_KEY' to be set." in str(excinfo.value)
-
-
-def test_create_client_openrouter() -> None:
-    with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-test"}, clear=True):
-        client, model, kwargs = create_client("openrouter/anthropic/claude-3")
-
+def test_openrouter_provider_configure_request():
+    with mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": "sk-or-test"}):
+        provider = OpenRouterProvider()
+        client, model_id, kwargs = provider.configure_request("anthropic/claude-3.5-sonnet")
         assert isinstance(client, OpenAI)
         assert client.api_key == "sk-or-test"
         assert str(client.base_url) == "https://openrouter.ai/api/v1/"
-        assert model == "anthropic/claude-3"
-        assert kwargs.get("extra_body") == {"usage": {"include": True}}
-
-
-def test_create_client_openai() -> None:
-    with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-oa-test"}, clear=True):
-        client, model, kwargs = create_client("openai/gpt-4o")
-
-        assert isinstance(client, OpenAI)
-        assert client.api_key == "sk-oa-test"
-        # OpenAI client default base_url is https://api.openai.com/v1/
-        assert str(client.base_url) == "https://api.openai.com/v1/"
-        assert model == "gpt-4o"
-        assert "extra_body" not in kwargs
+        assert model_id == "anthropic/claude-3.5-sonnet"
+        assert kwargs == {"extra_body": {"usage": {"include": True}}}

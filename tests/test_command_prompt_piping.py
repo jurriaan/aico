@@ -6,9 +6,9 @@ from typing import Any
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
+from aico.core.providers.base import NormalizedChunk
+from aico.lib.models import TokenUsage
 from aico.main import app
-
-from .mocks import MockLLMUsage
 
 runner = CliRunner()
 
@@ -45,12 +45,26 @@ def setup_piping_test(
     mocker.patch("aico.commands.prompt.is_terminal", return_value=False)
     mocker.patch("aico.core.llm_executor.is_terminal", return_value=False)
 
+    # Mock the provider factory
+    mock_provider = mocker.MagicMock()
     mock_client = mocker.MagicMock()
-    mocker.patch("aico.core.provider_router.create_client", return_value=(mock_client, "test-model", {}))
+    mock_provider.configure_request.return_value = (mock_client, "test-model", {})
+    mocker.patch("aico.core.llm_executor.get_provider_for_model", return_value=(mock_provider, "test-model"))
 
-    mock_usage = MockLLMUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20, cost=0.005)
+    usage = TokenUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20, cost=0.005)
+
+    # Mock process_chunk to handle the raw chunks and return NormalizedChunk
+    def mock_process_chunk(chunk):
+        content = chunk.choices[0].delta.content if chunk.choices else None
+        tu = usage if hasattr(chunk, "usage") and chunk.usage else None
+        # Add a default cost for these tests
+        cost = 0.005 if tu else None
+        return NormalizedChunk(content=content, token_usage=tu, cost=cost)
+
+    mock_provider.process_chunk.side_effect = mock_process_chunk
+
     mock_chunk = _create_mock_stream_chunk(llm_response_content, mocker=mocker)
-    mock_chunk.usage = mock_usage
+    mock_chunk.usage = usage
 
     mock_client.chat.completions.create.return_value = iter([mock_chunk])
 

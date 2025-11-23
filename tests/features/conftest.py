@@ -18,6 +18,7 @@ from pytest_bdd import exceptions, gherkin_parser, given, parsers, then, when
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
+from aico.core.providers.base import NormalizedChunk
 from aico.historystore import HistoryRecord, HistoryStore, append_pair_to_view, load_view, save_view
 from aico.historystore.pointer import load_pointer
 from aico.lib.history_utils import find_message_pairs
@@ -187,8 +188,15 @@ def given_history_with_specific_content(
 
 @given(parsers.parse("for this scenario, the LLM will stream the response:"))
 def given_llm_will_stream_response(mocker: MockerFixture, docstring: str) -> None:
+    mock_provider = mocker.MagicMock()
     mock_client = mocker.MagicMock()
-    _ = mocker.patch("aico.core.provider_router.create_client", return_value=(mock_client, "test-model", {}))
+    mock_provider.configure_request.return_value = (mock_client, "test-model", {})
+    mocker.patch("aico.core.llm_executor.get_provider_for_model", return_value=(mock_provider, "test-model"))
+
+    def mock_process_chunk(chunk):
+        return NormalizedChunk(content=chunk.choices[0].delta.content if chunk.choices else None)
+
+    mock_provider.process_chunk.side_effect = mock_process_chunk
 
     def response_generator() -> Generator[Any, None, None]:
         chunk_size = 10
