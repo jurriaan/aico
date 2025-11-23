@@ -8,6 +8,7 @@ from rich.live import Live
 from rich.spinner import Spinner
 
 from aico.aico_live_render import AicoLiveRender
+from aico.core.prompt_helpers import reconstruct_historical_messages
 from aico.core.provider_router import get_provider_for_model
 from aico.core.providers.base import LLMProvider
 from aico.core.session_context import build_active_context
@@ -28,13 +29,12 @@ from aico.lib.models import (
     WarningMessage,
 )
 from aico.lib.session import build_original_file_contents
-from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
-from aico.utils import (
+from aico.lib.ui import (
     calculate_and_display_cost,
     is_terminal,
-    reconstruct_historical_messages,
     render_display_items_to_rich,
 )
+from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
 
 if TYPE_CHECKING:
     pass

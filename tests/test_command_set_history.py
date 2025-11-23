@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from aico.core.session_context import build_active_context
 from aico.historystore import (
     HistoryStore,
     SessionView,
@@ -18,7 +19,6 @@ from aico.historystore.models import HistoryRecord
 from aico.lib.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
 from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter, save_session
 from aico.main import app
-from aico.core.session_context import build_active_context
 
 runner = CliRunner()
 

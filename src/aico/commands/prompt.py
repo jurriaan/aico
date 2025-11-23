@@ -12,7 +12,7 @@ from aico.lib.models import (
     Mode,
     UserChatMessage,
 )
-from aico.utils import (
+from aico.lib.ui import (
     is_input_terminal,
     is_terminal,
     reconstruct_display_content_for_piping,

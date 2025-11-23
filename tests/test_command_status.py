@@ -47,7 +47,7 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
 
         # Mock token counting to return fixed values:
         # system prompt (100), alignment 1 (30), alignment 2 (40), chat history (50), context files (20)
-        mocker.patch("aico.utils.count_tokens_for_messages", side_effect=[100, 30, 40, 50, 20])
+        mocker.patch("aico.core.tokens.count_tokens_for_messages", side_effect=[100, 30, 40, 50, 20])
 
         # Mock model info to return cost and window info
         mock_info = ModelInfo(
@@ -104,7 +104,7 @@ def test_status_handles_unknown_model(tmp_path: Path, mocker) -> None:
         save_session(session_dir / SESSION_FILE_NAME, session_data)
 
         # Mock token counting
-        mocker.patch("aico.utils.count_tokens_for_messages", return_value=10)
+        mocker.patch("aico.core.tokens.count_tokens_for_messages", return_value=10)
 
         # Mock model info to return empty info (no cost, no window)
         mocker.patch("aico.lib.model_info.get_model_info", return_value=ModelInfo())
@@ -164,7 +164,7 @@ def test_status_omits_excluded_messages(tmp_path: Path, mocker) -> None:
         save_session(session_dir / SESSION_FILE_NAME, session_data)
 
         # AND the token counter is mocked
-        mock_token_counter = mocker.patch("aico.utils.count_tokens_for_messages")
+        mock_token_counter = mocker.patch("aico.core.tokens.count_tokens_for_messages")
         # system, align-convo, align-diff, chat history for active messages
         mock_token_counter.side_effect = [100, 50, 40, 20]
 
@@ -231,7 +231,7 @@ def test_status_history_summary_logic(tmp_path: Path, mocker) -> None:
             excluded_pairs=[2],
         )
         save_session(session_dir / SESSION_FILE_NAME, session_data)
-        mocker.patch("aico.utils.count_tokens_for_messages", return_value=10)
+        mocker.patch("aico.core.tokens.count_tokens_for_messages", return_value=10)
         mocker.patch("aico.lib.model_info.get_model_info", return_value=ModelInfo())
 
         # WHEN `aico status` is run
@@ -253,7 +253,7 @@ def test_status_handles_dangling_messages(tmp_path: Path, mocker) -> None:
         ]
         session_data = SessionData(model="test-model", chat_history=history, context_files=[])
         save_session(session_dir / SESSION_FILE_NAME, session_data)
-        mocker.patch("aico.utils.count_tokens_for_messages", return_value=10)
+        mocker.patch("aico.core.tokens.count_tokens_for_messages", return_value=10)
         mocker.patch("aico.lib.model_info.get_model_info", return_value=ModelInfo())
 
         # WHEN `aico status` is run

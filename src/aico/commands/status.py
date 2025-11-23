@@ -9,16 +9,16 @@ from rich.text import Text
 
 from aico.core.session_context import build_active_context, summarize_active_window
 from aico.core.session_loader import load_active_session
-from aico.historystore.pointer import InvalidPointerError, MissingViewError, load_pointer
-from aico.lib.model_info import get_model_info
-from aico.lib.models import SessionData, TokenInfo
-from aico.utils import (
+from aico.core.tokens import (
     compute_component_cost,
     count_active_history_tokens,
     count_context_files_tokens,
     count_max_alignment_tokens,
     count_system_tokens,
 )
+from aico.historystore.pointer import InvalidPointerError, MissingViewError, load_pointer
+from aico.lib.model_info import get_model_info
+from aico.lib.models import SessionData, TokenInfo
 
 
 def _get_session_name(session_file: Path) -> str | None:

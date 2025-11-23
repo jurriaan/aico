@@ -7,10 +7,11 @@ from pathlib import Path
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
+from aico.core.tokens import count_tokens_for_messages
 from aico.lib.models import AssistantChatMessage, ChatMessageHistoryItem, LLMChatMessage, Mode, SessionData, TokenUsage
 from aico.lib.session import SESSION_FILE_NAME, save_session
+from aico.lib.ui import calculate_and_display_cost
 from aico.main import app
-from aico.utils import calculate_and_display_cost, count_tokens_for_messages
 
 runner = CliRunner()
 
@@ -25,7 +26,7 @@ def test_aico_session_file_env_var_works(tmp_path: Path, mocker: MockerFixture) 
     save_session(session_file, SessionData(model="test-model", context_files=[], chat_history=[]))
 
     # Avoid token counting and model fetch overhead
-    mocker.patch("aico.utils.count_tokens_for_messages", return_value=10)
+    mocker.patch("aico.core.tokens.count_tokens_for_messages", return_value=10)
     mocker.patch("aico.lib.model_info.get_model_info", return_value=ModelInfo())
 
     # WHEN AICO_SESSION_FILE is set to that absolute path
@@ -77,7 +78,7 @@ def test_aico_session_file_env_var_not_set_uses_upward_search(tmp_path: Path, mo
         save_session(session_file, SessionData(model="upward-search-model", context_files=[], chat_history=[]))
 
         # AND dependencies are mocked
-        mocker.patch("aico.utils.count_tokens_for_messages", return_value=10)
+        mocker.patch("aico.core.tokens.count_tokens_for_messages", return_value=10)
         mocker.patch("aico.lib.model_info.get_model_info", return_value=ModelInfo())
 
         # AND AICO_SESSION_FILE is not set
@@ -89,14 +90,12 @@ def test_aico_session_file_env_var_not_set_uses_upward_search(tmp_path: Path, mo
         assert "upward-search-model" in result.stdout
 
 
-
-
 def test_calculate_and_display_cost_logic(mocker: MockerFixture) -> None:
     from aico.lib.model_info import ModelInfo
     from aico.lib.models import UserChatMessage
 
     # GIVEN
-    mocker.patch("aico.utils.is_terminal", return_value=False)
+    mocker.patch("aico.lib.ui.is_terminal", return_value=False)
     mock_print = mocker.patch("builtins.print")
 
     # Mock ModelInfo to return costs that result in 0.50 total
@@ -104,7 +103,7 @@ def test_calculate_and_display_cost_logic(mocker: MockerFixture) -> None:
     # 50 completion * 0.006 = 0.30
     # Total = 0.50
     mock_model_info = ModelInfo(input_cost_per_token=0.002, output_cost_per_token=0.006)
-    mocker.patch("aico.utils.get_model_info", return_value=mock_model_info)
+    mocker.patch("aico.lib.ui.get_model_info", return_value=mock_model_info)
 
     chat_history: Sequence[ChatMessageHistoryItem] = [
         UserChatMessage(role="user", content="u0", mode=Mode.CONVERSATION, timestamp="t0"),

@@ -146,7 +146,7 @@ def test_status_renders_paths_with_special_characters_literal(
     save_view(view_path, view)
 
     # AND token counting/model info are mocked to keep output deterministic
-    mocker.patch("aico.utils.count_tokens_for_messages", return_value=10)
+    mocker.patch("aico.core.tokens.count_tokens_for_messages", return_value=10)
     mocker.patch("aico.lib.model_info.get_model_info", return_value=ModelInfo())
 
     # WHEN `aico status` is run

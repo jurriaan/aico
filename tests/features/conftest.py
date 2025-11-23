@@ -223,7 +223,7 @@ def given_llm_will_stream_response(mocker: MockerFixture, docstring: str) -> Non
 @given("for this scenario, the token counter will report pre-defined counts")
 def given_mocked_token_counts(mocker: MockerFixture) -> None:
     # Mock the centralized token counting helper used by `status`
-    mock_token_counter = mocker.patch("aico.utils.count_tokens_for_messages")
+    mock_token_counter = mocker.patch("aico.core.tokens.count_tokens_for_messages")
     mock_token_counter.side_effect = [
         100,  # system prompt
         40,  # alignment prompt 1
@@ -238,7 +238,7 @@ def given_model_has_cost(mocker: MockerFixture, model_name: str) -> None:
     # Mock the component cost calculator in utils to return simple predictable costs
     # Mock the component cost calculator in utils
     _ = mocker.patch(
-        "aico.utils.compute_component_cost",
+        "aico.core.tokens.compute_component_cost",
         side_effect=lambda model, prompt_tokens, completion_tokens=0: float(prompt_tokens + completion_tokens) * 0.0001,
     )
 
