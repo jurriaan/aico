@@ -3,8 +3,8 @@ from pathlib import Path
 
 import typer
 
+from aico.consts import SESSION_FILE_NAME
 from aico.historystore import SessionView, save_view, switch_active_pointer
-from aico.lib.session import SESSION_FILE_NAME
 
 
 def init(

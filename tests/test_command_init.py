@@ -5,7 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from aico.lib.session import SESSION_FILE_NAME
+from aico.consts import SESSION_FILE_NAME
 from aico.main import app
 
 runner = CliRunner()

@@ -8,6 +8,7 @@ import pytest
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
+from aico.consts import SESSION_FILE_NAME
 from aico.historystore import (
     HistoryStore,
     SessionView,
@@ -17,7 +18,6 @@ from aico.historystore import (
 )
 from aico.historystore.models import HistoryRecord
 from aico.lib.models import Mode
-from aico.lib.session import SESSION_FILE_NAME
 from aico.main import app
 
 runner = CliRunner()

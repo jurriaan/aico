@@ -4,6 +4,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from aico.consts import SESSION_FILE_NAME
+from aico.core.session_persistence import save_legacy_session_file as save_session
 from aico.historystore import (
     HistoryStore,
     SessionView,
@@ -14,7 +16,7 @@ from aico.historystore import (
 )
 from aico.historystore.models import HistoryRecord
 from aico.lib.models import Mode, SessionData
-from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter, save_session
+from aico.lib.session_data_adapter import SessionDataAdapter
 from aico.main import app
 
 runner = CliRunner()

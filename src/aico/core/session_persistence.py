@@ -6,6 +6,7 @@ from typing import Protocol, runtime_checkable
 import typer
 from pydantic import TypeAdapter, ValidationError
 
+from aico.consts import SESSION_FILE_NAME
 from aico.historystore import (
     HistoryStore,
     append_pair_to_view,
@@ -22,6 +23,7 @@ from aico.historystore.pointer import (
     MissingViewError,
 )
 from aico.historystore.pointer import load_pointer as load_pointer_helper
+from aico.lib.atomic_io import atomic_write_text
 from aico.lib.history_utils import find_message_pairs, map_history_start_index_to_pair
 from aico.lib.models import (
     AssistantChatMessage,
@@ -29,14 +31,8 @@ from aico.lib.models import (
     SessionPointer,
     UserChatMessage,
 )
-from aico.lib.session import (
-    SESSION_FILE_NAME,
-    SessionDataAdapter,
-    find_session_file,
-)
-from aico.lib.session import (
-    save_session as legacy_save_session,
-)
+from aico.lib.session_data_adapter import SessionDataAdapter
+from aico.lib.session_find import find_session_file
 
 
 @runtime_checkable
@@ -120,7 +116,7 @@ class LegacyJsonPersistence:
         session_file, session_data = self.load()
         session_data.chat_history.append(user_msg)
         session_data.chat_history.append(asst_msg)
-        legacy_save_session(session_file, session_data)
+        save_legacy_session_file(session_file, session_data)
 
     def edit_message(
         self,
@@ -137,7 +133,7 @@ class LegacyJsonPersistence:
             updated_message = replace(target_message, content=new_content)
             session_data.chat_history[message_index] = updated_message
 
-        legacy_save_session(session_file, session_data)
+        save_legacy_session_file(session_file, session_data)
 
     def update_view_metadata(
         self,
@@ -168,7 +164,7 @@ class LegacyJsonPersistence:
                 changed = True
 
         if changed:
-            legacy_save_session(session_file, session_data)
+            save_legacy_session_file(session_file, session_data)
 
 
 class SharedHistoryPersistence:
@@ -424,3 +420,9 @@ def get_persistence(require_type: str = "any") -> StatefulSessionPersistence:
             return LegacyJsonPersistence()
 
     return SharedHistoryPersistence(session_file_path)
+
+
+def save_legacy_session_file(session_file: Path, session_data: SessionData) -> None:
+    """Saves a SessionData object to a legacy single-file JSON format."""
+    text = SessionDataAdapter.dump_json(session_data, indent=2)
+    atomic_write_text(session_file, text)

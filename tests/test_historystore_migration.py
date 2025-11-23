@@ -11,7 +11,7 @@ from aico.historystore import (
 )
 from aico.historystore.models import SessionView as SessionViewModel
 from aico.lib.models import UserChatMessage
-from aico.lib.session import SessionDataAdapter
+from aico.lib.session_data_adapter import SessionDataAdapter
 
 
 def _make_legacy_chat_item(

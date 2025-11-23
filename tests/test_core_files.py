@@ -3,10 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from aico.lib.session import build_original_file_contents
+from aico.core.files import get_context_file_contents
 
 
-def test_build_original_file_contents_only_includes_existing_and_warns_for_missing(
+def test_get_context_file_contents_only_includes_existing_and_warns_for_missing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # GIVEN a session root and some files on disk
@@ -26,7 +26,7 @@ def test_build_original_file_contents_only_includes_existing_and_warns_for_missi
     ]
 
     # WHEN building the original file contents
-    contents = build_original_file_contents(context_files, session_root)
+    contents = get_context_file_contents(context_files, session_root)
 
     # THEN the returned dictionary only contains content for existing files
     assert sorted(list(contents.keys())) == sorted(["existing.py", "sub/another.py"])
@@ -41,12 +41,12 @@ def test_build_original_file_contents_only_includes_existing_and_warns_for_missi
     assert "another.py" not in err_output
 
 
-def test_build_original_file_contents_handles_empty_list(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_get_context_file_contents_handles_empty_list(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     # GIVEN an empty context_files list
     context_files: list[str] = []
 
     # WHEN building contents
-    contents = build_original_file_contents(context_files, tmp_path)
+    contents = get_context_file_contents(context_files, tmp_path)
 
     # THEN the result is an empty dictionary and no warnings are printed
     assert contents == {}

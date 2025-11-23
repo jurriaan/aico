@@ -8,6 +8,7 @@ from rich.live import Live
 from rich.spinner import Spinner
 
 from aico.aico_live_render import AicoLiveRender
+from aico.core.files import get_context_file_contents
 from aico.core.prompt_helpers import reconstruct_historical_messages
 from aico.core.provider_router import get_provider_for_model
 from aico.core.providers.base import LLMProvider
@@ -28,7 +29,6 @@ from aico.lib.models import (
     TokenUsage,
     WarningMessage,
 )
-from aico.lib.session import build_original_file_contents
 from aico.lib.ui import (
     calculate_and_display_cost,
     is_terminal,
@@ -238,9 +238,7 @@ def execute_interaction(
     if passthrough:
         original_file_contents: FileContents = {}
     else:
-        original_file_contents = build_original_file_contents(
-            context_files=context["context_files"], session_root=session_root
-        )
+        original_file_contents = get_context_file_contents(context["context_files"], session_root)
 
     messages = _build_messages(
         active_history=context["active_history"],

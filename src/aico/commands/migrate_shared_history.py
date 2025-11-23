@@ -3,9 +3,11 @@ import sys
 import typer
 from pydantic import TypeAdapter, ValidationError
 
+from aico.consts import SESSION_FILE_NAME
 from aico.historystore import from_legacy_session, switch_active_pointer
 from aico.lib.models import SessionPointer
-from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter, find_session_file
+from aico.lib.session_data_adapter import SessionDataAdapter
+from aico.lib.session_find import find_session_file
 
 
 def migrate_shared_history(

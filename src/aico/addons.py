@@ -12,7 +12,7 @@ import click
 
 from aico.lib.atomic_io import atomic_write_text
 from aico.lib.models import AddonInfo
-from aico.lib.session import find_session_file
+from aico.lib.session_find import find_session_file
 
 # Constants for addon directories
 _PROJECT_ADDONS_DIR = ".aico/addons"

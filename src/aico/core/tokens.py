@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from aico.core.files import read_file_safe
 from aico.core.prompt_helpers import reconstruct_historical_messages
 from aico.lib.models import ChatMessageHistoryItem, LLMChatMessage, ModelInfo, SessionData, TokenInfo
 from aico.prompts import ALIGNMENT_PROMPTS, DEFAULT_SYSTEM_PROMPT, DIFF_MODE_INSTRUCTIONS
@@ -62,14 +63,12 @@ def count_context_files_tokens(
     file_infos: list[TokenInfo] = []
     skipped_files: list[str] = []
     for file_path_str in session_data.context_files:
-        try:
-            file_path = session_root / file_path_str
-            content = file_path.read_text(encoding="utf-8")
+        file_path = session_root / file_path_str
+        content = read_file_safe(file_path)
+        if content is not None:
             wrapper = f'<file path="{file_path_str}">\n{content}\n</file>\n'
             tokens = count_tokens_for_messages(model, [{"role": "user", "content": wrapper}])
             file_infos.append(TokenInfo(description=file_path_str, tokens=tokens))
-        except OSError:
-            # Catches FileNotFoundError, but also other IO errors like broken permissions
-            # or symlink loops which should result in the file being skipped/warned.
+        else:
             skipped_files.append(file_path_str)
     return file_infos, skipped_files

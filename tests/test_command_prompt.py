@@ -7,9 +7,10 @@ import pytest
 from pytest_mock import MockerFixture, MockType
 from typer.testing import CliRunner
 
+from aico.consts import SESSION_FILE_NAME
 from aico.core.providers.base import NormalizedChunk
+from aico.core.session_persistence import save_legacy_session_file as save_session
 from aico.lib.models import AssistantChatMessage, Mode, SessionData, TokenUsage, UserChatMessage
-from aico.lib.session import SESSION_FILE_NAME, save_session
 from aico.main import app
 
 runner = CliRunner()
@@ -534,7 +535,7 @@ def test_prompt_passthrough_mode_bypasses_context_and_formatting(tmp_path: Path,
         mock_completion, _ = setup_prompt_test(
             mocker, Path(td), "raw response", context_files={"file.py": "some content"}
         )
-        mock_build_contents = mocker.patch("aico.core.llm_executor.build_original_file_contents")
+        mock_build_contents = mocker.patch("aico.core.llm_executor.get_context_file_contents")
 
         # WHEN `aico prompt --passthrough` is invoked
         result = runner.invoke(app, ["prompt", "--passthrough", prompt_text])

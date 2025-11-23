@@ -4,6 +4,7 @@ from pathlib import Path
 
 import regex as re
 
+from aico.core.files import get_context_file_contents as build_original_file_contents
 from aico.lib.models import (
     AIPatch,
     DerivedContent,
@@ -18,7 +19,6 @@ from aico.lib.models import (
     UnparsedBlock,
     WarningMessage,
 )
-from aico.lib.session import build_original_file_contents
 
 # This regex is the core of the parser. It finds a complete `File:` block.
 # It uses named capture groups and backreferences to be robust.

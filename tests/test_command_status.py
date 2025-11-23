@@ -4,8 +4,9 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from aico.consts import SESSION_FILE_NAME
+from aico.core.session_persistence import save_legacy_session_file as save_session
 from aico.lib.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
-from aico.lib.session import SESSION_FILE_NAME, save_session
 from aico.main import app
 
 runner = CliRunner()

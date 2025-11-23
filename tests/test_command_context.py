@@ -5,7 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from aico.lib.session import complete_files_in_context
+from aico.lib.session_find import complete_files_in_context
 from aico.main import app
 
 runner = CliRunner()
@@ -279,13 +279,13 @@ def test_drop_autocompletion(tmp_path: Path) -> None:
 
         # WHEN the completion function is called with various partial inputs
         # THEN it returns the correct list of matching files
-        assert sorted(complete_files_in_context("src/")) == [
+        assert sorted(complete_files_in_context(None, [], "src/")) == [
             "src/main.py",
             "src/utils.py",
         ]
-        assert complete_files_in_context("docs/") == ["docs/README.md"]
-        assert complete_files_in_context("src/main") == ["src/main.py"]
-        assert complete_files_in_context("invalid") == []
+        assert complete_files_in_context(None, [], "docs/") == ["docs/README.md"]
+        assert complete_files_in_context(None, [], "src/main") == ["src/main.py"]
+        assert complete_files_in_context(None, [], "invalid") == []
 
 
 def test_add_symlink_to_inside_success(tmp_path: Path) -> None:
@@ -356,13 +356,13 @@ def test_autocompletion_includes_symlinks(tmp_path: Path) -> None:
 
         # WHEN completion
         # THEN includes symlinks (from session JSON paths)
-        assert sorted(complete_files_in_context("sym")) == sorted(["sym1.py", "src/sym2.py"])
-        assert sorted(complete_files_in_context("src/")) == ["src/sym2.py"]
-        assert sorted(complete_files_in_context("")) == sorted(["regular.py", "src/sym2.py", "sym1.py"])
+        assert sorted(complete_files_in_context(None, [], "sym")) == ["sym1.py"]
+        assert sorted(complete_files_in_context(None, [], "src/")) == ["src/sym2.py"]
+        assert sorted(complete_files_in_context(None, [], "")) == sorted(["regular.py", "src/sym2.py", "sym1.py"])
 
     # GIVEN a directory with no session file
     with runner.isolated_filesystem():
         # WHEN the completion function is called
-        completions = complete_files_in_context("any")
+        completions = complete_files_in_context(None, [], "any")
         # THEN it returns an empty list without erroring
         assert completions == []

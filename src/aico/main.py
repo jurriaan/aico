@@ -6,7 +6,7 @@ import typer
 from click import Context
 from typer.core import TyperGroup
 
-from aico.lib.session import complete_files_in_context
+from aico.lib.session_find import complete_files_in_context
 from aico.prompts import DEFAULT_SYSTEM_PROMPT
 
 app: typer.Typer

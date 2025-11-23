@@ -18,7 +18,9 @@ from pytest_bdd import exceptions, gherkin_parser, given, parsers, then, when
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
+from aico.consts import SESSION_FILE_NAME
 from aico.core.providers.base import NormalizedChunk
+from aico.core.session_persistence import save_legacy_session_file as save_session
 from aico.historystore import HistoryRecord, HistoryStore, append_pair_to_view, load_view, save_view
 from aico.historystore.pointer import load_pointer
 from aico.lib.history_utils import find_message_pairs
@@ -28,7 +30,7 @@ from aico.lib.models import (
     SessionData,
     UserChatMessage,
 )
-from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter, save_session
+from aico.lib.session_data_adapter import SessionDataAdapter
 from aico.main import app
 
 
