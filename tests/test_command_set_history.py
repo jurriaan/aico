@@ -18,7 +18,7 @@ from aico.historystore.models import HistoryRecord
 from aico.lib.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
 from aico.lib.session import SESSION_FILE_NAME, SessionDataAdapter, save_session
 from aico.main import app
-from aico.utils import get_active_history
+from aico.core.session_context import build_active_context
 
 runner = CliRunner()
 
@@ -224,7 +224,8 @@ def test_set_history_with_zero_sets_index_to_zero(tmp_path: Path) -> None:
         # AND the history start pair is now 0
         updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
         assert updated_session_data.history_start_pair == 0
-        active_history = get_active_history(updated_session_data)
+        context = build_active_context(updated_session_data)
+        active_history = context["active_history"]
         assert len(active_history) == 10
 
 

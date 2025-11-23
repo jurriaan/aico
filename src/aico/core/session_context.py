@@ -5,6 +5,8 @@ import typer
 
 from aico.lib.history_utils import find_message_pairs
 from aico.lib.models import (
+    ActiveContext,
+    ChatMessageHistoryItem,
     MessagePairIndices,
     SessionData,
 )
@@ -161,6 +163,26 @@ class ActiveWindowSummary:
     pairs_sent: int
     has_active_dangling: bool
     has_any_active_history: bool
+
+
+def _get_active_history(session_data: SessionData) -> list[ChatMessageHistoryItem]:
+    """
+    Internal helper: Returns the active slice of chat history messages.
+    """
+    indices = active_message_indices(session_data, include_dangling=True)
+    return [session_data.chat_history[i] for i in indices]
+
+
+def build_active_context(session_data: SessionData) -> ActiveContext:
+    """
+    Builds the fully resolved runtime context from the session storage data.
+    This is the main entry point for commands to access session state.
+    """
+    return {
+        "model": session_data.model,
+        "context_files": list(session_data.context_files),
+        "active_history": _get_active_history(session_data),
+    }
 
 
 def summarize_active_window(session_data: SessionData) -> ActiveWindowSummary | None:

@@ -7,7 +7,7 @@ from rich.console import Console, Group, RenderableType
 from rich.syntax import Syntax
 from rich.text import Text
 
-from aico.core.session_context import active_message_indices, get_start_message_index
+from aico.core.session_context import get_start_message_index
 from aico.lib.model_info import get_model_info
 from aico.lib.models import (
     AssistantChatMessage,
@@ -39,14 +39,6 @@ def is_terminal() -> bool:
 def is_input_terminal() -> bool:
     """Checks if stdin is a TTY."""
     return sys.stdin.isatty()
-
-
-def get_active_history(session_data: SessionData) -> list[ChatMessageHistoryItem]:
-    """
-    Returns the active slice of chat history messages.
-    """
-    indices = active_message_indices(session_data, include_dangling=True)
-    return [session_data.chat_history[i] for i in indices]
 
 
 def reconstruct_historical_messages(
@@ -211,11 +203,8 @@ def count_max_alignment_tokens(model: str) -> int:
     return max_tokens
 
 
-def count_active_history_tokens(model: str, session_data: SessionData) -> int:
-    active_history = get_active_history(session_data)
-    if not active_history:
-        return 0
-    history_messages = reconstruct_historical_messages(active_history)
+def count_active_history_tokens(model: str, active_history: list[ChatMessageHistoryItem]) -> int:
+    history_messages = reconstruct_historical_messages(active_history) if active_history else []
     return count_tokens_for_messages(model, history_messages)
 
 

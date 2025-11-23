@@ -176,6 +176,18 @@ class LLMChatMessage(TypedDict):
 type FileContents = Mapping[str, str]
 
 
+class ActiveContext(TypedDict):
+    """
+    Represents the fully resolved runtime state for the current command.
+    This acts as a facade over SessionData, hiding legacy vs shared storage details.
+    """
+
+    model: str
+    context_files: list[str]
+    # The actual list of messages to be sent to the LLM (filters/slicing already applied)
+    active_history: list[ChatMessageHistoryItem]
+
+
 @dataclass(slots=True, frozen=True)
 class AddonInfo:
     name: str

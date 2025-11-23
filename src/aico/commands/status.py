@@ -7,7 +7,7 @@ from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
-from aico.core.session_context import summarize_active_window
+from aico.core.session_context import build_active_context, summarize_active_window
 from aico.core.session_loader import load_active_session
 from aico.historystore.pointer import InvalidPointerError, MissingViewError, load_pointer
 from aico.lib.model_info import get_model_info
@@ -79,6 +79,9 @@ def status() -> None:  # noqa: C901
     session = load_active_session()
     console = Console()
 
+    # Resolve context once for consistent token counting
+    context = build_active_context(session.data)
+
     model_name = session.data.model
 
     components: list[TokenInfo] = []
@@ -93,7 +96,7 @@ def status() -> None:  # noqa: C901
         components.append(TokenInfo(description="alignment prompts (worst-case)", tokens=align_tokens))
 
     # 3. Chat History
-    history_tokens = count_active_history_tokens(model_name, session.data)
+    history_tokens = count_active_history_tokens(model_name, context["active_history"])
     history_component = TokenInfo(description="chat history", tokens=history_tokens)
 
     # 4. Context Files

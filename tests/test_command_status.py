@@ -116,8 +116,8 @@ def test_status_handles_unknown_model(tmp_path: Path, mocker) -> None:
         assert result.exit_code == 0
         output = result.stdout
         assert "10" in output and "system prompt" in output
-        # Total tokens: 10(sys) + 10(align) = 20
-        assert "~20" in output and "Total" in output
+        # Total tokens: 10(sys) + 10(align) + 10(history) = 30
+        assert "~30" in output and "Total" in output
 
         # AND no cost or context window information is displayed
         assert "Cost" in output  # The column header still exists

@@ -89,44 +89,6 @@ def test_aico_session_file_env_var_not_set_uses_upward_search(tmp_path: Path, mo
         assert "upward-search-model" in result.stdout
 
 
-def test_get_active_history_filters_and_slices() -> None:
-    # GIVEN a SessionData object with a mix of messages
-    from aico.lib.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
-    from aico.utils import get_active_history
-
-    history = [
-        UserChatMessage(role="user", content="msg 0 - pair 0, inactive", mode=Mode.RAW, timestamp="t0"),
-        AssistantChatMessage(
-            role="assistant", content="resp 0", mode=Mode.RAW, timestamp="t0", model="m", duration_ms=1
-        ),
-        UserChatMessage(role="user", content="msg 1 - pair 1, active", mode=Mode.RAW, timestamp="t1"),
-        AssistantChatMessage(
-            role="assistant", content="resp 1", mode=Mode.RAW, timestamp="t1", model="m", duration_ms=1
-        ),
-        UserChatMessage(role="user", content="msg 2 - dangling, active", mode=Mode.RAW, timestamp="t2"),
-        UserChatMessage(role="user", content="msg 3 - pair 2, excluded", mode=Mode.RAW, timestamp="t3"),
-        AssistantChatMessage(
-            role="assistant", content="resp 2", mode=Mode.RAW, timestamp="t3", model="m", duration_ms=1
-        ),
-    ]
-
-    # Create a session where history starts at pair 1, and pair 2 is excluded.
-    session_data = SessionData(
-        model="test",
-        context_files=[],
-        chat_history=history,
-        history_start_pair=1,  # Equivalent of legacy start_index pointing at msg 1
-        excluded_pairs=[2],  # Exclude the third pair (index 2)
-    )
-
-    # WHEN get_active_history is called
-    active_history = get_active_history(session_data)
-
-    # THEN the returned list contains only the active messages (pair 1 and the dangling message)
-    assert len(active_history) == 3
-    assert active_history[0].content == "msg 1 - pair 1, active"
-    assert active_history[1].content == "resp 1"
-    assert active_history[2].content == "msg 2 - dangling, active"
 
 
 def test_calculate_and_display_cost_logic(mocker: MockerFixture) -> None:

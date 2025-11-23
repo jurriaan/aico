@@ -10,12 +10,14 @@ from rich.spinner import Spinner
 from aico.aico_live_render import AicoLiveRender
 from aico.core.provider_router import get_provider_for_model
 from aico.core.providers.base import LLMProvider
+from aico.core.session_context import build_active_context
 from aico.lib.diffing import (
     generate_display_items,
     generate_unified_diff,
     process_llm_response_stream,
 )
 from aico.lib.models import (
+    ChatMessageHistoryItem,
     DisplayItem,
     FileContents,
     InteractionResult,
@@ -29,7 +31,6 @@ from aico.lib.session import build_original_file_contents
 from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
 from aico.utils import (
     calculate_and_display_cost,
-    get_active_history,
     is_terminal,
     reconstruct_historical_messages,
     render_display_items_to_rich,
@@ -40,7 +41,7 @@ if TYPE_CHECKING:
 
 
 def _build_messages(
-    session_data: SessionData,
+    active_history: list[ChatMessageHistoryItem],
     system_prompt: str,
     prompt_text: str,
     piped_content: str | None,
@@ -88,14 +89,14 @@ def _build_messages(
         )
 
     # --- 3. History Injection ---
-    active_history = [] if no_history else get_active_history(session_data)
+    history_to_use: list[ChatMessageHistoryItem] = [] if no_history else active_history
 
     # Inject alignment prompts
     if mode in ALIGNMENT_PROMPTS:
-        messages.extend(reconstruct_historical_messages(active_history))
+        messages.extend(reconstruct_historical_messages(history_to_use))
         messages.extend([{"role": msg.role, "content": msg.content} for msg in ALIGNMENT_PROMPTS[mode]])
     else:
-        messages.extend(reconstruct_historical_messages(active_history))
+        messages.extend(reconstruct_historical_messages(history_to_use))
 
     # --- 4. Final User Prompt ---
     user_prompt = (
@@ -230,18 +231,19 @@ def execute_interaction(
     Execute a single interaction with the LLM, handling streaming and rendering.
     Returns an InteractionResult object with structured fields.
     """
-    model_name = model_override or session_data.model
+    context = build_active_context(session_data)
+    model_name = model_override or context["model"]
     provider, clean_model_id = get_provider_for_model(model_name)
 
     if passthrough:
         original_file_contents: FileContents = {}
     else:
         original_file_contents = build_original_file_contents(
-            context_files=session_data.context_files, session_root=session_root
+            context_files=context["context_files"], session_root=session_root
         )
 
     messages = _build_messages(
-        session_data=session_data,
+        active_history=context["active_history"],
         system_prompt=system_prompt,
         prompt_text=prompt_text,
         piped_content=piped_content,
