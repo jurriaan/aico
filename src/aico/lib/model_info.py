@@ -16,11 +16,10 @@ LITELLM_MODEL_COST_MAP_URL = (
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 
 CACHE_TTL_DAYS = 14
-LITELLM_CACHE_FILENAME = "model_info.json"
-OPENROUTER_CACHE_FILENAME = "model_info_openrouter.json"
+CACHE_FILENAME = "models.json"
 
 
-class ModelCache(TypedDict):
+class ModelRegistry(TypedDict):
     last_fetched: str
     models: dict[str, ModelInfo]
 
@@ -75,18 +74,18 @@ def _fetch_openrouter_data() -> bytes | None:
         return None
 
 
-def _load_cache(cache_file: Path) -> ModelCache | None:
+def _load_cache(cache_file: Path) -> ModelRegistry | None:
     if not cache_file.is_file():
         return None
 
     try:
         content = cache_file.read_text(encoding="utf-8")
-        return TypeAdapter(ModelCache).validate_json(content)
+        return TypeAdapter(ModelRegistry).validate_json(content)
     except (ValidationError, OSError):
         return None
 
 
-def _update_litellm_cache(cache_file: Path) -> ModelCache | None:
+def _fetch_and_normalize_litellm() -> dict[str, ModelInfo] | None:
     raw_data = _fetch_litellm_data()
     if not raw_data:
         return None
@@ -102,16 +101,10 @@ def _update_litellm_cache(cache_file: Path) -> ModelCache | None:
     parsed_models: dict[str, ModelInfo] = {
         k: v for k, v in type_adapter.validate_json(raw_data).items() if v is not None
     }
-    cache = ModelCache(last_fetched=datetime.now(UTC).isoformat(), models=parsed_models)
-
-    try:
-        atomic_write_text(cache_file, TypeAdapter(ModelCache).dump_json(cache))
-        return cache
-    except OSError:
-        return None
+    return parsed_models if parsed_models else None
 
 
-def _update_openrouter_cache(cache_file: Path) -> ModelCache | None:
+def _fetch_and_normalize_openrouter() -> dict[str, ModelInfo] | None:
     raw_data = _fetch_openrouter_data()
     if not raw_data:
         return None
@@ -140,17 +133,30 @@ def _update_openrouter_cache(cache_file: Path) -> ModelCache | None:
             output_cost_per_token=c_cost,
         )
 
-    cache = ModelCache(last_fetched=datetime.now(UTC).isoformat(), models=parsed_models)
+    return parsed_models if parsed_models else None
+
+
+def _update_registry(cache_file: Path) -> ModelRegistry | None:
+    # 1. Fetch Fallback (LiteLLM)
+    models = _fetch_and_normalize_litellm() or {}
+
+    # 2. Fetch Primary (OpenRouter) - Overwrites overlap
+    if or_data := _fetch_and_normalize_openrouter():
+        models.update(or_data)
+
+    if not models:
+        return None
+
+    registry = ModelRegistry(last_fetched=datetime.now(UTC).isoformat(), models=models)
 
     try:
-        atomic_write_text(cache_file, TypeAdapter(ModelCache).dump_json(cache))
-        return cache
+        atomic_write_text(cache_file, TypeAdapter(ModelRegistry).dump_json(registry))
+        return registry
     except OSError:
         return None
 
 
-def _ensure_specific_cache(filename: str, update_func: Callable[[Path], ModelCache | None]) -> ModelCache | None:
-    cache_file = get_cache_path(filename)
+def _ensure_cache(cache_file: Path) -> ModelRegistry | None:
     cache = _load_cache(cache_file)
 
     should_fetch = False
@@ -165,7 +171,7 @@ def _ensure_specific_cache(filename: str, update_func: Callable[[Path], ModelCac
             should_fetch = True
 
     if should_fetch:
-        new_cache = update_func(cache_file)
+        new_cache = _update_registry(cache_file)
         if new_cache:
             return new_cache
 
@@ -173,29 +179,27 @@ def _ensure_specific_cache(filename: str, update_func: Callable[[Path], ModelCac
 
 
 def get_model_info(model_id: str) -> ModelInfo:
-    # 1. Check OpenRouter cache first (Primary)
-    or_cache = _ensure_specific_cache(OPENROUTER_CACHE_FILENAME, _update_openrouter_cache)
+    cache_file = get_cache_path(CACHE_FILENAME)
+    registry = _ensure_cache(cache_file)
 
-    if or_cache and (or_map := or_cache.get("models")):
-        # OpenRouter IDs usually look like "provider/model" (e.g. "google/gemini-pro")
-        # Our `model_id` might be "openrouter/google/gemini-pro"
-        lookup_key = model_id
-        if lookup_key.startswith("openrouter/"):
-            lookup_key = lookup_key[len("openrouter/") :]
+    if not registry:
+        return ModelInfo()
 
-        if lookup_key in or_map:
-            return or_map[lookup_key]
+    models = registry["models"]
 
-    # 2. Check LiteLLM cache (Fallback)
-    llm_cache = _ensure_specific_cache(LITELLM_CACHE_FILENAME, _update_litellm_cache)
-    llm_map = llm_cache["models"] if llm_cache else {}
+    # 1. Exact Match
+    if model_id in models:
+        return models[model_id]
 
-    if model_id in llm_map:
-        return llm_map[model_id]
+    # 2. Strip Prefix (e.g., 'openai/gpt-4o' -> 'gpt-4o', 'openrouter/google/gemini' -> 'google/gemini')
+    if "/" in model_id:
+        stripped = model_id.split("/", 1)[1]
+        if stripped in models:
+            return models[stripped]
 
-    bare_model = model_id.split("/")[-1]
-    if bare_model in llm_map:
-        return llm_map[bare_model]
+    # 3. Strip Vendor (e.g. 'google/gemini' -> 'gemini') - mostly for LiteLLM format
+    bare_name = model_id.split("/")[-1]
+    if bare_name in models:
+        return models[bare_name]
 
-    # Return empty info if not found
     return ModelInfo()
