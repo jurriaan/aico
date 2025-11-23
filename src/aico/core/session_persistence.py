@@ -105,10 +105,6 @@ class LegacyJsonPersistence:
             session_data.history_start_pair = map_history_start_index_to_pair(
                 chat_history, session_data.history_start_index
             )
-        # Clear legacy-only field so downstream logic does not misinterpret it as a slicing signal.
-        session_data.history_start_index = None
-        session_data.is_pre_sliced = False
-        session_data.total_pairs_in_history = None
 
         return session_file, session_data
 
@@ -157,11 +153,9 @@ class LegacyJsonPersistence:
         if history_start_pair is not None and session_data.history_start_pair != history_start_pair:
             session_data.history_start_pair = history_start_pair
             changed = True
-        if excluded_pairs is not None:
-            sorted_excluded = sorted(excluded_pairs)
-            if sorted(session_data.excluded_pairs) != sorted_excluded:
-                session_data.excluded_pairs = sorted_excluded
-                changed = True
+        if excluded_pairs is not None and sorted(session_data.excluded_pairs) != sorted(excluded_pairs):
+            session_data.excluded_pairs = sorted(excluded_pairs)
+            changed = True
 
         if changed:
             save_legacy_session_file(session_file, session_data)
@@ -258,9 +252,7 @@ class SharedHistoryPersistence:
             chat_history=chat_history,
             history_start_pair=view.history_start_pair,
             excluded_pairs=list(view.excluded_pairs),
-            history_start_index=None,
             total_pairs_in_history=total_pairs,
-            is_pre_sliced=False,
         )
 
         return self._pointer_file, session_data
@@ -336,8 +328,8 @@ class SharedHistoryPersistence:
         if history_start_pair is not None and view.history_start_pair != history_start_pair:
             view.history_start_pair = history_start_pair
             changed = True
-        if excluded_pairs is not None and sorted(set(view.excluded_pairs)) != sorted(set(excluded_pairs)):
-            view.excluded_pairs = sorted(set(excluded_pairs))
+        if excluded_pairs is not None and sorted(view.excluded_pairs) != sorted(excluded_pairs):
+            view.excluded_pairs = sorted(excluded_pairs)
             changed = True
 
         if changed:

@@ -19,6 +19,10 @@ from aico.lib.ui import (
 )
 
 
+def _get_timestamp() -> str:
+    return datetime.now(UTC).isoformat()
+
+
 def _invoke_llm_logic(
     cli_prompt_text: str | None,
     system_prompt: str,
@@ -31,16 +35,12 @@ def _invoke_llm_logic(
     Core logic for invoking the LLM that can be shared by all command wrappers.
     """
     session = load_active_session()
-    timestamp = datetime.now(UTC).isoformat()
+    timestamp = _get_timestamp()
+
+    piped_input = sys.stdin.read() if not is_input_terminal() else None
 
     primary_prompt: str
     secondary_piped_content: str | None = None
-    piped_input: str | None = None
-    if not is_input_terminal():
-        content = sys.stdin.read()
-        if content:
-            piped_input = content
-
     if cli_prompt_text and piped_input:
         primary_prompt = cli_prompt_text
         secondary_piped_content = piped_input
@@ -71,7 +71,7 @@ def _invoke_llm_logic(
         print(f"Error calling LLM API: {e}", file=sys.stderr)
         raise typer.Exit(code=1) from e
 
-    assistant_response_timestamp = datetime.now(UTC).isoformat()
+    assistant_response_timestamp = _get_timestamp()
     derived_content: DerivedContent | None = None
 
     # Only create derived content if there is a meaningful diff, or if the structured

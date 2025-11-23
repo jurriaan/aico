@@ -126,7 +126,6 @@ def active_message_indices(session_data: SessionData, include_dangling: bool = T
 
     # For legacy sessions, the full history is loaded, so we must apply the filters.
     pairs = find_message_pairs(history)
-    excluded_pairs_set: set[int] = set(session_data.excluded_pairs)
     active_positions: set[int] = set()
     start_pair = session_data.history_start_pair
 
@@ -135,7 +134,7 @@ def active_message_indices(session_data: SessionData, include_dangling: bool = T
         if pidx < start_pair:
             continue
 
-        if pidx in excluded_pairs_set:
+        if pidx in set(session_data.excluded_pairs):
             continue
 
         active_positions.add(p.user_index)

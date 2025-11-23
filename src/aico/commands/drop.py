@@ -17,13 +17,12 @@ def drop(
     errors_found = outside_root_errors
 
     files_to_drop: list[str] = []
-    for i, rel in enumerate(valid_rels):
-        path = file_paths[i]
+    for rel in valid_rels:
         if rel in current_files:
             files_to_drop.append(rel)
             print(f"Dropped file from context: {rel}")
         else:
-            print(f"Error: File not in context: {path}", file=sys.stderr)
+            print(f"Error: File not in context: {rel}", file=sys.stderr)
             errors_found = True
 
     if files_to_drop:

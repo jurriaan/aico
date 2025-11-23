@@ -61,10 +61,8 @@ def reconstruct_display_content_for_piping(
     Reconstructs the final string content to print to stdout for non-TTY (piped) output,
     ensuring the contract for each mode is respected.
     """
-    mode_value: str = mode.value if isinstance(mode, Mode) else str(mode)
-
     # Strict contract for 'gen' (diff) mode: only print the unified diff; otherwise empty.
-    if mode_value == "diff":
+    if (mode.value if isinstance(mode, Mode) else str(mode)) == "diff":
         return unified_diff or ""
 
     # Flexible contract for other modes: prefer a valid diff, else fall back to display content.

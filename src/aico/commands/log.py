@@ -24,7 +24,7 @@ def log() -> None:
         table.add_column("Role")
         table.add_column("Message Snippet", overflow="ellipsis", min_width=20)
 
-        excluded_set = set(getattr(session.data, "excluded_pairs", []) or [])
+        excluded_set = set(session.data.excluded_pairs)
 
         for i, (pair_index, pair) in enumerate(active_pairs_with_indices):
             user_msg = chat_history[pair.user_index]
