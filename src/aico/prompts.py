@@ -1,5 +1,4 @@
 from aico.lib.models import (
-    AlignmentMessage,
     BasicAssistantChatMessage,
     BasicUserChatMessage,
     Mode,
@@ -44,25 +43,34 @@ DIFF_MODE_INSTRUCTIONS = (
     ">>>>>>> REPLACE"
 )
 
-ALIGNMENT_PROMPTS: dict[Mode, list[AlignmentMessage]] = {
+ALIGNMENT_PROMPTS: dict[Mode, list[BasicUserChatMessage | BasicAssistantChatMessage]] = {
     Mode.CONVERSATION: [
         BasicUserChatMessage(
             "You are in 'ask' mode. Your role is to be a conversational assistant for planning and discussion. "
-            + "You MUST NOT generate code modification blocks like `SEARCH/REPLACE` or unified diffs.",
+            + "You MUST NOT generate code modification blocks like `SEARCH/REPLACE` or unified diffs.\n\n"
+            + "CRITICAL: If discussing code, refer strictly to the `<context>` block (if present) as the ground truth. "
+            + "Distinguish between your past plans in the chat history and the actual file state."
         ),
         BasicAssistantChatMessage(
             "Understood. My role for this conversational turn is to plan and discuss. I will not generate code "
-            + "modification blocks. To execute a planned step, you should use the `aico gen` command."
+            + "modification blocks. To execute a planned step, you should use the `aico gen` command. "
+            + "I will verify all claims against the `<context>` block."
         ),
     ],
     Mode.DIFF: [
         BasicUserChatMessage(
             "You are in 'gen' mode. Your role is to be an automated code generation tool. "
-            + "Your response MUST ONLY contain one or more `SEARCH/REPLACE` blocks and no other commentary or text.",
+            + "Your response MUST ONLY contain one or more `SEARCH/REPLACE` blocks and no other commentary or text.\n\n"
+            + "CRITICAL CONTEXT RULES:\n"
+            + "1. The `<context>` block (if present) is the **absolute ground truth**.\n"
+            + "2. **TIE-BREAKER**: If the conversation history conflicts with `<context>`, you MUST ignore the history "
+            + "and use `<context>`.\n"
+            + "3. Your `SEARCH` blocks must match the `<context>` content exactly (whitespace included)."
         ),
         BasicAssistantChatMessage(
             "Acknowledged. My role for this turn is to generate code. I will ONLY output valid `SEARCH/REPLACE` "
-            + "blocks and no other commentary or text."
+            + "blocks and no other commentary or text. I will strictly use `<context>` as the source of truth for all "
+            + "code matches."
         ),
     ],
 }
