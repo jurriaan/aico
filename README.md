@@ -51,24 +51,23 @@ aico init --model "openrouter/google/gemini-3-pro-preview"
   aico last | delta
   ```
 
-- **Transparent State.** There is no hidden state or magic. `aico` supports two human-readable session formats:
-  - Legacy: a single `.ai_session.json` file in your project's root containing the entire session.
-  - Shared-history: a tiny pointer file (`.ai_session.json`) that references a lightweight session view (`.aico/sessions/*.json`) and a sharded, append-only history log (`.aico/history/`). This enables git-like branching via views while keeping all data inspectable and versionable.
+- **Transparent State.** There is no hidden state or magic. `aico` uses a transparent storage architecture: a tiny pointer file (`.ai_session.json`) references a lightweight session view (`.aico/sessions/*.json`) and a sharded, append-only history log (`.aico/history/`). This enables git-like branching via views while keeping all data inspectable and versionable.
 
 - **Focused on Code Modification.** The `aico gen` (`generate-patch`) command is optimized to produce standard unified diffs, making it ideal for refactoring, adding features, or fixing bugs directly from your terminal.
 
 ## Features
 
 - **Streaming Output:** See the AI's response in real-time. With the `gen` command, watch as diffs are generated and rendered in-place.
+- **Branching Workflows:** Fork conversations to try different solutions without duplicating history data. Switch between session branches seamlessly to manage different tasks or experiments.
 - **Context Management:** Explicitly `add` and `drop` files to control exactly what the AI sees.
 - **History Control:** Easily manage how much of the conversation history is included in the next prompt to balance context-awareness with cost.
 - **Cost and Token Tracking:** See token usage and estimated cost for each interaction.
 - **Standard Tooling:** Includes built-in commands for `commit` generation, session `summarize`ation, and interactive context management.
 - **Editor-Agnostic:** Because it's a CLI tool, `aico` works with any code editor, from Vim to VSCode.
 
-## Shared-History Sessions
+## Branching and Sessions
 
-The shared-history format uses a pointer file plus sharded history to support branching workflows. All commands, including mutating ones (e.g., `ask`, `gen`, `edit`, `undo/redo`, `set-history`, and context/model updates), work seamlessly on shared-history sessions by default.
+Because `aico` uses a pointer-based architecture, it supports branching workflows by default. All commands, including mutating ones (e.g., `ask`, `gen`, `edit`, `undo/redo`, `set-history`, and context/model updates), work seamlessly across branches. You can fork conversations to try different solutions without duplicating the entire history data.
 
 ## Recommended Workflow: Plan and Execute
 
@@ -127,7 +126,7 @@ For more detailed usage examples and scenarios, see [USAGE.feature.md](USAGE.fea
 
 ## Commands Overview
 
-- `aico init`: Creates a `.ai_session.json` file in the current directory.
+- `aico init`: Creates a `.ai_session.json` pointer and initializes the session directory.
 - `aico add <files...>`: Adds one or more files to the session context.
 - `aico drop <files...>`: Removes one or more files from the context.
 - `aico ask "<instruction>"`: Have a conversation with the AI for planning and discussion.
@@ -144,11 +143,10 @@ For more detailed usage examples and scenarios, see [USAGE.feature.md](USAGE.fea
 - `aico status`: Shows a comprehensive summary of the session status, including token usage, estimated cost, and chat history configuration.
 - `aico log`: Show a compact `git log`-style view of the active conversation context.
 - `aico set-history <index>`: Set which message pair the active history starts from. For example, `aico set-history 0` makes the full history active.
-- `aico session-list`: List available session branches (shared-history only).
-- `aico session-switch <name>`: Switch the active branch (shared-history only).
-- `aico session-fork <name>`: Create a new branch from the current one (shared-history only).
-- `aico session-new <name>`: Create a new, empty session branch (shared-history only).
-- `aico migrate-shared-history`: Convert a legacy single-file session to the shared-history format (creates history shards, a session view, and repoints `.ai_session.json`).
+- `aico session-list`: List available session branches.
+- `aico session-switch <name>`: Switch the active branch.
+- `aico session-fork <name>`: Create a new branch from the current one.
+- `aico session-new <name>`: Create a new, empty session branch.
 
 ## Addons: Extending `aico`
 
