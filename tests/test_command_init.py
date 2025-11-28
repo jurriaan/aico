@@ -48,3 +48,16 @@ def test_init_fails_if_session_already_exists(tmp_path: Path) -> None:
         assert result.exit_code == 1
 
         assert f"Error: Session file '{expected_path}' already exists in this directory." in result.stderr
+
+
+def test_init_creates_gitignore(tmp_path: Path) -> None:
+    # GIVEN an empty project directory
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        # WHEN `aico init` is run
+        result = runner.invoke(app, ["init", "--model", "test-model"])
+        assert result.exit_code == 0
+
+        # THEN the .aico/.gitignore file is created with the correct content
+        gitignore_path = Path(td) / ".aico" / ".gitignore"
+        assert gitignore_path.is_file()
+        assert gitignore_path.read_text() == "*\n!addons/\n!.gitignore\n"

@@ -20,10 +20,19 @@ def init(
 
     # Prepare shared-history directories
     project_root = session_file.parent
-    history_root = project_root / ".aico" / "history"
-    sessions_dir = project_root / ".aico" / "sessions"
+    aico_dir = project_root / ".aico"
+    history_root = aico_dir / "history"
+    sessions_dir = aico_dir / "sessions"
     history_root.mkdir(parents=True, exist_ok=True)
     sessions_dir.mkdir(parents=True, exist_ok=True)
+
+    gitignore_path = aico_dir / ".gitignore"
+    if not gitignore_path.exists():
+        # 1. Ignore everything (*)
+        # 2. Unignore addons folder (!addons/)
+        # 3. Unignore this file (!.gitignore)
+        gitignore_content = "*\n!addons/\n!.gitignore\n"
+        _ = gitignore_path.write_text(gitignore_content, encoding="utf-8")
 
     # Create an empty SessionView and point the pointer file at it
     view_path = sessions_dir / "main.json"
