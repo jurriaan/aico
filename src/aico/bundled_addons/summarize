@@ -17,6 +17,21 @@ if [[ "${1-}" == "--usage" ]]; then
 fi
 
 PROJECT_ROOT=$(dirname "$AICO_SESSION_FILE")
+
+if [ -f "PROJECT_SUMMARY.md" ]; then
+    if ! aico dump-context | grep -q "PROJECT_SUMMARY.md"; then
+        echo "⚠️  PROJECT_SUMMARY.md exists but is missing from context."
+        echo "Summarizing without it may fragment your project history."
+        read -p "Add it to context now? [Y/n] " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            aico add PROJECT_SUMMARY.md
+        else
+            echo "Proceeding without existing summary..."
+        fi
+    fi
+fi
+
 SUMMARY_DIR="$PROJECT_ROOT/.aico/summaries"
 
 # 1. Check for active history
