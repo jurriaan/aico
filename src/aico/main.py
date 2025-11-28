@@ -473,6 +473,22 @@ def dump_context() -> None:
     dump_context.dump_context()
 
 
+@app.command("trust")
+def trust(
+    path: Annotated[
+        Path | None, typer.Argument(help="The project path to trust. Defaults to current directory.")
+    ] = None,
+    revoke: Annotated[bool, typer.Option("--revoke", "--untrust", help="Revoke trust for the specified path.")] = False,
+    show_list: Annotated[bool, typer.Option("--list", help="List all trusted project paths.")] = False,
+) -> None:
+    """
+    Manage trusted projects for addon execution.
+    """
+    from aico.commands import trust
+
+    trust.trust(path, revoke, show_list)
+
+
 # Workaround for `no_args_is_help` not working, keep this until #1240 in typer is fixed
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context):

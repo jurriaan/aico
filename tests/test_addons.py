@@ -132,6 +132,9 @@ def test_discover_addons(tmp_path: Path, mocker: MockerFixture) -> None:
     save_session(session_file, SessionData(model="test", chat_history=[], context_files=[]))
     mocker.patch("aico.addons.find_session_file", return_value=session_file)
 
+    # Trust the project so addons are discovered
+    mocker.patch("aico.addons.is_project_trusted", return_value=True)
+
     # Mock the home directory to control user addons path
     user_home_dir = tmp_path / "user_home"
     user_home_dir.mkdir()
@@ -200,3 +203,31 @@ def test_discover_addons(tmp_path: Path, mocker: MockerFixture) -> None:
     assert addons[5].path == project_addon_z_path.resolve()
     assert addons[5].help_text == "Project Z help"
     assert addons[5].source == "project"
+
+
+def test_discover_addons_untrusted_skips_project(tmp_path: Path, mocker: MockerFixture) -> None:
+    # GIVEN project addons exist
+    session_file = tmp_path / SESSION_FILE_NAME
+    save_session(session_file, SessionData(model="test", chat_history=[], context_files=[]))
+    mocker.patch("aico.addons.find_session_file", return_value=session_file)
+
+    # Mock home to avoid interference
+    user_home_dir = tmp_path / "user_home"
+    user_home_dir.mkdir()
+    mocker.patch("pathlib.Path.home", return_value=user_home_dir)
+
+    project_addons_dir = tmp_path / ".aico" / "addons"
+    project_addons_dir.mkdir(parents=True)
+    _create_addon(project_addons_dir, "malicious-addon", "Help text")
+
+    # AND project is NOT trusted
+    mocker.patch("aico.addons.is_project_trusted", return_value=False)
+
+    # BUT bundled/user logic proceeds naturally (mock bundled empty to simplify)
+    mocker.patch("importlib.resources.files", side_effect=Exception("No bundled"))
+
+    # WHEN discovering
+    addons = discover_addons()
+
+    # THEN project addons are not returned
+    assert not any(a.name == "malicious-addon" for a in addons)

@@ -10,6 +10,7 @@ from typing import Literal
 
 import click
 
+from aico.core.trust import is_project_trusted
 from aico.lib.atomic_io import atomic_write_text
 from aico.lib.models import AddonInfo
 from aico.lib.session_find import find_session_file
@@ -59,7 +60,13 @@ def _get_addon_dirs_and_sources() -> list[tuple[Path | Traversable, Literal["pro
     if session_file:
         project_dir = session_file.parent
         project_addons_path = project_dir / _PROJECT_ADDONS_DIR
-        dirs.append((project_addons_path, "project"))
+        if project_addons_path.is_dir() and not is_project_trusted(project_dir):
+            print(
+                "[WARN] Project addons found but ignored. Run 'aico trust' to enable.",
+                file=sys.stderr,
+            )
+        else:
+            dirs.append((project_addons_path, "project"))
 
     user_addons_dir = Path.home() / ".config" / "aico" / "addons"
     dirs.append((user_addons_dir, "user"))
