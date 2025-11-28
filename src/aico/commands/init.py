@@ -23,8 +23,15 @@ def init(
     aico_dir = project_root / ".aico"
     history_root = aico_dir / "history"
     sessions_dir = aico_dir / "sessions"
+
+    aico_dir.mkdir(parents=True, exist_ok=True)
+    aico_dir.chmod(0o700)
+
     history_root.mkdir(parents=True, exist_ok=True)
+    history_root.chmod(0o700)
+
     sessions_dir.mkdir(parents=True, exist_ok=True)
+    sessions_dir.chmod(0o700)
 
     gitignore_path = aico_dir / ".gitignore"
     if not gitignore_path.exists():

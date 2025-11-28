@@ -61,3 +61,20 @@ def test_init_creates_gitignore(tmp_path: Path) -> None:
         gitignore_path = Path(td) / ".aico" / ".gitignore"
         assert gitignore_path.is_file()
         assert gitignore_path.read_text() == "*\n!addons/\n!.gitignore\n"
+
+
+def test_init_creates_secure_directories(tmp_path: Path) -> None:
+    """Tests that init creates .aico directories with secure 0700 permissions."""
+
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        result = runner.invoke(app, ["init", "--model", "test-model"])
+        assert result.exit_code == 0
+
+        aico_dir = Path(td) / ".aico"
+        history_dir = aico_dir / "history"
+        sessions_dir = aico_dir / "sessions"
+
+        for dir_path in [aico_dir, history_dir, sessions_dir]:
+            assert dir_path.is_dir()
+            mode = dir_path.stat().st_mode & 0o777
+            assert mode == 0o700, f"Expected 0700 for {dir_path}, got {oct(mode)}"

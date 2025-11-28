@@ -154,8 +154,21 @@ class HistoryStore:
     # ---------- Internal ----------
 
     def _append_line(self, path: Path, line: str) -> None:
+        # Check if file exists to decide if we need to set permissions
+        is_new_file = not path.exists()
+
         path.parent.mkdir(parents=True, exist_ok=True)
+        # Ensure parent is secure (in case mkdir created it just now)
+        if is_new_file:
+            path.parent.chmod(0o700)
+
         with path.open("a", encoding="utf-8") as f:
+            # If we just created the file, lock it down immediately
+            if is_new_file:
+                with suppress(OSError):
+                    # 0o600 = User: Read/Write, Group: None, Others: None
+                    os.chmod(path, 0o600)
+
             _ = f.write(line)
             _ = f.write("\n")
             f.flush()

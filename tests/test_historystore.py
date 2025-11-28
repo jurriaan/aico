@@ -289,3 +289,22 @@ def test_switch_active_pointer_writes_pointer_file(tmp_path: Path) -> None:
     data: dict[str, object] = json.loads(content)
     assert data["type"] == "aico_session_pointer_v1"
     assert data["path"] == "sessions/main.json"
+
+
+def test_history_shard_created_with_secure_permissions(tmp_path: Path) -> None:
+    store_path = tmp_path / "history"
+    store = HistoryStore(store_path)
+
+    # Append a line to create a new shard file
+    line = '{"role": "user", "content": "test"}'
+    store._append_line(store_path / "0.jsonl", line)
+
+    shard_file = next(store_path.glob("*.jsonl"))
+    assert shard_file.is_file()
+    mode = shard_file.stat().st_mode & 0o777
+    assert mode == 0o600, f"Expected 0600 for shard {shard_file}, got {oct(mode)}"
+
+    # Parent dir should be 0700 if newly created
+    if not store_path.exists():
+        parent_mode = store_path.stat().st_mode & 0o777
+        assert parent_mode == 0o700
