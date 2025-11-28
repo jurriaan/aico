@@ -240,14 +240,26 @@ def _resolve_file_path(
         return ResolvedFilePath(path=patch.llm_file_path, warning=None, fallback_content=None)
 
     # 3. Filesystem Fallback
-    disk_path = session_root / patch.llm_file_path
-    if disk_path.is_file():
-        content = disk_path.read_text()
-        warning = (
-            f"File '{patch.llm_file_path}' was not in the session context but was found on disk. "
-            "Consider adding it to the session."
-        )
-        return ResolvedFilePath(path=patch.llm_file_path, warning=warning, fallback_content=content)
+    try:
+        # Resolve the full path to handle '..' and symlinks
+        full_disk_path = (session_root / patch.llm_file_path).resolve()
+
+        # Ensure the resolved path is actually inside session_root
+        # This raises ValueError if full_disk_path is outside session_root
+        _ = full_disk_path.relative_to(session_root.resolve())
+
+        if full_disk_path.is_file():
+            content = full_disk_path.read_text(encoding="utf-8")
+            warning = (
+                f"File '{patch.llm_file_path}' was not in the session context but was found on disk. "
+                "Consider adding it to the session."
+            )
+            return ResolvedFilePath(path=patch.llm_file_path, warning=warning, fallback_content=content)
+
+    except (ValueError, OSError):
+        # ValueError: Path traversal detected (file is outside root)
+        # OSError: File read error or path construction error
+        pass
 
     # 4. Failure
     return ResolvedFilePath(path=None, warning=None, fallback_content=None)

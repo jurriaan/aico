@@ -1017,3 +1017,30 @@ def test_no_newline_marker_not_added_for_hunk_in_middle_of_file(tmp_path: Path) 
     # hunk does not include the last line of the file.
     assert "\\ No newline at end of file" not in diff, "Erroneous 'No newline' marker found"
     assert "+line_two_changed" in diff  # Sanity check that the diff was otherwise correct
+
+
+def test_arbitrary_file_read_vulnerability_with_path_traversal(tmp_path: Path) -> None:
+    """
+    Tests that a path traversal attempt (e.g., ../../../secrets.txt) correctly
+    fails to read the file from disk due to stricter path validation.
+    """
+    # GIVEN a temporary directory setup
+    session_root = tmp_path / "project"
+    session_root.mkdir()
+    (session_root / "test.py").write_text("print('hello')")
+
+    # AND a 'secret' file outside the session_root
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "secret.txt").write_text("my secret content")
+
+    # AND an LLM response attempting path traversal to read `secret.txt`
+    # The `patch.llm_file_path` contains the traversal attempt.
+    traversal_path = "../secrets/secret.txt"
+    llm_response = f"File: {traversal_path}\n<<<<<<< SEARCH\nmy secret content\n=======\nnew content\n>>>>>>> REPLACE"
+
+    # WHEN the unified diff is generated from the session_root
+    diff = generate_unified_diff({}, llm_response, session_root)
+
+    # THEN the diff should be empty, indicating the file was NOT read and no patch was attempted.
+    assert diff == ""
