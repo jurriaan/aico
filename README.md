@@ -69,9 +69,13 @@ aico init --model "openrouter/google/gemini-3-pro-preview"
 
 Because `aico` uses a pointer-based architecture, it supports branching workflows by default. All commands, including mutating ones (e.g., `ask`, `gen`, `edit`, `undo/redo`, `set-history`, and context/model updates), work seamlessly across branches. You can fork conversations to try different solutions without duplicating the entire history data.
 
-## Recommended Workflow: Plan and Execute
+## Basic Workflow: Plan and Execute
 
-The most effective way to use `aico` is to first collaborate with the AI on a plan, and then ask it to execute each step of that plan.
+*Note: for a more comprehensive guide on how to use `aico` in a production setting, see [the example workflows](EXAMPLE_WORKFLOWS.md) document.*
+
+An effective way to use `aico` is to first collaborate with the AI on a plan, and then ask it to execute each step of that plan.
+
+These are common steps in such a workflow:
 
 1. **Initialize a session in your project root.**
 
