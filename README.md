@@ -79,7 +79,7 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
    aico init --model "openrouter/google/gemini-3-pro-preview"
    ```
 
-2. **Add files to the AI's context.**
+2. **Define the context boundary.** Add relevant files to the AI's context. Keep it focused: `drop` files when they are no longer needed to prevent hallucinations and reduce token costs.
 
    ```bash
    aico add src/utils.py src/main.py
@@ -107,7 +107,7 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
 
    `aico` will stream a response, ending with a proposed diff.
 
-6. **Review and apply.**
+6. **Review, Apply, and Correct.**
 
    ```bash
    # Review the diff from the last command with a tool like delta
@@ -116,11 +116,20 @@ The most effective way to use `aico` is to first collaborate with the AI on a pl
    # If the patch is correct, apply it
    aico last | patch -p1
 
-   # Made a mistake? Undo the 3rd to last change by reversing its diff.
-   aico last -3 | patch -p1 -R
+   # Small mistake (e.g., naming error)? Fix the history directly so the AI "learns".
+   aico edit
+
+   # Wrong approach? Undo the last interaction and re-prompt.
+   aico undo
    ```
 
 Repeat steps 5 and 6 for each increment of the plan.
+
+**Finished the feature?**
+Use the [`summarize`](#standard-addons) addon to archive your current history and reset the context for the next task:
+```bash
+aico summarize
+```
 
 For more detailed usage examples and scenarios, see [USAGE.feature.md](USAGE.feature.md).
 
