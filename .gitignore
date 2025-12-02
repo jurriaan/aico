@@ -5,3 +5,4 @@ __pycache__
 .aico/summaries
 .ai_session.json
 tmp
+PROJECT_SUMMARY.md

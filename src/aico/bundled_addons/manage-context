@@ -46,19 +46,38 @@ fi
 TRACKED="$(git ls-files)"
 UNTRACKED="$(git ls-files --others --exclude-standard)"
 
-ALL_CANDIDATES="$(printf "%s\n%s\n" "$TRACKED" "$UNTRACKED" | awk 'NF {seen[$0]++} END {for (f in seen) print f}' | sort)"
+# --- Build candidate file list from git and existing context ---
+# We include both tracked and untracked (but unignored) files, mirroring fd-like behavior.
+# Then, we add any files *already in context* that might be ignored or not managed by git.
+
+TRACKED="$(git ls-files)"
+UNTRACKED="$(git ls-files --others --exclude-standard)"
+
+# Discover current context files via dump-context command
+# This uses the `aico dump-context` command, which provides a stable JSON output.
+CURRENT_CONTEXT_ORIGINAL="$(aico dump-context | jq -r '.context_files[]' | sort -u)"
+
+# Combine git-managed files with current context files.
+# 1. printf generates the list (with potentially empty lines if variables are empty)
+# 2. grep . removes empty lines (which awk NF also did, but grep is more concise here)
+# 3. sort -u handles sorting and deduplication (making awk 'NF {seen[$0]++}' unnecessary)
+ALL_CANDIDATES="$(
+  printf "%s\n" "$TRACKED" "$UNTRACKED" "$CURRENT_CONTEXT_ORIGINAL" \
+  | grep . \
+  | sort -u
+)"
 
 if [ -z "$ALL_CANDIDATES" ]; then
     echo "No files found to manage in context." >&2
     exit 0
 fi
 
-# --- Discover current context files via dump-context command ---
-# This uses the `aico dump-context` command, which provides a stable JSON output.
-CURRENT_CONTEXT_ORIGINAL="$(aico dump-context | jq -r '.context_files[]' | sort)"
-
-# --- Reorder candidates: context files first, then the rest ---
+# --- Reorder candidates for fzf: context files first, then the rest ---
+# comm requires sorted input.
+# 1. Files in both ALL_CANDIDATES and CURRENT_CONTEXT_ORIGINAL (already in context)
 IN_CONTEXT_FILES="$(comm -12 <(printf "%s\n" "$ALL_CANDIDATES") <(printf "%s\n" "$CURRENT_CONTEXT_ORIGINAL"))"
+
+# 2. Files in ALL_CANDIDATES but NOT in CURRENT_CONTEXT_ORIGINAL (not in context yet)
 NOT_IN_CONTEXT_FILES="$(comm -23 <(printf "%s\n" "$ALL_CANDIDATES") <(printf "%s\n" "$CURRENT_CONTEXT_ORIGINAL"))"
 
 # Calculate the number of files in context to pre-select them
