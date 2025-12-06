@@ -1,0 +1,57 @@
+#!/bin/bash
+set -e
+
+# --- Usage ---
+if [[ "$1" == "--usage" ]]; then
+  echo "Regenerates a past response (default: last) based on new instructions."
+  exit 0
+fi
+
+# Default index
+INDEX="-1"
+
+# If the first arg is a number, treat it as the index
+if [[ "$1" =~ ^-?[0-9]+$ ]]; then
+    INDEX="$1"
+    shift
+fi
+
+# Validate that we have an instruction
+if [ $# -eq 0 ]; then
+  echo "Error: Missing instruction."
+  echo "Usage: aico refine [index] \"<instruction>\" [--model ...]"
+  exit 1
+fi
+
+# Define System Prompt
+SYSTEM_PROMPT="You are an automated Refinement Engine.
+Your goal is to rewrite the LAST Assistant response in the chat history to satisfy the user's new instruction.
+- You have access to the full conversation history, including the response that needs fixing.
+- You have access to the file Ground Truth in <context>.
+- Output ONLY the replaced content (e.g., the corrected code block or diff).
+- Do NOT output conversational filler like 'Here is the fixed version'."
+
+# Generate the Fix
+# Pass all remaining arguments (including instruction and flags) to aico prompt
+# Use printf to handle the instruction safely (avoids shell escaping issues)
+echo "Refining response at index $INDEX..."
+aico prompt --system-prompt "$SYSTEM_PROMPT" "$@" 2>/dev/null
+
+# Clean up History
+# 'aico prompt' added the instruction to history. We don't want that permanent.
+aico undo >/dev/null 2>&1
+
+# Calculate Target Index
+# Because 'aico prompt' appended a new pair, the original target shifts by 1.
+# For relative indices (e.g., -1), we adjust to -2 to target the same message.
+if [[ "$INDEX" =~ ^-[0-9]+$ ]]; then
+    TARGET_INDEX=$((INDEX - 1))
+else
+    TARGET_INDEX="$INDEX"
+fi
+
+# Overwrite 
+# Use the last generated response (which is the refined content) and pipe it to edit
+aico last | aico edit "$TARGET_INDEX"
+
+echo "Refinement complete."
