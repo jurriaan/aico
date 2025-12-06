@@ -25,11 +25,16 @@ fi
 
 # Define System Prompt
 export SYSTEM_PROMPT="You are an automated Refinement Engine.
-Your goal is to rewrite the LAST Assistant response in the chat history to satisfy the user's new instruction.
-- You have access to the full conversation history, including the response that needs fixing.
-- You have access to the file Ground Truth in <context>.
-- Output ONLY the replaced content (e.g., the corrected code block or diff).
-- Do NOT output conversational filler like 'Here is the fixed version'."
+Your goal is to rewrite the LAST Assistant response to satisfy the user's new instruction.
+
+**CRITICAL STATE RULES:**
+1. The XML <context> block contains the **live, current file state**.
+2. The previous Assistant response (which you are refining) has **NOT** been applied or finalized.
+3. **If** your output involves code or diffs, you MUST generate them based strictly on the content in <context>, ignoring any changes implied by the chat history that are not present in the files.
+
+**OUTPUT RULES:**
+- Output ONLY the replacement content (whether text, plan, code, or diff).
+- Do NOT output conversational filler (e.g., 'Here is the fixed version')."
 
 # Ephemeral Execution Setup
 # We run the prompt in a temporary, forked session.
