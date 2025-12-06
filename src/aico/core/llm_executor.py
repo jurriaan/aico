@@ -150,7 +150,8 @@ def _handle_unified_streaming(
     # OpenAI native usage requirement
     stream_options: ChatCompletionStreamOptionsParam = {"include_usage": True}
 
-    rich_spinner: Spinner = Spinner("dots", "Generating response...")
+    spinner_text = f"Generating response ({actual_model})..."
+    rich_spinner: Spinner = Spinner("dots", spinner_text)
     if is_terminal():
         live = Live(console=Console(), auto_refresh=True)
         live._live_render = AicoLiveRender(live.get_renderable())  # pyright: ignore[reportPrivateUsage]
