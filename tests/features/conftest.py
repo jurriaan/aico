@@ -73,7 +73,10 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
 
 # Step definitions should be added below this line
 @pytest.fixture
-def runner() -> CliRunner:
+def runner(mocker: MockerFixture) -> CliRunner:
+    # Default for runner is input terminal
+    mocker.patch("aico.commands.edit.is_input_terminal", return_value=True)
+
     return CliRunner()
 
 
@@ -274,9 +277,12 @@ def given_test_helper_script_exists(project_dir: Path, script_name: str) -> None
 
 
 @when(parsers.parse("I run the command `{command}`"), target_fixture="command_result")
-def when_run_command(runner: CliRunner, command: str, project_dir: Path, session_type: str) -> dict[str, Result]:
+def when_run_command(
+    runner: CliRunner, command: str, project_dir: Path, session_type: str, mocker: MockerFixture
+) -> dict[str, Result]:
     # Check for pipe
     if " | " in command:
+        mocker.patch("aico.commands.edit.is_input_terminal", return_value=False)
         left_cmd, right_cmd = command.split(" | ", 1)
         left_args = shlex.split(left_cmd)
         if left_args[0] == "aico":

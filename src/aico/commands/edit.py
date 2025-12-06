@@ -11,6 +11,7 @@ import typer
 from aico.core.session_loader import load_session_and_resolve_indices
 from aico.lib.diffing import recompute_derived_content
 from aico.lib.models import AssistantChatMessage
+from aico.lib.ui import is_input_terminal
 
 
 def edit(
@@ -31,52 +32,58 @@ def edit(
     target_message = session.data.chat_history[target_message_index]
     original_content = target_message.content
 
-    fd, temp_file_path_str = tempfile.mkstemp(suffix=".md", text=True)
-    temp_file_path = Path(temp_file_path_str)
-    try:
-        with os.fdopen(fd, "w") as f:
-            _ = f.write(original_content)
+    new_content: str
 
-        editor_cmd_str = os.environ.get("EDITOR", "vi")
-        editor_cmd_parts = shlex.split(editor_cmd_str)
-        full_command = editor_cmd_parts + [str(temp_file_path)]
-
+    if not is_input_terminal():
+        # Scripted mode: d new content from stdin
+        new_content = sys.stdin.read()
+    else:
+        # Interactive mode: open editor
+        fd, temp_file_path_str = tempfile.mkstemp(suffix=".md", text=True)
+        temp_file_path = Path(temp_file_path_str)
         try:
-            proc = subprocess.run(full_command, check=False)
-        except FileNotFoundError:
-            print(
-                f"Error: Editor command not found: '{editor_cmd_parts[0]}'. "
-                + "Please set the $EDITOR environment variable.",
-                file=sys.stderr,
-            )
-            raise typer.Exit(code=1) from None
+            with os.fdopen(fd, "w") as f:
+                _ = f.write(original_content)
 
-        if proc.returncode != 0:
-            print("Editor closed with non-zero exit code. Aborting.", file=sys.stderr)
-            raise typer.Exit(code=1)
+            editor_cmd_str = os.environ.get("EDITOR", "vi")
+            editor_cmd_parts = shlex.split(editor_cmd_str)
+            full_command = editor_cmd_parts + [str(temp_file_path)]
 
-        new_content = temp_file_path.read_text()
+            try:
+                proc = subprocess.run(full_command, check=False)
+            except FileNotFoundError:
+                print(
+                    f"Error: Editor command not found: '{editor_cmd_parts[0]}'. "
+                    + "Please set the $EDITOR environment variable.",
+                    file=sys.stderr,
+                )
+                raise typer.Exit(code=1) from None
 
-        if new_content == original_content:
-            print("No changes detected. Aborting.")
-            raise typer.Exit(code=0)
+            if proc.returncode != 0:
+                print("Editor closed with non-zero exit code. Aborting.", file=sys.stderr)
+                raise typer.Exit(code=1)
 
-        updated_message = replace(target_message, content=new_content)
-        new_asst_metadata: AssistantChatMessage | None = None
+            new_content = temp_file_path.read_text()
+        finally:
+            temp_file_path.unlink(missing_ok=True)
 
-        # Invalidate derived content if editing an assistant response
-        if isinstance(updated_message, AssistantChatMessage):
-            new_derived_content = recompute_derived_content(
-                assistant_content=new_content,
-                context_files=session.data.context_files,
-                session_root=session.root,
-            )
-            updated_message = replace(updated_message, derived=new_derived_content)
-            new_asst_metadata = updated_message
+    if new_content == original_content or not new_content:
+        print("No changes detected. Aborting.")
+        raise typer.Exit(code=0)
 
-        session.persistence.edit_message(target_message_index, new_content, new_asst_metadata)
+    updated_message = replace(target_message, content=new_content)
+    new_asst_metadata: AssistantChatMessage | None = None
 
-        print(f"Updated {message_type} for message pair {resolved_pair_index}.")
+    # Invalidate derived content if editing an assistant response
+    if isinstance(updated_message, AssistantChatMessage):
+        new_derived_content = recompute_derived_content(
+            assistant_content=new_content,
+            context_files=session.data.context_files,
+            session_root=session.root,
+        )
+        updated_message = replace(updated_message, derived=new_derived_content)
+        new_asst_metadata = updated_message
 
-    finally:
-        temp_file_path.unlink(missing_ok=True)
+    session.persistence.edit_message(target_message_index, new_content, new_asst_metadata)
+
+    print(f"Updated {message_type} for message pair {resolved_pair_index}.")

@@ -142,6 +142,7 @@ def test_edit_updates_store_and_view(shared_writable_project: Path, mocker: Mock
     # GIVEN: ensure there's a recent pair to edit
     from aico.lib.models import InteractionResult
 
+    mocker.patch("aico.commands.edit.is_input_terminal", return_value=True)
     mocker.patch(
         "aico.commands.prompt.execute_interaction",
         return_value=InteractionResult(

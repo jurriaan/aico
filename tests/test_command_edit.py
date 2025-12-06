@@ -40,6 +40,11 @@ def session_with_context_file(tmp_path: Path) -> Path:
     return session_file
 
 
+@pytest.fixture(autouse=True)
+def stdin_is_tty(mocker: MockerFixture):
+    mocker.patch("aico.commands.edit.is_input_terminal", return_value=True)
+
+
 def mock_editor(new_content: str, return_code: int = 0) -> MagicMock:
     """Creates a mock side effect for subprocess.run to simulate an editor."""
 
@@ -256,3 +261,41 @@ def test_edit_response_recomputes_derived_content_on_change(
     ]
     assert final_response.derived.display_content == expected_display_items
     mock_run.assert_called_once()
+
+
+def test_edit_scripted_mode(session_with_two_pairs: Path, mocker: MockerFixture) -> None:
+    # GIVEN a session with two pairs
+    session_file = session_with_two_pairs
+
+    # AND stdin is not a TTY (scripted mode)
+    mocker.patch("aico.commands.edit.is_input_terminal", return_value=False)
+
+    # WHEN `aico edit` is run with piped input
+    result = runner.invoke(app, ["edit"], input="new content from stdin")
+
+    # THEN the command succeeds
+    assert result.exit_code == 0, result.stderr
+    assert "Updated response for message pair 1." in result.stdout
+
+    # AND the session is updated with the piped content
+    final_session = load_session_data(session_file)
+    assert final_session.chat_history[-1].content == "new content from stdin"
+
+
+def test_edit_scripted_mode_empty_stdin(session_with_two_pairs: Path, mocker: MockerFixture) -> None:
+    # GIVEN a session with two pairs
+    session_file = session_with_two_pairs
+
+    # AND stdin is not a TTY but empty
+    mocker.patch("aico.commands.edit.is_input_terminal", return_value=False)
+
+    # WHEN `aico edit` is run with empty piped input
+    result = runner.invoke(app, ["edit"], input="")
+
+    # THEN the command succeeds but reports no changes
+    assert result.exit_code == 0, result.stderr
+    assert "No changes detected. Aborting." in result.stdout
+
+    # AND the session remains unchanged
+    final_session = load_session_data(session_file)
+    assert final_session.chat_history[-1].content == "assistant response 1"
