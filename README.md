@@ -200,4 +200,18 @@ An addon is simply an executable script placed in one of the addon directories.
     fi
     ```
 
-For complex addons, you can write them in Python and leverage `aico`'s internal libraries (the `PYTHONPATH` is automatically propagated).
+For complex addons, you can write them in Python and leverage `aico`'s internal libraries (the `PYTHONPATH` is automatically propagated). But note that the internal API is not stable at the moment.
+
+## Contributing
+
+This is a tool I use personally; PRs are welcome but feature requests may be declined to keep the tool focused.
+
+### Development
+
+```bash
+# Run linting and type checking
+./script/lint
+
+# Run tests
+./script/test
+```
