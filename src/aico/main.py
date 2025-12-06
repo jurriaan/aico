@@ -386,23 +386,52 @@ def session_switch(
     session_switch.session_switch(name)
 
 
-@app.command("session-fork")
+@app.command(
+    "session-fork",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
 def session_fork(
-    new_name: Annotated[str, typer.Argument(help="Name for the new forked session view (branch).")],
+    ctx: typer.Context,
+    new_name: Annotated[
+        str,
+        typer.Argument(
+            help="Name for the new forked session view (branch).",
+        ),
+    ],
     until_pair: Annotated[
         int | None,
         typer.Option(
             "--until-pair",
-            help="Optional pair index to truncate history at (inclusive). If omitted, full history is copied.",
+            help="Optional pair index to truncate history at (inclusive). "
+            + "If omitted, full history is copied.",
         ),
     ] = None,
+    ephemeral: Annotated[
+        bool,
+        typer.Option(
+            "--ephemeral",
+            help="Delete the session view after execution. Only valid when running a command via '--'.",
+        ),
+    ] = False,
 ) -> None:
     """
-    Create a new session view (branch) optionally truncated at a given pair index, then switch to it.
+    Create a new session branch.
+
+    Basic Usage:
+      aico session-fork my-feature
+      (Creates 'my-feature' and switches to it)
+
+    Execute Command in Fork (Persistent):
+      aico session-fork my-feature -- aico gen "Experiment"
+      (Creates 'my-feature', runs command inside it, keeps it, does NOT switch active session)
+
+    Execute Command in Ephemeral Fork:
+      aico session-fork my-temp-job --ephemeral -- aico prompt "Quick Check"
+      (Creates 'my-temp-job', runs command, deletes 'my-temp-job' on exit)
     """
     from aico.commands import session_fork
 
-    session_fork.session_fork(new_name, until_pair)
+    session_fork.session_fork(new_name, until_pair, ephemeral, ctx)
 
 
 @app.command("session-new")

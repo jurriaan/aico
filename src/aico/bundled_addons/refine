@@ -24,34 +24,38 @@ if [ $# -eq 0 ]; then
 fi
 
 # Define System Prompt
-SYSTEM_PROMPT="You are an automated Refinement Engine.
+export SYSTEM_PROMPT="You are an automated Refinement Engine.
 Your goal is to rewrite the LAST Assistant response in the chat history to satisfy the user's new instruction.
 - You have access to the full conversation history, including the response that needs fixing.
 - You have access to the file Ground Truth in <context>.
 - Output ONLY the replaced content (e.g., the corrected code block or diff).
 - Do NOT output conversational filler like 'Here is the fixed version'."
 
-# Generate the Fix
-# Pass all remaining arguments (including instruction and flags) to aico prompt
-# Use printf to handle the instruction safely (avoids shell escaping issues)
+# Ephemeral Execution Setup
+# We run the prompt in a temporary, forked session.
+# This avoids modifying the main history stack (no "undo" needed) and prevents index drift.
+# We capture the result via a side-channel file to preserve TTY output for the prompt.
+
+# Generate unique name using python for portability
+SESSION_NAME="refine-$(python3 -c 'import secrets; print(secrets.token_hex(4))')"
+export PAYLOAD=$(mktemp)
+cleanup() {
+    rm -f "$PAYLOAD"
+}
+trap cleanup EXIT
+
 echo "Refining response at index $INDEX..."
-aico prompt --system-prompt "$SYSTEM_PROMPT" "$@" 2>/dev/null
 
-# Clean up History
-# 'aico prompt' added the instruction to history. We don't want that permanent.
-aico undo >/dev/null 2>&1
+# 1. Execute inside ephemeral fork
+#    - aico prompt: Shows streaming output to user
+#    - aico last: Captures the final response content to our payload file
+aico session-fork --ephemeral "$SESSION_NAME" -- bash -c 'aico prompt --system-prompt "$SYSTEM_PROMPT" "$@" && aico last --verbatim > "$PAYLOAD"' -- "$@"
 
-# Calculate Target Index
-# Because 'aico prompt' appended a new pair, the original target shifts by 1.
-# For relative indices (e.g., -1), we adjust to -2 to target the same message.
-if [[ "$INDEX" =~ ^-[0-9]+$ ]]; then
-    TARGET_INDEX=$((INDEX - 1))
+# 2. Apply to Main Session in-place
+if [ -s "$PAYLOAD" ]; then
+    cat "$PAYLOAD" | aico edit "$INDEX"
+    echo "Refinement complete."
 else
-    TARGET_INDEX="$INDEX"
+    echo "Refinement failed or returned empty content."
+    exit 1
 fi
-
-# Overwrite 
-# Use the last generated response (which is the refined content) and pipe it to edit
-aico last | aico edit "$TARGET_INDEX"
-
-echo "Refinement complete."

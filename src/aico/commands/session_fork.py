@@ -1,3 +1,10 @@
+import os
+import secrets
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
 import typer
 
 from aico.core.session_loader import load_active_session
@@ -8,9 +15,18 @@ from aico.historystore.pointer import load_pointer
 def session_fork(
     new_name: str,
     until_pair: int | None,
+    ephemeral: bool,
+    ctx: typer.Context,
 ) -> None:
+    # Check for execution args
+    exec_args = ctx.args
+
     if not new_name.strip():
         typer.echo("Error: New session name is required.", err=True)
+        raise typer.Exit(code=1)
+
+    if ephemeral and not exec_args:
+        typer.echo("Error: --ephemeral is only valid when executing a command via '--'.", err=True)
         raise typer.Exit(code=1)
 
     session = load_active_session(require_type="shared")
@@ -46,7 +62,38 @@ def session_fork(
 
     new_view_path = fork_view(store, view, until_pair=until_pair, new_name=new_name, sessions_dir=sessions_dir)
 
-    switch_active_pointer(session.file_path, new_view_path)
-
     truncated_str = f" (truncated at pair {until_pair})" if until_pair is not None else ""
-    print(f"Forked new session '{new_name}'{truncated_str} and switched to it.")
+
+    if not exec_args:
+        # Standard Fork: Switch active pointer
+        switch_active_pointer(session.file_path, new_view_path)
+        print(f"Forked new session '{new_name}'{truncated_str} and switched to it.")
+    else:
+        # Execute in Fork: Use temp pointer, don't switch active session
+        fd, temp_ptr_str = tempfile.mkstemp(dir=session.root, suffix=".json", prefix=".aico_ptr_tmp_")
+        os.close(fd)
+        temp_ptr_path = Path(temp_ptr_str)
+
+        try:
+            # Point temp pointer to the new view
+            switch_active_pointer(temp_ptr_path, new_view_path)
+
+            env = os.environ.copy()
+            env["AICO_SESSION_FILE"] = str(temp_ptr_path.resolve())
+
+            # Run the command with full TTY passthrough
+            try:
+                # We do not capture output, allowing Rich/Interactive tools to work
+                result = subprocess.run(exec_args, env=env, check=False)
+                if result.returncode != 0:
+                    raise typer.Exit(code=result.returncode)
+            except OSError as e:
+                typer.echo(f"Error executing command: {e}", err=True)
+                raise typer.Exit(code=1) from e
+
+        finally:
+            # Cleanup
+            temp_ptr_path.unlink(missing_ok=True)
+            if ephemeral:
+                # If marked ephemeral, clean up the view file too
+                new_view_path.unlink(missing_ok=True)
