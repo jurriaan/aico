@@ -2,7 +2,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Literal, TypedDict
+from typing import Literal, TypedDict
 
 from pydantic import Field
 from pydantic.dataclasses import dataclass as pydantic_dataclass
@@ -105,8 +105,7 @@ class SessionData:
     chat_history: list[ChatMessageHistoryItem] = Field(default_factory=list)
     history_start_pair: int = 0
     excluded_pairs: list[int] = Field(default_factory=list)
-    # In-memory signal that chat_history is a pre-sliced active window (shared-history).
-    is_pre_sliced: Annotated[bool, Field(exclude=True)] = False
+    offset: int = 0
 
 
 @dataclass(slots=True, frozen=True)

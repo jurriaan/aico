@@ -12,7 +12,7 @@ def _make_msg(role: str, content: str) -> UserChatMessage | AssistantChatMessage
 
 
 def test_active_message_indices_shared_history_signal() -> None:
-    # GIVEN a SessionData object where `is_pre_sliced` is set (simulating a shared-history load)
+    # GIVEN a SessionData object
     history = [
         _make_msg("user", "u0"),
         _make_msg("assistant", "a0"),
@@ -22,9 +22,9 @@ def test_active_message_indices_shared_history_signal() -> None:
     session_data = SessionData(
         model="m",
         chat_history=history,
-        is_pre_sliced=True,
         history_start_pair=1,  # This should be ignored
         excluded_pairs=[0],  # This should also be ignored
+        offset=1,
     )
 
     # WHEN calling active_message_indices
@@ -32,33 +32,6 @@ def test_active_message_indices_shared_history_signal() -> None:
 
     # THEN it should return all indices of the provided history
     assert indices == [0, 1, 2, 3]
-
-
-def test_active_message_indices_legacy_slicing() -> None:
-    # GIVEN a SessionData object for a legacy session (is_pre_sliced is False)
-    history = [
-        _make_msg("user", "u0"),  # pair 0
-        _make_msg("assistant", "a0"),
-        _make_msg("user", "u1"),  # pair 1
-        _make_msg("assistant", "a1"),
-        _make_msg("user", "u2"),  # pair 2
-        _make_msg("assistant", "a2"),
-    ]
-    session_data = SessionData(
-        model="m",
-        chat_history=history,
-        is_pre_sliced=False,
-        history_start_pair=1,  # Active history starts at pair 1
-        excluded_pairs=[2],  # Exclude pair 2
-    )
-
-    # WHEN calling active_message_indices
-    indices = active_message_indices(session_data)
-
-    # THEN it should correctly apply `history_start_pair` and `excluded_pairs`
-    # Active pairs are [1]. Pair 2 is excluded.
-    # Expected message indices are for pair 1: [2, 3]
-    assert indices == [2, 3]
 
 
 def test__get_active_history_filters_and_slices() -> None:
@@ -90,6 +63,7 @@ def test__get_active_history_filters_and_slices() -> None:
         chat_history=history,
         history_start_pair=1,  # Equivalent of legacy start_index pointing at msg 1
         excluded_pairs=[2],  # Exclude the third pair (index 2)
+        offset=0,
     )
 
     # WHEN _get_active_history is called

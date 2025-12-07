@@ -122,7 +122,7 @@ class SharedHistoryPersistence:
             chat_history=chat_history,
             history_start_pair=view.history_start_pair,
             excluded_pairs=list(view.excluded_pairs),
-            is_pre_sliced=True,
+            offset=view.history_start_pair,
         )
 
         return self._pointer_file, session_data
@@ -140,6 +140,7 @@ class SharedHistoryPersistence:
             chat_history=chat_history,
             history_start_pair=view.history_start_pair,
             excluded_pairs=list(view.excluded_pairs),
+            offset=0,
         )
 
         return self._pointer_file, session_data

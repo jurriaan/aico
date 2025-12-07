@@ -9,8 +9,8 @@ from rich.markdown import Markdown
 from rich.syntax import Syntax
 from rich.text import Text
 
-from aico.core.session_context import get_start_message_index
 from aico.core.tokens import compute_component_cost
+from aico.lib.history_utils import find_message_pairs
 from aico.lib.model_info import get_model_info
 from aico.lib.models import (
     AssistantChatMessage,
@@ -102,10 +102,20 @@ def calculate_and_display_cost(
 
     cost_str: str = ""
     if message_cost is not None:
-        # "current chat" cost includes all messages from the start index, even excluded ones,
-        # because the cost was already incurred.
-        start_message_idx = get_start_message_index(session_data)
-        current_chat_window = session_data.chat_history[start_message_idx:]
+        # Calculate where the active window starts in the current list
+        pairs = find_message_pairs(session_data.chat_history)
+
+        # Which pair in the CURRENT list corresponds to history_start_pair?
+        rel_start_pair = session_data.history_start_pair - session_data.offset
+
+        if rel_start_pair <= 0:
+            start_msg_idx = 0
+        elif rel_start_pair < len(pairs):
+            start_msg_idx = pairs[rel_start_pair].user_index
+        else:
+            start_msg_idx = len(session_data.chat_history)
+
+        current_chat_window = session_data.chat_history[start_msg_idx:]
         window_history_cost = sum(
             msg.cost for msg in current_chat_window if isinstance(msg, AssistantChatMessage) and msg.cost is not None
         )
