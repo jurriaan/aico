@@ -8,7 +8,7 @@ from aico.historystore.pointer import load_pointer
 def session_switch(
     name: str,
 ) -> None:
-    session = load_active_session(require_type="shared")
+    session = load_active_session()
 
     # Validate pointer and resolve current active view (ensures shared-history)
     _ = load_pointer(session.file_path)

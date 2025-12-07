@@ -65,14 +65,6 @@ def complete_files_in_context(ctx: Context | None, args: list[str], incomplete: 
             except (ValidationError, OSError):
                 pass
 
-        # 2. Fallback: Attempt to parse as Legacy SessionData
-        if not context_files:
-            try:
-                session_data = TypeAdapter(SessionData).validate_json(raw_text)
-                context_files = session_data.context_files
-            except ValidationError:
-                pass
-
     except OSError:
         return []
 

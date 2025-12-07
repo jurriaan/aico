@@ -7,7 +7,7 @@ from aico.historystore.pointer import load_pointer
 
 
 def session_list() -> None:
-    session = load_active_session(require_type="shared")
+    session = load_active_session()
 
     # Validate and resolve active view path via pointer helper
     active_view_path = load_pointer(session.file_path)

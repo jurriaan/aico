@@ -2,7 +2,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Annotated, Literal, TypedDict
 
 from pydantic import Field
 from pydantic.dataclasses import dataclass as pydantic_dataclass
@@ -74,7 +74,6 @@ class UserChatMessage:
     timestamp: str
     piped_content: str | None = None
     passthrough: bool = False
-    is_excluded: bool = Field(default=False, exclude=True)  # Legacy flag; kept for in-memory compatibility
 
 
 @pydantic_dataclass(slots=True, frozen=True)
@@ -88,7 +87,6 @@ class AssistantChatMessage:
     derived: DerivedContent | None = None
     token_usage: TokenUsage | None = None
     cost: float | None = None
-    is_excluded: bool = Field(default=False, exclude=True)  # Legacy flag; kept for in-memory compatibility
 
 
 type ChatMessageHistoryItem = UserChatMessage | AssistantChatMessage
@@ -107,12 +105,8 @@ class SessionData:
     chat_history: list[ChatMessageHistoryItem] = Field(default_factory=list)
     history_start_pair: int = 0
     excluded_pairs: list[int] = Field(default_factory=list)
-    # Legacy, message-centric history start index; kept for backward compatibility and migration.
-    history_start_index: int | None = Field(default=None, exclude=True)
-    # Total number of pairs in the full history (used for shared-history metadata and error messages).
-    total_pairs_in_history: int | None = Field(default=None, exclude=True)
     # In-memory signal that chat_history is a pre-sliced active window (shared-history).
-    is_pre_sliced: bool = Field(default=False, exclude=True)
+    is_pre_sliced: Annotated[bool, Field(exclude=True)] = False
 
 
 @dataclass(slots=True, frozen=True)

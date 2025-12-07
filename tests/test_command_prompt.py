@@ -9,9 +9,9 @@ from typer.testing import CliRunner
 
 from aico.consts import SESSION_FILE_NAME
 from aico.core.providers.base import NormalizedChunk
-from aico.core.session_persistence import save_legacy_session_file as save_session
 from aico.lib.models import AssistantChatMessage, Mode, SessionData, TokenUsage, UserChatMessage
 from aico.main import app
+from tests.helpers import save_session
 
 runner = CliRunner()
 

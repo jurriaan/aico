@@ -5,9 +5,9 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from aico.consts import SESSION_FILE_NAME
-from aico.core.session_persistence import save_legacy_session_file as save_session
 from aico.lib.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
 from aico.main import app
+from tests.helpers import save_session
 
 runner = CliRunner()
 
@@ -42,7 +42,7 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
                     duration_ms=1,
                 ),
             ],
-            history_start_index=0,
+            history_start_pair=0,
         )
         save_session(session_dir / SESSION_FILE_NAME, session_data)
 

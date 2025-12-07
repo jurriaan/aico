@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from typing import Literal, Protocol, runtime_checkable
 
-from aico.lib.models import ChatMessageHistoryItem, MessagePairIndices
+from aico.lib.models import MessagePairIndices
 
 
 @runtime_checkable
@@ -10,7 +10,7 @@ class HasRole(Protocol):
     def role(self) -> Literal["user", "assistant"]: ...
 
 
-def _generic_find_message_pairs[T: HasRole](history: Sequence[T]) -> list[tuple[int, int]]:
+def _generic_find_message_pairs(history: Sequence[HasRole]) -> list[tuple[int, int]]:
     """
     Scans a list of objects with a 'role' attribute and identifies user/assistant message pairs.
     A pair is defined as a user message followed immediately by an assistant message.
@@ -29,7 +29,7 @@ def _generic_find_message_pairs[T: HasRole](history: Sequence[T]) -> list[tuple[
     return pairs
 
 
-def find_message_pairs(chat_history: Sequence[ChatMessageHistoryItem]) -> list[MessagePairIndices]:
+def find_message_pairs(chat_history: Sequence[HasRole]) -> list[MessagePairIndices]:
     """
     Wrapper around the generic pair finder for ChatMessageHistoryItem lists.
     """
@@ -44,7 +44,7 @@ def find_message_pairs_from_records(records: Sequence[HasRole]) -> list[tuple[in
     return _generic_find_message_pairs(records)
 
 
-def map_history_start_index_to_pair(chat_history: Sequence[ChatMessageHistoryItem], history_start_index: int) -> int:
+def map_history_start_index_to_pair(chat_history: Sequence[HasRole], history_start_index: int) -> int:
     """
     Map a legacy message-centric history_start_index to a pair index.
 

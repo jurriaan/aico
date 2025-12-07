@@ -1,7 +1,5 @@
 import os
-import secrets
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -29,7 +27,7 @@ def session_fork(
         typer.echo("Error: --ephemeral is only valid when executing a command via '--'.", err=True)
         raise typer.Exit(code=1)
 
-    session = load_active_session(require_type="shared")
+    session = load_active_session()
 
     # At this point we know we are in a valid shared-history session.
     active_view_path = load_pointer(session.file_path)

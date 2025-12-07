@@ -7,11 +7,9 @@ from aico.historystore import (
     HistoryStore,
     find_message_pairs_in_view,
     from_legacy_session,
-    to_legacy_session,
 )
+from aico.historystore.migration import LegacySessionSnapshot
 from aico.historystore.models import SessionView as SessionViewModel
-from aico.lib.models import UserChatMessage
-from aico.lib.session_data_adapter import SessionDataAdapter
 
 
 def _make_legacy_chat_item(
@@ -82,7 +80,7 @@ def test_migration_forward_and_round_trip(tmp_path: Path) -> None:
     sessions_dir = tmp_path / "sessions"
 
     # WHEN migrating forward to sharded store + view
-    session_data = SessionDataAdapter.validate_python(legacy)
+    session_data = LegacySessionSnapshot.model_validate(legacy)
     view = from_legacy_session(
         session_data=session_data,
         history_root=history_root,
@@ -99,26 +97,6 @@ def test_migration_forward_and_round_trip(tmp_path: Path) -> None:
     assert view.history_start_pair == 1  # Corresponds to legacy history_start_index: 2
     assert view.excluded_pairs == [1]
 
-    # WHEN reconstructing a legacy session from the view
-    store = HistoryStore(history_root, shard_size=5)
-    legacy_round_trip: dict[str, object] = to_legacy_session(store, view)
-
-    # THEN round-trip preserves basic metadata (validate back into SessionData)
-    session_rt = SessionDataAdapter.validate_python(legacy_round_trip)
-    assert session_rt.model == legacy["model"]
-    # The reconstructed history is only the active part
-    assert len(session_rt.chat_history) == 5  # Pairs 1, 2 + dangling user
-
-    # The reconstructed history is a slice, so we can't test original messages by index
-    # We can check that the last message is the dangling user message
-    last_msg = session_rt.chat_history[-1]
-    assert isinstance(last_msg, UserChatMessage)
-    assert last_msg.content == "dangling-at-end"
-
-    # AND history_start_index maps back correctly to the start of the reconstructed history
-    # The reconstructed history starts at the beginning of the active window, so its start index is 0.
-    assert session_rt.history_start_index == 0
-
 
 def test_migration_empty_session(tmp_path: Path) -> None:
     # GIVEN an empty legacy session
@@ -132,7 +110,7 @@ def test_migration_empty_session(tmp_path: Path) -> None:
     sessions_dir = tmp_path / "sessions"
 
     # WHEN migrating forward
-    session_data = SessionDataAdapter.validate_python(legacy)
+    session_data = LegacySessionSnapshot.model_validate(legacy)
     view = from_legacy_session(
         session_data=session_data,
         history_root=history_root,
@@ -144,15 +122,6 @@ def test_migration_empty_session(tmp_path: Path) -> None:
     assert view.message_indices == []
     assert view.history_start_pair == 0
     assert view.excluded_pairs == []
-
-    # WHEN migrating back
-    store = HistoryStore(history_root)
-    legacy_rt: dict[str, object] = to_legacy_session(store, view)
-
-    # THEN round-trip matches original
-    session_rt = SessionDataAdapter.validate_python(legacy_rt)
-    assert session_rt.chat_history == []
-    assert session_rt.history_start_index == 0
 
 
 def test_migration_history_start_after_last_pair(tmp_path: Path) -> None:
@@ -172,7 +141,7 @@ def test_migration_history_start_after_last_pair(tmp_path: Path) -> None:
     sessions_dir = tmp_path / "sessions"
 
     # WHEN migrating forward
-    session_data = SessionDataAdapter.validate_python(legacy)
+    session_data = LegacySessionSnapshot.model_validate(legacy)
     view = from_legacy_session(
         session_data=session_data,
         history_root=history_root,
@@ -182,15 +151,6 @@ def test_migration_history_start_after_last_pair(tmp_path: Path) -> None:
 
     # THEN start pair is len(pairs) (cleared context)
     assert view.history_start_pair == 2
-
-    # WHEN migrating back
-    store = HistoryStore(history_root)
-    legacy_rt: dict[str, object] = to_legacy_session(store, view)
-
-    # THEN history is empty, and history_start_index is 0 because there's nothing to point to
-    session_rt = SessionDataAdapter.validate_python(legacy_rt)
-    assert not session_rt.chat_history
-    assert session_rt.history_start_index == 0
 
 
 def test_migration_excludes_only_full_excluded_pairs(tmp_path: Path) -> None:
@@ -210,7 +170,7 @@ def test_migration_excludes_only_full_excluded_pairs(tmp_path: Path) -> None:
     sessions_dir = tmp_path / "sessions"
 
     # WHEN migrating forward
-    session_data = SessionDataAdapter.validate_python(legacy)
+    session_data = LegacySessionSnapshot.model_validate(legacy)
     view = from_legacy_session(
         session_data=session_data,
         history_root=history_root,
@@ -225,3 +185,43 @@ def test_migration_excludes_only_full_excluded_pairs(tmp_path: Path) -> None:
     store = HistoryStore(history_root)
     pairs = find_message_pairs_in_view(store, view)
     assert pairs == [(0, 1), (2, 3)]
+
+
+def test_migration_intermediate_format(tmp_path: Path) -> None:
+    """
+    Tests migration of the 'intermediate' single-file format which used
+    history_start_pair and excluded_pairs directly, instead of the ancient flags.
+    """
+    # GIVEN an intermediate legacy session (single file, but new schema fields)
+    # Note: 'history_start_index' is missing, relying on 'history_start_pair'
+    legacy: dict[str, Any] = {
+        "model": "m",
+        "context_files": [],
+        "chat_history": [
+            _make_legacy_chat_item("user", "u0"),
+            _make_legacy_chat_item("assistant", "a0"),
+            _make_legacy_chat_item("user", "u1"),
+            _make_legacy_chat_item("assistant", "a1"),
+        ],
+        # These keys should take precedence over missing or default ancient keys
+        "history_start_pair": 1,
+        "excluded_pairs": [0],
+    }
+    history_root = tmp_path / "history"
+    sessions_dir = tmp_path / "sessions"
+
+    # WHEN migrating forward
+    session_data = LegacySessionSnapshot.model_validate(legacy)
+    view = from_legacy_session(
+        session_data=session_data,
+        history_root=history_root,
+        sessions_dir=sessions_dir,
+        name="intermediate",
+    )
+
+    # THEN the view adopts the explicit fields
+    assert view.history_start_pair == 1
+    assert view.excluded_pairs == [0]
+
+    # AND indices are valid
+    assert len(view.message_indices) == 4

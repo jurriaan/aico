@@ -7,9 +7,9 @@ import pytest
 from typer.testing import CliRunner
 
 from aico.consts import SESSION_FILE_NAME
-from aico.core.session_persistence import save_legacy_session_file as save_session
 from aico.lib.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
 from aico.main import app
+from tests.helpers import save_session
 
 runner = CliRunner()
 
@@ -25,9 +25,7 @@ def session_for_log_tests(tmp_path: Path) -> Iterator[Path]:
                 role="assistant", content="resp 0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=1
             ),
             # Pair 1 (active, excluded)
-            UserChatMessage(
-                role="user", content="prompt 1 excluded", mode=Mode.CONVERSATION, timestamp="t2", is_excluded=True
-            ),
+            UserChatMessage(role="user", content="prompt 1 excluded", mode=Mode.CONVERSATION, timestamp="t2"),
             AssistantChatMessage(
                 role="assistant",
                 content="resp 1 excluded",
@@ -35,7 +33,6 @@ def session_for_log_tests(tmp_path: Path) -> Iterator[Path]:
                 timestamp="t2",
                 model="m",
                 duration_ms=1,
-                is_excluded=True,
             ),
             # Pair 2 (active, multiline)
             UserChatMessage(role="user", content="prompt 2\nsecond line", mode=Mode.CONVERSATION, timestamp="t3"),
@@ -47,7 +44,7 @@ def session_for_log_tests(tmp_path: Path) -> Iterator[Path]:
         ]
         # Set start index to 2, so the first pair is inactive
         session_data = SessionData(
-            model="test-model", chat_history=history, context_files=[], history_start_index=2, history_start_pair=1
+            model="test-model", chat_history=history, context_files=[], history_start_pair=1, excluded_pairs=[1]
         )
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, session_data)

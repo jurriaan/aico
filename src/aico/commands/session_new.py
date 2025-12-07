@@ -13,7 +13,7 @@ def session_new(
         typer.echo("Error: New session name is required.", err=True)
         raise typer.Exit(code=1)
 
-    session = load_active_session(require_type="shared")
+    session = load_active_session()
 
     # We are guaranteed to be in a shared-history project; resolve active view path.
     active_view_path = load_pointer(session.file_path)

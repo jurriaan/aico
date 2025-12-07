@@ -20,7 +20,6 @@ from typer.testing import CliRunner
 
 from aico.consts import SESSION_FILE_NAME
 from aico.core.providers.base import NormalizedChunk
-from aico.core.session_persistence import save_legacy_session_file as save_session
 from aico.historystore import HistoryRecord, HistoryStore, append_pair_to_view, load_view, save_view
 from aico.historystore.pointer import load_pointer
 from aico.lib.history_utils import find_message_pairs
@@ -32,6 +31,7 @@ from aico.lib.models import (
 )
 from aico.lib.session_data_adapter import SessionDataAdapter
 from aico.main import app
+from tests.helpers import save_session
 
 
 # This file is used to override the default `get_gherkin_document` function so that
@@ -59,7 +59,7 @@ _ = mock.patch("pytest_bdd.parser.get_gherkin_document", new=new_get_gherkin_doc
 
 
 # Parametrized fixture for testing both session types
-@pytest.fixture(params=["legacy", "shared"])
+@pytest.fixture(params=["shared"])
 def session_type(request: pytest.FixtureRequest) -> str:
     """A parametrized fixture to provide the session type for testing."""
     return str(request.param)  # pyright: ignore[reportAny]
@@ -68,7 +68,7 @@ def session_type(request: pytest.FixtureRequest) -> str:
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     """Parametrize session_type for all feature tests."""
     if "session_type" in metafunc.fixturenames:
-        metafunc.parametrize("session_type", ["legacy", "shared"])
+        metafunc.parametrize("session_type", ["shared"])
 
 
 # Step definitions should be added below this line

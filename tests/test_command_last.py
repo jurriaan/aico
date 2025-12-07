@@ -1,7 +1,5 @@
 # pyright: standard
 
-import json
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -17,44 +15,11 @@ from aico.historystore import (
     switch_active_pointer,
 )
 from aico.historystore.models import HistoryRecord
-from aico.lib.models import Mode
+from aico.lib.models import AssistantChatMessage, DerivedContent, Mode, SessionData, UserChatMessage
 from aico.main import app
+from tests.helpers import save_session
 
 runner = CliRunner()
-
-
-@pytest.fixture
-def session_with_two_pairs(tmp_path: Path) -> Iterator[Path]:
-    """Creates a session with two user/assistant pairs within an isolated filesystem."""
-    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        session_data = {
-            "model": "test-model",
-            "context_files": [],
-            "history_start_index": 0,
-            "chat_history": [
-                {"role": "user", "content": "prompt one", "mode": "conversation", "timestamp": "t1"},
-                {
-                    "role": "assistant",
-                    "content": "response one",
-                    "mode": "conversation",
-                    "model": "test",
-                    "timestamp": "t1",
-                    "duration_ms": 1,
-                },
-                {"role": "user", "content": "prompt two", "mode": "conversation", "timestamp": "t2"},
-                {
-                    "role": "assistant",
-                    "content": "response two",
-                    "mode": "conversation",
-                    "model": "test",
-                    "timestamp": "t2",
-                    "duration_ms": 1,
-                },
-            ],
-        }
-        (Path(td) / SESSION_FILE_NAME).write_text(json.dumps(session_data))
-        # Yielding here ensures the 'with' block remains active for the test's duration
-        yield Path(td)
 
 
 def test_last_default_shows_last_assistant_response(session_with_two_pairs: Path) -> None:
@@ -64,8 +29,8 @@ def test_last_default_shows_last_assistant_response(session_with_two_pairs: Path
 
     # THEN it shows the assistant response from the last pair (-1)
     assert result.exit_code == 0
-    assert "response two" in result.stdout
-    assert "response one" not in result.stdout
+    assert "assistant response 1" in result.stdout
+    assert "assistant response 0" not in result.stdout
 
 
 def test_last_can_select_pair_by_positive_index(session_with_two_pairs: Path) -> None:
@@ -75,8 +40,8 @@ def test_last_can_select_pair_by_positive_index(session_with_two_pairs: Path) ->
 
     # THEN it shows the assistant response from the first pair (index 0)
     assert result.exit_code == 0
-    assert "response one" in result.stdout
-    assert "response two" not in result.stdout
+    assert "assistant response 0" in result.stdout
+    assert "assistant response 1" not in result.stdout
 
 
 def test_last_can_select_pair_by_negative_index(session_with_two_pairs: Path) -> None:
@@ -86,8 +51,8 @@ def test_last_can_select_pair_by_negative_index(session_with_two_pairs: Path) ->
 
     # THEN it shows the assistant response from the first pair (index -2)
     assert result.exit_code == 0
-    assert "response one" in result.stdout
-    assert "response two" not in result.stdout
+    assert "assistant response 0" in result.stdout
+    assert "assistant response 1" not in result.stdout
 
 
 def test_last_prompt_flag_shows_user_prompt(session_with_two_pairs: Path) -> None:
@@ -97,16 +62,16 @@ def test_last_prompt_flag_shows_user_prompt(session_with_two_pairs: Path) -> Non
 
     # THEN it shows the user prompt from the last pair
     assert result.exit_code == 0
-    assert "prompt two" in result.stdout
-    assert "response two" not in result.stdout
+    assert "user prompt 1" in result.stdout
+    assert "assistant response 1" not in result.stdout
 
     # WHEN `aico last 0 --prompt` is run
     result_0 = runner.invoke(app, ["last", "0", "--prompt"])
 
     # THEN it shows the user prompt from the first pair
     assert result_0.exit_code == 0
-    assert "prompt one" in result_0.stdout
-    assert "response one" not in result_0.stdout
+    assert "user prompt 0" in result_0.stdout
+    assert "assistant response 0" not in result_0.stdout
 
 
 def test_last_verbatim_flag_for_prompt(session_with_two_pairs: Path, mocker: MockerFixture) -> None:
@@ -117,7 +82,7 @@ def test_last_verbatim_flag_for_prompt(session_with_two_pairs: Path, mocker: Moc
 
     # THEN the raw prompt content is printed without modification
     assert result.exit_code == 0
-    assert result.stdout == "prompt two"
+    assert result.stdout == "user prompt 1"
 
 
 def test_last_fails_when_no_pairs_exist(tmp_path: Path) -> None:
@@ -167,27 +132,27 @@ def test_last_recompute_fails_with_prompt_flag(session_with_two_pairs: Path) -> 
 def test_last_recompute_for_diff_response(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a session with a diff response
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        user_message = {"role": "user", "content": "p1", "mode": "diff", "timestamp": "t1"}
-        assistant_message = {
-            "role": "assistant",
-            "content": "File: file.py\n<<<<<<< SEARCH\nold line\n=======\nnew line\n>>>>>>> REPLACE",
-            "mode": "diff",
-            "model": "test-model",
-            "timestamp": "t1",
-            "duration_ms": 100,
-            "derived": {
-                "unified_diff": "--- a/file.py\n+++ b/file.py\n@@ -1 +1 @@\n-old line\n+new line\n",
-            },
-        }
+        user_message = UserChatMessage(role="user", content="p1", mode=Mode.DIFF, timestamp="t1")
+        assistant_message = AssistantChatMessage(
+            role="assistant",
+            content="File: file.py\n<<<<<<< SEARCH\nold line\n=======\nnew line\n>>>>>>> REPLACE",
+            mode=Mode.DIFF,
+            model="test-model",
+            timestamp="t1",
+            duration_ms=100,
+            derived=DerivedContent(
+                unified_diff="--- a/file.py\n+++ b/file.py\n@@ -1 +1 @@\n-old line\n+new line\n",
+            ),
+        )
 
-        session_data = {
-            "model": "test-model",
-            "context_files": ["file.py"],
-            "chat_history": [user_message, assistant_message],
-            "history_start_index": 0,
-        }
-        session_file = Path(td) / SESSION_FILE_NAME
-        session_file.write_text(json.dumps(session_data))
+        session_data = SessionData(
+            model="test-model",
+            context_files=["file.py"],
+            chat_history=[user_message, assistant_message],
+        )
+
+        save_session(Path(td) / SESSION_FILE_NAME, session_data)
+
         (Path(td) / "file.py").write_text("old line\n")
         mocker.patch("aico.commands.last.is_terminal", return_value=False)
 
@@ -196,48 +161,52 @@ def test_last_recompute_for_diff_response(tmp_path: Path, mocker: MockerFixture)
 
         # THEN it recalculates the diff, which should succeed and be identical
         assert result_recomputed_piped.exit_code == 0
-        assert result_recomputed_piped.stdout == assistant_message["derived"]["unified_diff"]
+        assert (
+            assistant_message.derived is not None
+            and assistant_message.derived.unified_diff == result_recomputed_piped.stdout
+        )
         assert "Warning" not in result_recomputed_piped.stderr
 
 
 def test_last_can_access_pair_before_active_window(tmp_path: Path) -> None:
-    # GIVEN a legacy session with 3 pairs and an active window starting at pair 1
+    # GIVEN a session with 3 pairs and an active window starting at pair 1
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        session_data = {
-            "model": "test-model",
-            "context_files": [],
-            "history_start_pair": 1,  # Active window starts at pair 1
-            "chat_history": [
-                {"role": "user", "content": "prompt 0", "mode": "conversation", "timestamp": "t0"},
-                {
-                    "role": "assistant",
-                    "content": "response 0",
-                    "mode": "conversation",
-                    "model": "test",
-                    "timestamp": "t0",
-                    "duration_ms": 1,
-                },
-                {"role": "user", "content": "prompt 1", "mode": "conversation", "timestamp": "t1"},
-                {
-                    "role": "assistant",
-                    "content": "response 1",
-                    "mode": "conversation",
-                    "model": "test",
-                    "timestamp": "t1",
-                    "duration_ms": 1,
-                },
-                {"role": "user", "content": "prompt 2", "mode": "conversation", "timestamp": "t2"},
-                {
-                    "role": "assistant",
-                    "content": "response 2",
-                    "mode": "conversation",
-                    "model": "test",
-                    "timestamp": "t2",
-                    "duration_ms": 1,
-                },
-            ],
-        }
-        (Path(td) / SESSION_FILE_NAME).write_text(json.dumps(session_data))
+        history = [
+            UserChatMessage(role="user", content="prompt 0", mode=Mode.CONVERSATION, timestamp="t0"),
+            AssistantChatMessage(
+                role="assistant",
+                content="response 0",
+                mode=Mode.CONVERSATION,
+                timestamp="t0",
+                model="test",
+                duration_ms=1,
+            ),
+            UserChatMessage(role="user", content="prompt 1", mode=Mode.CONVERSATION, timestamp="t1"),
+            AssistantChatMessage(
+                role="assistant",
+                content="response 1",
+                mode=Mode.CONVERSATION,
+                timestamp="t1",
+                model="test",
+                duration_ms=1,
+            ),
+            UserChatMessage(role="user", content="prompt 2", mode=Mode.CONVERSATION, timestamp="t2"),
+            AssistantChatMessage(
+                role="assistant",
+                content="response 2",
+                mode=Mode.CONVERSATION,
+                timestamp="t2",
+                model="test",
+                duration_ms=1,
+            ),
+        ]
+        session_data = SessionData(
+            model="test-model",
+            context_files=[],
+            history_start_pair=1,  # Active window starts at pair 1
+            chat_history=history,
+        )
+        save_session(Path(td) / SESSION_FILE_NAME, session_data)
 
         # WHEN `aico last 0` is run, targeting a pair before the active window
         result = runner.invoke(app, ["last", "0"])

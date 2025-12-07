@@ -8,7 +8,6 @@ from typer.testing import CliRunner
 
 from aico.consts import SESSION_FILE_NAME
 from aico.core.session_context import build_active_context
-from aico.core.session_persistence import save_legacy_session_file as save_session
 from aico.historystore import (
     HistoryStore,
     SessionView,
@@ -19,8 +18,8 @@ from aico.historystore import (
 )
 from aico.historystore.models import HistoryRecord
 from aico.lib.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
-from aico.lib.session_data_adapter import SessionDataAdapter
 from aico.main import app
+from tests.helpers import load_session_data, save_session
 
 runner = CliRunner()
 
@@ -55,7 +54,7 @@ def test_set_history_with_negative_index_argument(tmp_path: Path) -> None:
         assert "History context will now start at pair 3." in result.stdout
 
         # AND the history start pair is set to index 3
-        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        updated_session_data = load_session_data(session_file)
         assert updated_session_data.history_start_pair == 3
 
 
@@ -88,7 +87,7 @@ def test_set_history_with_positive_pair_index(tmp_path: Path) -> None:
         assert "History context will now start at pair 1." in result.stdout
 
         # AND the history start pair is set to index 1
-        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        updated_session_data = load_session_data(session_file)
         assert updated_session_data.history_start_pair == 1
 
 
@@ -121,7 +120,7 @@ def test_set_history_to_clear_context(tmp_path: Path) -> None:
         assert "History context cleared (will start after the last conversation)." in result.stdout
 
         # AND the history start pair is set to 2 (num_pairs)
-        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        updated_session_data = load_session_data(session_file)
         assert updated_session_data.history_start_pair == 2
 
 
@@ -156,9 +155,7 @@ def test_set_history_fails_with_invalid_index(tmp_path: Path, invalid_input: str
                 )
             )
 
-        session_data = SessionData(
-            model="test-model", chat_history=history, context_files=[], history_start_index=1, history_start_pair=1
-        )
+        session_data = SessionData(model="test-model", chat_history=history, context_files=[], history_start_pair=1)
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, session_data)
         original_start_pair = session_data.history_start_pair
@@ -171,7 +168,7 @@ def test_set_history_fails_with_invalid_index(tmp_path: Path, invalid_input: str
         assert error_message in result.stderr
 
         # AND the history start pair remains unchanged
-        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        updated_session_data = load_session_data(session_file)
         assert updated_session_data.history_start_pair == original_start_pair
 
 
@@ -224,7 +221,7 @@ def test_set_history_with_zero_sets_index_to_zero(tmp_path: Path) -> None:
         assert "History context reset. Full chat history is now active." in result.stdout
 
         # AND the history start pair is now 0
-        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        updated_session_data = load_session_data(session_file)
         assert updated_session_data.history_start_pair == 0
         context = build_active_context(updated_session_data)
         active_history = context["active_history"]
@@ -260,7 +257,7 @@ def test_set_history_with_clear_keyword(tmp_path: Path) -> None:
         assert "History context cleared (will start after the last conversation)." in result.stdout
 
         # AND the history start pair is set to 2 (the total number of pairs)
-        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        updated_session_data = load_session_data(session_file)
         assert updated_session_data.history_start_pair == 2
 
 
@@ -293,7 +290,7 @@ def test_set_history_can_move_pointer_backwards(tmp_path: Path) -> None:
         assert "History context reset. Full chat history is now active." in result.stdout
 
         # AND the history start pair is set back to 0
-        updated_session_data = SessionDataAdapter.validate_json(session_file.read_text())
+        updated_session_data = load_session_data(session_file)
         assert updated_session_data.history_start_pair == 0
 
 

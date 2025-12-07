@@ -5,7 +5,6 @@ import pytest
 from typer.testing import CliRunner
 
 from aico.consts import SESSION_FILE_NAME
-from aico.core.session_persistence import save_legacy_session_file as save_session
 from aico.historystore import (
     HistoryStore,
     SessionView,
@@ -15,15 +14,11 @@ from aico.historystore import (
     switch_active_pointer,
 )
 from aico.historystore.models import HistoryRecord
-from aico.lib.models import Mode, SessionData
-from aico.lib.session_data_adapter import SessionDataAdapter
+from aico.lib.models import Mode
 from aico.main import app
+from tests.helpers import load_session_data, save_session
 
 runner = CliRunner()
-
-
-def load_session_data(session_file: Path) -> SessionData:
-    return SessionDataAdapter.validate_json(session_file.read_text())
 
 
 def test_undo_default_marks_last_pair_excluded(session_with_two_pairs: Path) -> None:

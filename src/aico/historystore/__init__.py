@@ -18,7 +18,6 @@ from .migration import (
     from_legacy_session,
     reconstruct_chat_history,
     reconstruct_full_chat_history,
-    to_legacy_session,
 )
 from .models import (
     SHARD_SIZE,
@@ -53,7 +52,6 @@ __all__ = [
     "fork_view",
     "switch_active_pointer",
     "from_legacy_session",
-    "to_legacy_session",
     "deserialize_user_record",
     "deserialize_assistant_record",
     "reconstruct_chat_history",

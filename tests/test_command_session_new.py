@@ -94,4 +94,4 @@ def test_session_new_fails_in_legacy_session(tmp_path: Path) -> None:
 
         # THEN the command fails because it's not a shared-history session
         assert result.exit_code == 1
-        assert "This command requires a shared-history session." in result.stderr
+        assert "Please run 'aico migrate-shared-history' to upgrade your project." in result.stderr

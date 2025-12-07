@@ -110,8 +110,8 @@ def get_start_message_index(session_data: SessionData) -> int:
 def active_message_indices(session_data: SessionData, include_dangling: bool = True) -> list[int]:
     """
     Compute active message indices.
-    - For shared-history sessions (pre-sliced history), it honors the `is_excluded`
-      flag on messages that `reconstruct_chat_history` sets.
+    - For shared-history sessions (pre-sliced history), we assume the persistence layer
+      has already filtered exclusions or we accept all present messages.
     - For legacy sessions, it uses `history_start_pair` and `excluded_pairs` to slice the full history.
     """
     history = session_data.chat_history
@@ -119,10 +119,26 @@ def active_message_indices(session_data: SessionData, include_dangling: bool = T
         return []
 
     if session_data.is_pre_sliced:
-        # For shared history, history is pre-sliced. Exclusions are marked on messages.
-        # This correctly includes non-excluded pairs and all dangling messages.
-        active_indices_set = {i for i, msg in enumerate(history) if not msg.is_excluded}
-        return sorted(list(active_indices_set))
+        pairs = find_message_pairs(history)
+        valid_indices: list[int] = []
+        excluded_set = set(session_data.excluded_pairs)
+        start_pair_offset = session_data.history_start_pair
+
+        for relative_pair_idx, p in enumerate(pairs):
+            absolute_pair_idx = relative_pair_idx + start_pair_offset
+
+            if absolute_pair_idx in excluded_set:
+                continue
+
+            valid_indices.append(p.user_index)
+            valid_indices.append(p.assistant_index)
+
+        last_paired_idx = pairs[-1].assistant_index if pairs else -1
+        if include_dangling:
+            for i in range(last_paired_idx + 1, len(history)):
+                valid_indices.append(i)
+
+        return sorted(valid_indices)
 
     # For legacy sessions, the full history is loaded, so we must apply the filters.
     pairs = find_message_pairs(history)

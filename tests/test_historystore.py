@@ -19,6 +19,7 @@ from aico.historystore import (
     save_view,
     switch_active_pointer,
 )
+from aico.lib.models import DerivedContent, TokenUsage
 
 
 def _make_record(role: Literal["user", "assistant"], content: str, mode: Mode = Mode.CONVERSATION) -> HistoryRecord:
@@ -183,7 +184,13 @@ def test_edit_message_appends_and_repoints(tmp_path: Path) -> None:
     view = SessionView(model="m", message_indices=[u_idx, a_idx])
 
     # WHEN editing the assistant message content
-    new_idx = edit_message(store, view, view_msg_position=1, new_content="resp 0 - edited")
+    new_record = HistoryRecord(
+        role="assistant",
+        content="resp 0 - edited",
+        mode=Mode.CONVERSATION,
+        edit_of=a_idx,
+    )
+    new_idx = edit_message(store, view, message_index=1, new_record=new_record)
 
     # THEN the store contains a new record with edit_of pointing to the original
     original = store.read(a_idx)
@@ -209,18 +216,21 @@ def test_edit_message_chain_and_manual_revert(tmp_path: Path) -> None:
     view = SessionView(model="m", message_indices=[u, a])
 
     # WHEN applying two edits in sequence to the assistant's response
-    idx2 = edit_message(store, view, 1, "r2")
-    idx3 = edit_message(store, view, 1, "r3")
+    r2 = HistoryRecord(role="assistant", content="r2", mode=Mode.CONVERSATION, edit_of=a)
+    idx2 = edit_message(store, view, 1, r2)
+
+    r3 = HistoryRecord(role="assistant", content="r3", mode=Mode.CONVERSATION, edit_of=idx2)
+    idx3 = edit_message(store, view, 1, r3)
 
     # THEN each new record points to its immediate predecessor
-    r2 = store.read(idx2)
-    r3 = store.read(idx3)
-    assert r2.edit_of == a
-    assert r3.edit_of == idx2
+    r2_read = store.read(idx2)
+    r3_read = store.read(idx3)
+    assert r2_read.edit_of == a
+    assert r3_read.edit_of == idx2
 
     # WHEN reverting manually by repointing the view to the predecessor
-    assert r3.edit_of is not None
-    view.message_indices[1] = r3.edit_of  # revert to r2
+    assert r3_read.edit_of is not None
+    view.message_indices[1] = r3_read.edit_of  # revert to r2
     # THEN reconstruction shows the reverted content
     records = store.read_many(view.message_indices)
     assert records[1].content == "r2"
@@ -232,6 +242,67 @@ def test_edit_message_chain_and_manual_revert(tmp_path: Path) -> None:
     # THEN reconstruction shows the original content
     records2 = store.read_many(view.message_indices)
     assert records2[1].content == "r1"
+
+
+def test_edit_message_can_clear_optional_fields(tmp_path: Path) -> None:
+    """
+    Verifies that passing explicit None/null values to edit_message
+    actually clears the fields in the storage, rather than preserving old values.
+    """
+    history_root = tmp_path / "history"
+    store = HistoryStore(history_root)
+    view = SessionView(model="base", context_files=[], message_indices=[], history_start_pair=0, excluded_pairs=[])
+
+    # 1. Create a "Fully Loaded" record with all optional fields set
+    user_rec = HistoryRecord(role="user", content="hi", mode=Mode.CONVERSATION, timestamp="t1")
+    asst_rec = HistoryRecord(
+        role="assistant",
+        content="hello",
+        mode=Mode.CONVERSATION,
+        timestamp="t2",
+        model="expensive-model",
+        duration_ms=500,
+        cost=0.02,
+        token_usage=TokenUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20),
+        derived=DerivedContent(unified_diff="diff"),
+    )
+
+    append_pair_to_view(store, view, user_rec, asst_rec)
+    original_asst_idx = view.message_indices[1]
+
+    # Verify setup
+    loaded = store.read(original_asst_idx)
+    assert loaded.cost == 0.02
+    assert loaded.derived is not None
+
+    # 2. Perform Edit: Change content AND explicitly clear all optional fields
+    # We construct a replacement record with None values
+    replacement_rec = HistoryRecord(
+        role="assistant",
+        content="hello updated",
+        mode=Mode.CONVERSATION,
+        timestamp="t2",
+        model="expensive-model",
+        duration_ms=500,
+        cost=None,  # Explicit clear
+        token_usage=None,  # Explicit clear
+        derived=None,  # Explicit clear
+    )
+
+    # 3. Call the dumb edit_message (which just replaces the record)
+    edit_message(store, view, 1, replacement_rec)
+
+    # 4. Verify fields are actually gone
+    new_idx = view.message_indices[1]
+    new_record = store.read(new_idx)
+
+    assert new_record.content == "hello updated"
+    assert new_record.cost is None
+    assert new_record.token_usage is None
+    assert new_record.derived is None
+
+    # 5. Verify non-cleared fields persisted (via the logic in persistence layer or manual copy)
+    assert new_record.model == "expensive-model"
 
 
 def test_append_pair_to_view_helper(tmp_path: Path) -> None:

@@ -402,8 +402,7 @@ def session_fork(
         int | None,
         typer.Option(
             "--until-pair",
-            help="Optional pair index to truncate history at (inclusive). "
-            + "If omitted, full history is copied.",
+            help="Optional pair index to truncate history at (inclusive). " + "If omitted, full history is copied.",
         ),
     ] = None,
     ephemeral: Annotated[

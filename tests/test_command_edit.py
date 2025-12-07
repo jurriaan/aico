@@ -10,7 +10,6 @@ from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
 from aico.consts import SESSION_FILE_NAME
-from aico.core.session_persistence import save_legacy_session_file as save_session
 from aico.lib.models import (
     AssistantChatMessage,
     DerivedContent,
@@ -19,6 +18,7 @@ from aico.lib.models import (
     UserChatMessage,
 )
 from aico.main import app
+from tests.helpers import save_session
 from tests.test_command_undo import load_session_data
 
 runner = CliRunner()

@@ -4,10 +4,10 @@ from pydantic import TypeAdapter
 
 from aico.lib.atomic_io import atomic_write_text
 from aico.lib.history_utils import find_message_pairs_from_records
-from aico.lib.models import SessionPointer, TokenUsage
+from aico.lib.models import SessionPointer
 
 from .history_store import HistoryStore
-from .models import HistoryDerived, HistoryRecord, SessionView
+from .models import HistoryRecord, SessionView
 
 
 def load_view(path: Path) -> SessionView:
@@ -40,43 +40,20 @@ def find_message_pairs_in_view(store: HistoryStore, view: SessionView) -> list[t
 def edit_message(
     store: HistoryStore,
     view: SessionView,
-    view_msg_position: int,
-    new_content: str,
-    *,
-    model: str | None = None,
-    derived: HistoryDerived | None = None,
-    token_usage: TokenUsage | None = None,
-    cost: float | None = None,
-    duration_ms: int | None = None,
+    message_index: int,
+    new_record: HistoryRecord,
 ) -> int:
     """
-    Append-and-repoint edit: creates a new record with updated content and edit_of pointing
-    to the original global index, then updates the view's pointer at view_msg_position.
+    Replaces the message at message_index with the provided new_record.
+    (Actually appends new_record to store and updates the view pointer).
     Returns the new global index.
-
-    Optional metadata may be provided to preserve or override fields such as model, derived,
-    token usage, cost, and duration for assistant edits. When not provided, original values are kept.
     """
-    if not (0 <= view_msg_position < len(view.message_indices)):
-        raise IndexError("view_msg_position out of range")
+    if not (0 <= message_index < len(view.message_indices)):
+        raise IndexError(f"Message index {message_index} out of range for view.")
 
-    original_index = view.message_indices[view_msg_position]
-    original = store.read(original_index)
-
-    new_record = HistoryRecord(
-        role=original.role,
-        content=new_content,
-        mode=original.mode,
-        model=model if model is not None else original.model,
-        derived=derived if derived is not None else original.derived,
-        token_usage=token_usage if token_usage is not None else original.token_usage,
-        cost=cost if cost is not None else original.cost,
-        duration_ms=duration_ms if duration_ms is not None else original.duration_ms,
-        edit_of=original_index,
-    )
-    new_index = store.append(new_record)
-    view.message_indices[view_msg_position] = new_index
-    return new_index
+    new_idx = store.append(new_record)
+    view.message_indices[message_index] = new_idx
+    return new_idx
 
 
 def append_pair_to_view(

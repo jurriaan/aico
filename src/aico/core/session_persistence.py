@@ -1,10 +1,8 @@
 import sys
-from dataclasses import replace
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 import typer
-from pydantic import TypeAdapter, ValidationError
 
 from aico.consts import SESSION_FILE_NAME
 from aico.historystore import (
@@ -12,6 +10,7 @@ from aico.historystore import (
     append_pair_to_view,
     load_view,
     reconstruct_chat_history,
+    reconstruct_full_chat_history,
     save_view,
 )
 from aico.historystore import (
@@ -23,15 +22,11 @@ from aico.historystore.pointer import (
     MissingViewError,
 )
 from aico.historystore.pointer import load_pointer as load_pointer_helper
-from aico.lib.atomic_io import atomic_write_text
-from aico.lib.history_utils import find_message_pairs, map_history_start_index_to_pair
 from aico.lib.models import (
     AssistantChatMessage,
     SessionData,
-    SessionPointer,
     UserChatMessage,
 )
-from aico.lib.session_data_adapter import SessionDataAdapter
 from aico.lib.session_find import find_session_file
 
 
@@ -56,109 +51,6 @@ class StatefulSessionPersistence(Protocol):
         history_start_pair: int | None = None,
         excluded_pairs: list[int] | None = None,
     ) -> None: ...
-
-
-class LegacyJsonPersistence:
-    """
-    Manages session state for the legacy single-file JSON format.
-
-    This class is stateless. Each write operation performs a full load-mutate-save cycle.
-    """
-
-    def load(self) -> tuple[Path, SessionData]:
-        session_file = find_session_file()
-        if not session_file:
-            print(f"Error: No session file '{SESSION_FILE_NAME}' found. Please run 'aico init' first.", file=sys.stderr)
-            raise typer.Exit(code=1)
-
-        try:
-            session_data = SessionDataAdapter.validate_json(session_file.read_text())
-        except ValidationError as e:
-            print("Error: Session file is corrupt or has an invalid format", file=sys.stderr)
-            print(e, file=sys.stderr)
-            raise typer.Exit(code=1) from e
-        except Exception as e:
-            print(f"Error: Could not load session file {session_file}: {e}", file=sys.stderr)
-            raise typer.Exit(code=1) from e
-
-        chat_history = session_data.chat_history
-
-        # One-way, in-memory upgrade for backward compatibility.
-        # This derives canonical fields from legacy fields if they are present.
-
-        # 1. Derive `excluded_pairs` from legacy `is_excluded` flags if `excluded_pairs` is empty.
-        has_legacy_exclusions = any(msg.is_excluded for msg in chat_history)
-        if not session_data.excluded_pairs and has_legacy_exclusions:
-            pairs = find_message_pairs(chat_history)
-            session_data.excluded_pairs = [
-                idx
-                for idx, p in enumerate(pairs)
-                if chat_history[p.user_index].is_excluded and chat_history[p.assistant_index].is_excluded
-            ]
-
-        # 2. Derive `history_start_pair` from legacy `history_start_index`.
-        if (
-            session_data.history_start_pair == 0
-            and session_data.history_start_index is not None
-            and session_data.history_start_index > 0
-        ):
-            session_data.history_start_pair = map_history_start_index_to_pair(
-                chat_history, session_data.history_start_index
-            )
-
-        return session_file, session_data
-
-    def append_pair(self, user_msg: UserChatMessage, asst_msg: AssistantChatMessage) -> None:
-        session_file, session_data = self.load()
-        session_data.chat_history.append(user_msg)
-        session_data.chat_history.append(asst_msg)
-        save_legacy_session_file(session_file, session_data)
-
-    def edit_message(
-        self,
-        message_index: int,
-        new_content: str,
-        new_metadata: AssistantChatMessage | None = None,
-    ) -> None:
-        session_file, session_data = self.load()
-
-        if new_metadata:
-            session_data.chat_history[message_index] = new_metadata
-        else:
-            target_message = session_data.chat_history[message_index]
-            updated_message = replace(target_message, content=new_content)
-            session_data.chat_history[message_index] = updated_message
-
-        save_legacy_session_file(session_file, session_data)
-
-    def update_view_metadata(
-        self,
-        *,
-        context_files: list[str] | None = None,
-        model: str | None = None,
-        history_start_pair: int | None = None,
-        excluded_pairs: list[int] | None = None,
-    ) -> None:
-        session_file, session_data = self.load()
-
-        changed = False
-        if context_files is not None:
-            sorted_files = sorted(context_files)
-            if session_data.context_files != sorted_files:
-                session_data.context_files = sorted_files
-                changed = True
-        if model is not None and session_data.model != model:
-            session_data.model = model
-            changed = True
-        if history_start_pair is not None and session_data.history_start_pair != history_start_pair:
-            session_data.history_start_pair = history_start_pair
-            changed = True
-        if excluded_pairs is not None and sorted(session_data.excluded_pairs) != sorted(excluded_pairs):
-            session_data.excluded_pairs = sorted(excluded_pairs)
-            changed = True
-
-        if changed:
-            save_legacy_session_file(session_file, session_data)
 
 
 class SharedHistoryPersistence:
@@ -222,17 +114,14 @@ class SharedHistoryPersistence:
         """
         store, view = self._load_view_and_store()
 
-        chat_history = reconstruct_chat_history(store, view)
+        chat_history = reconstruct_chat_history(store, view, include_excluded=True)
 
-        total_pairs = len(view.message_indices) // 2
         session_data = SessionData(
             model=view.model,
             context_files=list(view.context_files),
             chat_history=chat_history,
             history_start_pair=view.history_start_pair,
             excluded_pairs=list(view.excluded_pairs),
-            history_start_index=0,
-            total_pairs_in_history=total_pairs,
             is_pre_sliced=True,
         )
 
@@ -243,8 +132,7 @@ class SharedHistoryPersistence:
         Load the active SessionView and reconstruct a SessionData containing the full history.
         """
         store, view = self._load_view_and_store()
-        chat_history = reconstruct_chat_history(store, view, start_pair=0)
-        total_pairs = len(find_message_pairs(chat_history))
+        chat_history = reconstruct_full_chat_history(store, view)
 
         session_data = SessionData(
             model=view.model,
@@ -252,7 +140,6 @@ class SharedHistoryPersistence:
             chat_history=chat_history,
             history_start_pair=view.history_start_pair,
             excluded_pairs=list(view.excluded_pairs),
-            total_pairs_in_history=total_pairs,
         )
 
         return self._pointer_file, session_data
@@ -287,20 +174,44 @@ class SharedHistoryPersistence:
         if not (0 <= message_index < len(view.message_indices)):
             self._fail("Edited message index out of bounds for current view.")
 
+        # Read the existing record to base the new one on
+        original_msg_idx = view.message_indices[message_index]
+        old_record = store.read(original_msg_idx)
+
+        # Merge Logic:
+        # If new_metadata is provided, it's a full update (e.g. from a recompute/LLM response).
+        # If NOT provided, it's a user text edit -> we MUST clear derived fields.
         if new_metadata:
-            _ = edit_message_historystore(
-                store,
-                view,
-                message_index,
-                new_content,
-                model=new_metadata.model,
-                derived=new_metadata.derived,
-                token_usage=new_metadata.token_usage,
-                cost=new_metadata.cost,
-                duration_ms=new_metadata.duration_ms,
-            )
+            final_model = new_metadata.model
+            final_derived = new_metadata.derived
+            final_token_usage = new_metadata.token_usage
+            final_cost = new_metadata.cost
+            final_duration_ms = new_metadata.duration_ms
         else:
-            _ = edit_message_historystore(store, view, message_index, new_content)
+            # Content-only edit invalidates derived data
+            final_model = old_record.model
+            final_derived = None
+            final_token_usage = None
+            final_cost = None
+            final_duration_ms = old_record.duration_ms
+
+        # Create fully resolved new record
+        new_record = HistoryRecord(
+            role=old_record.role,
+            content=new_content,
+            mode=old_record.mode,
+            timestamp=old_record.timestamp,
+            model=final_model,
+            duration_ms=final_duration_ms,
+            derived=final_derived,
+            token_usage=final_token_usage,
+            cost=final_cost,
+            passthrough=old_record.passthrough,
+            piped_content=old_record.piped_content,
+            edit_of=original_msg_idx,
+        )
+
+        _ = edit_message_historystore(store, view, message_index, new_record)
 
         save_view(self._view_path_abs, view)
 
@@ -342,79 +253,53 @@ class SharedHistoryPersistence:
         raise typer.Exit(code=1)
 
 
-def get_persistence(require_type: str = "any") -> StatefulSessionPersistence:
+def get_persistence() -> StatefulSessionPersistence:
     """
     Factory for persistence backend; detects pointer file to enable shared-history.
-
-    Args:
-        require_type: Controls which persistence types are acceptable.
-            - "any": return either LegacyJsonPersistence or SharedHistoryPersistence.
-            - "shared": require a valid shared-history session (pointer + view); otherwise exit.
+    Fails if a legacy session file is detected.
     """
     session_file_path = find_session_file()
     if session_file_path is None:
-        if require_type == "shared":
-            print(
-                f"Error: No session file '{SESSION_FILE_NAME}' found. "
-                + "This command requires a shared-history session. "
-                + "Run 'aico init' or 'aico migrate-shared-history' first.",
-                file=sys.stderr,
-            )
-            raise typer.Exit(code=1)
-        return LegacyJsonPersistence()
+        # No session file found. Logic for non-existing sessions must happen upstream (init).
+        print(
+            f"Error: No session file '{SESSION_FILE_NAME}' found.",
+            file=sys.stderr,
+        )
+        raise typer.Exit(code=1)
 
     try:
         raw_text = session_file_path.read_text(encoding="utf-8").strip()
     except OSError as e:
-        if require_type == "shared":
-            print(f"Error: Could not read session file {session_file_path}: {e}", file=sys.stderr)
-            raise typer.Exit(code=1) from e
-        return LegacyJsonPersistence()
+        print(f"Error: Could not read session file {session_file_path}: {e}", file=sys.stderr)
+        raise typer.Exit(code=1) from e
 
     if not raw_text:
-        if require_type == "shared":
-            print(
-                f"Error: Session file '{SESSION_FILE_NAME}' is empty. "
-                + "This command requires a shared-history session pointer.",
-                file=sys.stderr,
-            )
-            raise typer.Exit(code=1)
-        return LegacyJsonPersistence()
+        # Treat empty file as invalid/legacy error
+        print(
+            f"Error: Session file '{SESSION_FILE_NAME}' is empty. "
+            + "This command requires a shared-history session pointer.",
+            file=sys.stderr,
+        )
+        raise typer.Exit(code=1)
 
-    # Optimization: if it doesn't contain the magic string, it can't be a pointer.
+    # Check for legacy format
     if "aico_session_pointer_v1" not in raw_text:
-        if require_type == "shared":
-            print(
-                "Error: This command requires a shared-history session. "
-                + "Run 'aico migrate-shared-history' to upgrade this legacy session.",
-                file=sys.stderr,
-            )
-            raise typer.Exit(code=1)
-        return LegacyJsonPersistence()
+        print(
+            f"Error: Detected a legacy session file at {session_file_path}.\n"
+            + "This version of aico only supports the Shared History format.\n"
+            + "Please run 'aico migrate-shared-history' to upgrade your project.",
+            file=sys.stderr,
+        )
+        raise typer.Exit(code=1)
 
-    # It looks like a pointer.
-    if require_type == "shared":
-        # If shared is required, be strict: load_pointer must succeed completely.
-        try:
-            _ = load_pointer_helper(session_file_path)
-        except MissingViewError as e:
-            typer.echo(str(e), err=True)
-            raise typer.Exit(code=1) from e
-        except InvalidPointerError as e:
-            typer.echo(f"Error: {e}", err=True)
-            raise typer.Exit(code=1) from e
-    else:
-        # If any type is allowed, be lenient.
-        # It's a pointer if it can be parsed as one, even if the view is missing.
-        try:
-            _ = TypeAdapter(SessionPointer).validate_json(raw_text)
-        except ValidationError:
-            return LegacyJsonPersistence()
+    # Use strict loader logic
+    try:
+        _ = load_pointer_helper(session_file_path)
+    except MissingViewError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(code=1) from e
+    except InvalidPointerError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(code=1) from e
 
     return SharedHistoryPersistence(session_file_path)
-
-
-def save_legacy_session_file(session_file: Path, session_data: SessionData) -> None:
-    """Saves a SessionData object to a legacy single-file JSON format."""
-    text = SessionDataAdapter.dump_json(session_data, indent=2)
-    atomic_write_text(session_file, text)

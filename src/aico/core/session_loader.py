@@ -1,7 +1,6 @@
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 from aico.core.session_persistence import (
     SharedHistoryPersistence,
@@ -75,9 +74,8 @@ def expand_index_ranges(indices: list[str]) -> list[str]:
 
 def load_active_session(
     full_history: bool = False,
-    require_type: Literal["any", "shared"] = "any",
 ) -> ActiveSession:
-    persistence = get_persistence(require_type=require_type)
+    persistence = get_persistence()
 
     if full_history and isinstance(persistence, SharedHistoryPersistence):
         session_file, session_data = persistence.load_full_history()
