@@ -2,8 +2,8 @@ from rich.console import Console
 
 from aico.core.session_loader import load_session_and_resolve_indices
 from aico.exceptions import AicoError, InvalidInputError
-from aico.lib.diffing import recompute_derived_content
 from aico.lib.models import AssistantChatMessage, DisplayItem
+from aico.lib.stream_processor import recompute_derived_content
 from aico.lib.ui import (
     is_terminal,
     reconstruct_display_content_for_piping,

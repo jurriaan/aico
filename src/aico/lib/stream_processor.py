@@ -1,10 +1,10 @@
-import difflib
 from collections.abc import Iterator
 from pathlib import Path
 
 import regex as re
 
 from aico.core.files import get_context_file_contents as build_original_file_contents
+from aico.lib.diff_utils import generate_diff_with_no_newline_handling
 from aico.lib.models import (
     AIPatch,
     DerivedContent,
@@ -19,6 +19,7 @@ from aico.lib.models import (
     UnparsedBlock,
     WarningMessage,
 )
+from aico.lib.patching import create_patched_content
 
 # This regex is the core of the parser. It finds a complete `File:` block.
 # It uses named capture groups and backreferences to be robust.
@@ -47,172 +48,6 @@ _FILE_BLOCK_REGEX = re.compile(
     + r")",
     re.MULTILINE | re.DOTALL | re.UNICODE,
 )
-
-# This regex checks for a File: line followed by a SEARCH delimiter at the end of the text.
-# It's more robust than simple string checking.
-
-
-def _quote_filename_if_needed(filename: str) -> str:
-    """Quotes a filename if it contains spaces, for use in a diff header."""
-    return f'"{filename}"' if " " in filename else filename
-
-
-def _add_no_newline_marker_if_needed(diff_lines: list[str], original_content: str | None) -> None:
-    """
-    Manually injects the '\\ No newline at end of file' marker into a diff list IN-PLACE.
-    This is a workaround because `difflib` doesn't add the marker itself when using
-    `splitlines(keepends=True)`.
-
-    The logic is: if the original file lacks a trailing newline, find the last line
-    in the diff that came from the original file (' ' or '-'). If that diff line
-    also lacks a trailing newline, it must be the end of the file, so we add the marker.
-    """
-    if not (diff_lines and original_content and not original_content.endswith("\n")):
-        return
-
-    # Iterate backwards through the diff to find the last line from the original file
-    for i in range(len(diff_lines) - 1, -1, -1):
-        line = diff_lines[i]
-
-        if line.startswith("@@"):
-            # We've reached the start of a hunk without finding a suitable line.
-            # This means the hunk doesn't contain lines from the end of the original file.
-            return
-
-        if line.startswith("-") or line.startswith(" "):
-            # This is the last relevant line from the original file within this hunk.
-            # If it doesn't end with a newline, then it must be the end of the file.
-            if not line.endswith("\n"):
-                diff_lines[i] += "\n"
-                diff_lines.insert(i + 1, "\\ No newline at end of file\n")
-            # If it *does* end with a newline, the hunk is not at the end of the file,
-            # so we shouldn't add a marker. In either case, we are done with this hunk.
-            return
-
-
-def _generate_diff_with_no_newline_handling(
-    from_file: str,
-    to_file: str,
-    from_content: str | None,
-    to_content: str | None,
-) -> list[str]:
-    """
-    Generates a unified diff using difflib and applies custom logic to handle
-    the '\\ No newline at end of file' marker, which difflib does not do correctly
-    with splitlines(keepends=True).
-    """
-    from_lines = (from_content or "").splitlines(keepends=True)
-    to_lines = (to_content or "").splitlines(keepends=True)
-
-    diff_lines = list(
-        difflib.unified_diff(
-            from_lines,
-            to_lines,
-            fromfile=_quote_filename_if_needed(from_file),
-            tofile=_quote_filename_if_needed(to_file),
-        )
-    )
-
-    _add_no_newline_marker_if_needed(diff_lines, from_content)
-
-    return diff_lines
-
-
-def _try_exact_string_patch(original_content: str, search_block: str, replace_block: str) -> str | None:
-    # Handle file creation
-    if not search_block and not original_content:
-        return replace_block
-
-    # Handle file deletion
-    if not replace_block and search_block == original_content:
-        return ""
-
-    # An empty or whitespace-only search block is only valid for whole-file operations
-    # (new file or full replacement), which are handled above. For a partial patch
-    # on an existing file, it's invalid.
-    if not search_block.strip():
-        return None
-
-    if search_block not in original_content:
-        # Block not found. Fall back to the flexible patcher.
-        return None
-
-    # Use replace with a count of 1 to replace only the first occurrence.
-    return original_content.replace(search_block, replace_block, 1)
-
-
-def _get_consistent_indentation(lines: list[str]) -> str:
-    return next((line[: len(line) - len(line.lstrip())] for line in lines if line.strip()), "")
-
-
-def _try_whitespace_flexible_patch(original_content: str, search_block: str, replace_block: str) -> str | None:
-    original_lines = original_content.splitlines(keepends=True)
-    search_lines = search_block.splitlines(keepends=True)
-    replace_lines = replace_block.splitlines(keepends=True)
-
-    if not search_lines:
-        return None
-
-    # Strip both leading and trailing whitespace for comparison to handle
-    # potential missing newlines from the LLM/parser.
-    stripped_search_lines = [line.strip() for line in search_lines]
-    if not any(stripped_search_lines):
-        # A search block containing only whitespace is ambiguous and not supported
-        # for flexible patching. The exact patcher should handle it if it's an exact match.
-        return None
-
-    matching_block_start_indices = [
-        i
-        for i in range(len(original_lines) - len(search_lines) + 1)
-        if [line.strip() for line in original_lines[i : i + len(search_lines)]] == stripped_search_lines
-    ]
-
-    if not matching_block_start_indices:
-        return None
-
-    # If there are multiple matches, we now default to patching the first one.
-    match_start_index = matching_block_start_indices[0]
-    matched_original_lines_chunk = original_lines[match_start_index : match_start_index + len(search_lines)]
-
-    original_anchor_indent = _get_consistent_indentation(matched_original_lines_chunk)
-    replace_min_indent = _get_consistent_indentation(replace_lines)
-
-    indented_replace_lines: list[str] = []
-    for line in replace_lines:
-        if not line.strip():
-            indented_replace_lines.append(line)
-            continue
-
-        # Strip the replace block's own base indentation.
-        relative_line = line
-        if line.startswith(replace_min_indent):
-            relative_line = line[len(replace_min_indent) :]
-
-        # Apply the original anchor indentation.
-        new_line = original_anchor_indent + relative_line
-        indented_replace_lines.append(new_line)
-
-    new_content_lines = (
-        original_lines[:match_start_index]
-        + indented_replace_lines
-        + original_lines[match_start_index + len(search_lines) :]
-    )
-
-    return "".join(new_content_lines)
-
-
-def _create_patched_content(original_content: str, search_block: str, replace_block: str) -> str | None:
-    # Stage 1: Exact match
-    exact_patch = _try_exact_string_patch(original_content, search_block, replace_block)
-    if exact_patch is not None:
-        return exact_patch
-
-    # Stage 2: Whitespace-insensitive match
-    flexible_patch = _try_whitespace_flexible_patch(original_content, search_block, replace_block)
-    if flexible_patch is not None:
-        return flexible_patch
-
-    return None
 
 
 def _resolve_file_path(
@@ -308,7 +143,7 @@ def _process_single_diff_block(
     """
     diff_string: str
     search_content = parsed_block.search_content
-    new_content_full = _create_patched_content(
+    new_content_full = create_patched_content(
         content_before_patch,
         search_content,
         parsed_block.replace_content,
@@ -327,7 +162,7 @@ def _process_single_diff_block(
             content_before_patch if not is_new_file else None,
             new_content_full,
         )
-        diff_lines = _generate_diff_with_no_newline_handling(
+        diff_lines = generate_diff_with_no_newline_handling(
             from_file=from_file,
             to_file=to_file,
             from_content=content_before_patch,
@@ -543,7 +378,7 @@ def generate_unified_diff(original_file_contents: FileContents, llm_response: st
             continue
 
         from_file, to_file = _get_diff_paths(file_path, from_content, to_content)
-        diff_lines = _generate_diff_with_no_newline_handling(
+        diff_lines = generate_diff_with_no_newline_handling(
             from_file=from_file,
             to_file=to_file,
             from_content=from_content,

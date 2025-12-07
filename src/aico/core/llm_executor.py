@@ -13,11 +13,6 @@ from aico.core.prompt_helpers import reconstruct_historical_messages
 from aico.core.provider_router import get_provider_for_model
 from aico.core.providers.base import LLMProvider
 from aico.core.session_context import build_active_context
-from aico.lib.diffing import (
-    generate_display_items,
-    generate_unified_diff,
-    process_llm_response_stream,
-)
 from aico.lib.models import (
     ChatMessageHistoryItem,
     DisplayItem,
@@ -28,6 +23,11 @@ from aico.lib.models import (
     SessionData,
     TokenUsage,
     WarningMessage,
+)
+from aico.lib.stream_processor import (
+    generate_display_items,
+    generate_unified_diff,
+    process_llm_response_stream,
 )
 from aico.lib.ui import (
     calculate_and_display_cost,
