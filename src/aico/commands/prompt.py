@@ -1,11 +1,11 @@
 import sys
 from datetime import UTC, datetime
 
-import typer
 from rich.prompt import Prompt
 
 from aico.core.llm_executor import execute_interaction
 from aico.core.session_loader import load_active_session
+from aico.exceptions import InvalidInputError, ProviderError
 from aico.lib.models import (
     AssistantChatMessage,
     DerivedContent,
@@ -52,8 +52,7 @@ def _invoke_llm_logic(
         # No input from CLI or pipe, prompt interactively
         primary_prompt = Prompt.ask("Prompt")
         if not primary_prompt.strip():
-            print("Error: Prompt is required.", file=sys.stderr)
-            raise typer.Exit(code=1)
+            raise InvalidInputError("Prompt is required.")
 
     try:
         interaction_result = execute_interaction(
@@ -68,8 +67,7 @@ def _invoke_llm_logic(
             model_override=model,
         )
     except Exception as e:
-        print(f"Error calling LLM API: {e}", file=sys.stderr)
-        raise typer.Exit(code=1) from e
+        raise ProviderError(f"Error calling LLM API: {e}") from e
 
     assistant_response_timestamp = _get_timestamp()
     derived_content: DerivedContent | None = None

@@ -1,12 +1,14 @@
 # pyright: standard
 from pathlib import Path
 
+import pytest
 import typer
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
 from aico.addons import create_click_command, discover_addons, execute_addon
 from aico.consts import SESSION_FILE_NAME
+from aico.exceptions import AddonExecutionError
 from aico.lib.models import AddonInfo, SessionData
 from tests.helpers import save_session
 
@@ -110,20 +112,17 @@ def test_execute_addon_handles_os_error(tmp_path: Path, mocker: MockerFixture) -
     addon_path = tmp_path / "my-addon"
     addon_info = AddonInfo(name="my-addon", path=addon_path, help_text="", source="project")
 
-    # AND a session file exists (so the env var can be set)
+    # AND a session file exists
     session_file = tmp_path / SESSION_FILE_NAME
     mocker.patch("aico.addons.find_session_file", return_value=session_file)
 
     # AND os.execvpe is mocked to raise an OSError
-    mock_exec = mocker.patch("os.execvpe", side_effect=OSError("Test error"))
-    mock_exit = mocker.patch("sys.exit")
+    mocker.patch("os.execvpe", side_effect=OSError("Test error"))
 
     # WHEN execute_addon is called
-    execute_addon(addon_info, [])
-
-    # THEN the error is handled and sys.exit is called
-    mock_exec.assert_called_once()
-    mock_exit.assert_called_once_with(1)
+    # THEN it should raise AddonExecutionError wrapping the original error
+    with pytest.raises(AddonExecutionError, match="Error executing addon 'my-addon': Test error"):
+        execute_addon(addon_info, [])
 
 
 def test_discover_addons(tmp_path: Path, mocker: MockerFixture) -> None:

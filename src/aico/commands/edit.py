@@ -9,6 +9,7 @@ from pathlib import Path
 import typer
 
 from aico.core.session_loader import load_session_and_resolve_indices
+from aico.exceptions import ExternalDependencyError
 from aico.lib.diffing import recompute_derived_content
 from aico.lib.models import AssistantChatMessage
 from aico.lib.ui import is_input_terminal
@@ -52,16 +53,13 @@ def edit(
             try:
                 proc = subprocess.run(full_command, check=False)
             except FileNotFoundError:
-                print(
-                    f"Error: Editor command not found: '{editor_cmd_parts[0]}'. "
-                    + "Please set the $EDITOR environment variable.",
-                    file=sys.stderr,
-                )
-                raise typer.Exit(code=1) from None
+                raise ExternalDependencyError(
+                    f"Editor command not found: '{editor_cmd_parts[0]}'. "
+                    + "Please set the $EDITOR environment variable."
+                ) from None
 
             if proc.returncode != 0:
-                print("Editor closed with non-zero exit code. Aborting.", file=sys.stderr)
-                raise typer.Exit(code=1)
+                raise ExternalDependencyError("Editor closed with non-zero exit code. Aborting.")
 
             new_content = temp_file_path.read_text()
         finally:

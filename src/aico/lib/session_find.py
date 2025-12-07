@@ -1,11 +1,11 @@
 import os
-import sys
 from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
 from typer import Context
 
 from aico.consts import SESSION_FILE_NAME
+from aico.exceptions import ConfigurationError
 from aico.lib.models import SessionData, SessionPointer
 
 
@@ -16,11 +16,9 @@ def find_session_file() -> Path | None:
     if env_path := os.environ.get("AICO_SESSION_FILE"):
         path = Path(env_path)
         if not path.is_absolute():
-            print("Error: AICO_SESSION_FILE must be an absolute path", file=sys.stderr)
-            sys.exit(1)
+            raise ConfigurationError("AICO_SESSION_FILE must be an absolute path")
         if not path.exists():
-            print(f"Error: Session file specified in AICO_SESSION_FILE does not exist: {path}", file=sys.stderr)
-            sys.exit(1)
+            raise ConfigurationError(f"Session file specified in AICO_SESSION_FILE does not exist: {path}")
         return path
 
     current = Path.cwd()

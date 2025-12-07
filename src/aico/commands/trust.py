@@ -10,6 +10,7 @@ from aico.core.trust import (
     trust_project,
     untrust_project,
 )
+from aico.exceptions import ConfigurationError
 
 
 def trust(
@@ -46,12 +47,10 @@ def trust(
     try:
         target_path = target_path.resolve()
     except OSError as e:
-        console.print(f"[red]Error:[/red] Invalid path '{target_path}'.")
-        raise typer.Exit(1) from e
+        raise ConfigurationError(f"Invalid path '{target_path}'.") from e
 
     if not target_path.is_dir():
-        console.print(f"[red]Error:[/red] Path is not a directory: {target_path}")
-        raise typer.Exit(1)
+        raise ConfigurationError(f"Path is not a directory: {target_path}")
 
     # Handle --revoke
     if revoke:

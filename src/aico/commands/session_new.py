@@ -1,6 +1,7 @@
 import typer
 
 from aico.core.session_loader import load_active_session
+from aico.exceptions import InvalidInputError
 from aico.historystore import SessionView, save_view, switch_active_pointer
 from aico.historystore.pointer import load_pointer
 
@@ -10,8 +11,7 @@ def session_new(
     model: str | None,
 ) -> None:
     if not name.strip():
-        typer.echo("Error: New session name is required.", err=True)
-        raise typer.Exit(code=1)
+        raise InvalidInputError("New session name is required.")
 
     session = load_active_session()
 
@@ -22,8 +22,7 @@ def session_new(
     new_view_path = sessions_dir / f"{name}.json"
 
     if new_view_path.exists():
-        typer.echo(f"Error: A session view named '{name}' already exists.", err=True)
-        raise typer.Exit(code=1)
+        raise InvalidInputError(f"A session view named '{name}' already exists.")
 
     new_model = model or session.data.model
 

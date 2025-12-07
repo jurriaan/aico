@@ -1,9 +1,7 @@
-import sys
 from pathlib import Path
 
-import typer
-
 from aico.consts import SESSION_FILE_NAME
+from aico.exceptions import ConfigurationError
 from aico.historystore import SessionView, save_view, switch_active_pointer
 
 
@@ -12,11 +10,7 @@ def init(
 ) -> None:
     session_file = Path.cwd() / SESSION_FILE_NAME
     if session_file.exists():
-        print(
-            f"Error: Session file '{session_file}' already exists in this directory.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
+        raise ConfigurationError(f"Session file '{session_file}' already exists in this directory.")
 
     # Prepare shared-history directories
     project_root = session_file.parent

@@ -1,10 +1,10 @@
-import sys
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 import typer
 
 from aico.consts import SESSION_FILE_NAME
+from aico.exceptions import SessionError, SessionIntegrityError
 from aico.historystore import (
     HistoryStore,
     append_pair_to_view,
@@ -249,8 +249,7 @@ class SharedHistoryPersistence:
     # ---------- Helpers ----------
 
     def _fail(self, message: str) -> None:
-        typer.echo(f"Error: {message}", err=True)
-        raise typer.Exit(code=1)
+        raise SessionError(message)
 
 
 def get_persistence() -> StatefulSessionPersistence:
@@ -261,45 +260,31 @@ def get_persistence() -> StatefulSessionPersistence:
     session_file_path = find_session_file()
     if session_file_path is None:
         # No session file found. Logic for non-existing sessions must happen upstream (init).
-        print(
-            f"Error: No session file '{SESSION_FILE_NAME}' found.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
+        raise SessionError(f"No session file '{SESSION_FILE_NAME}' found.")
 
     try:
         raw_text = session_file_path.read_text(encoding="utf-8").strip()
     except OSError as e:
-        print(f"Error: Could not read session file {session_file_path}: {e}", file=sys.stderr)
-        raise typer.Exit(code=1) from e
+        raise SessionError(f"Could not read session file {session_file_path}: {e}") from e
 
     if not raw_text:
         # Treat empty file as invalid/legacy error
-        print(
-            f"Error: Session file '{SESSION_FILE_NAME}' is empty. "
-            + "This command requires a shared-history session pointer.",
-            file=sys.stderr,
+        raise SessionIntegrityError(
+            f"Session file '{SESSION_FILE_NAME}' is empty. " + "This command requires a shared-history session pointer."
         )
-        raise typer.Exit(code=1)
 
     # Check for legacy format
     if "aico_session_pointer_v1" not in raw_text:
-        print(
-            f"Error: Detected a legacy session file at {session_file_path}.\n"
+        raise SessionIntegrityError(
+            f"Detected a legacy session file at {session_file_path}.\n"
             + "This version of aico only supports the Shared History format.\n"
-            + "Please run 'aico migrate-shared-history' to upgrade your project.",
-            file=sys.stderr,
+            + "Please run 'aico migrate-shared-history' to upgrade your project."
         )
-        raise typer.Exit(code=1)
 
     # Use strict loader logic
     try:
         _ = load_pointer_helper(session_file_path)
-    except MissingViewError as e:
-        typer.echo(str(e), err=True)
-        raise typer.Exit(code=1) from e
-    except InvalidPointerError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(code=1) from e
+    except (MissingViewError, InvalidPointerError) as e:
+        raise SessionIntegrityError(str(e)) from e
 
     return SharedHistoryPersistence(session_file_path)

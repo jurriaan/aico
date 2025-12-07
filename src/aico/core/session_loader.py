@@ -1,4 +1,3 @@
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -7,6 +6,7 @@ from aico.core.session_persistence import (
     StatefulSessionPersistence,
     get_persistence,
 )
+from aico.exceptions import InvalidInputError
 from aico.lib.history_utils import find_message_pairs
 from aico.lib.models import MessagePairIndices, SessionData
 
@@ -97,37 +97,33 @@ def resolve_pair_index(session: ActiveSession, index_str: str) -> int:
     """
     try:
         user_idx_val = int(index_str)
-    except ValueError:
-        print(f"Error: Invalid index '{index_str}'. Must be an integer.", file=sys.stderr)
-        sys.exit(1)
+    except ValueError as e:
+        raise InvalidInputError(f"Invalid index '{index_str}'. Must be an integer.") from e
 
     pairs = find_message_pairs(session.data.chat_history)
     num_pairs = len(pairs)
 
     if num_pairs == 0:
-        print("Error: No message pairs found in history.", file=sys.stderr)
-        sys.exit(1)
+        raise InvalidInputError("No message pairs found in history.")
 
     # Map negative indices to their positive counterparts.
     if user_idx_val < 0:
         if user_idx_val < -num_pairs:
             if num_pairs == 1:
-                err_msg = f"Error: Pair at index {user_idx_val} not found. The only valid index is 0 (or -1)."
+                err_msg = f"Pair at index {user_idx_val} not found. The only valid index is 0 (or -1)."
             else:
                 valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
-                err_msg = f"Error: Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
-            print(err_msg, file=sys.stderr)
-            sys.exit(1)
+                err_msg = f"Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
+            raise InvalidInputError(err_msg)
         resolved_index = num_pairs + user_idx_val
     else:
         if user_idx_val >= num_pairs:
             if num_pairs == 1:
-                err_msg = f"Error: Pair at index {user_idx_val} not found. The only valid index is 0 (or -1)."
+                err_msg = f"Pair at index {user_idx_val} not found. The only valid index is 0 (or -1)."
             else:
                 valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
-                err_msg = f"Error: Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
-            print(err_msg, file=sys.stderr)
-            sys.exit(1)
+                err_msg = f"Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
+            raise InvalidInputError(err_msg)
         resolved_index = user_idx_val
 
     return resolved_index

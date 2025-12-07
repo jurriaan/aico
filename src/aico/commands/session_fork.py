@@ -6,6 +6,7 @@ from pathlib import Path
 import typer
 
 from aico.core.session_loader import load_active_session
+from aico.exceptions import InvalidInputError, SessionError
 from aico.historystore import HistoryStore, find_message_pairs_in_view, fork_view, load_view, switch_active_pointer
 from aico.historystore.pointer import load_pointer
 
@@ -20,12 +21,10 @@ def session_fork(
     exec_args = ctx.args
 
     if not new_name.strip():
-        typer.echo("Error: New session name is required.", err=True)
-        raise typer.Exit(code=1)
+        raise InvalidInputError("New session name is required.")
 
     if ephemeral and not exec_args:
-        typer.echo("Error: --ephemeral is only valid when executing a command via '--'.", err=True)
-        raise typer.Exit(code=1)
+        raise InvalidInputError("--ephemeral is only valid when executing a command via '--'.")
 
     session = load_active_session()
 
@@ -35,15 +34,12 @@ def session_fork(
     sessions_dir = session.root / ".aico" / "sessions"
     history_root = session.root / ".aico" / "history"
     if not sessions_dir.is_dir() or not history_root.is_dir():
-        typer.echo("Error: Shared-history directories missing (.aico/sessions or .aico/history).", err=True)
-        raise typer.Exit(code=1)
+        raise SessionError("Shared-history directories missing (.aico/sessions or .aico/history).")
     if not active_view_path.is_file():
-        typer.echo(f"Error: Active view file not found: {active_view_path}", err=True)
-        raise typer.Exit(code=1)
+        raise SessionError(f"Active view file not found: {active_view_path}")
 
     if (sessions_dir / f"{new_name}.json").exists():
-        typer.echo(f"Error: A session view named '{new_name}' already exists.", err=True)
-        raise typer.Exit(code=1)
+        raise InvalidInputError(f"A session view named '{new_name}' already exists.")
 
     store = HistoryStore(history_root)
     view = load_view(active_view_path)
@@ -52,11 +48,9 @@ def session_fork(
     if until_pair is not None:
         pairs = find_message_pairs_in_view(store, view)
         if not (0 <= until_pair < len(pairs)):
-            typer.echo(
-                f"Error: --until-pair {until_pair} out of range. Valid pair indices: 0 to {len(pairs) - 1}.",
-                err=True,
+            raise InvalidInputError(
+                f"--until-pair {until_pair} out of range. Valid pair indices: 0 to {len(pairs) - 1}."
             )
-            raise typer.Exit(code=1)
 
     new_view_path = fork_view(store, view, until_pair=until_pair, new_name=new_name, sessions_dir=sessions_dir)
 

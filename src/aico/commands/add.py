@@ -1,9 +1,8 @@
 from pathlib import Path
 
-import typer
-
 from aico.core.files import validate_input_paths
 from aico.core.session_loader import load_active_session
+from aico.exceptions import InvalidInputError
 
 
 def add(file_paths: list[Path]) -> None:
@@ -25,4 +24,4 @@ def add(file_paths: list[Path]) -> None:
         session.persistence.update_view_metadata(context_files=new_context)
 
     if errors_found:
-        raise typer.Exit(code=1)
+        raise InvalidInputError("One or more files could not be added.")

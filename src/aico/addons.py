@@ -11,6 +11,7 @@ from typing import Literal
 import click
 
 from aico.core.trust import is_project_trusted
+from aico.exceptions import AddonExecutionError
 from aico.lib.atomic_io import atomic_write_text
 from aico.lib.models import AddonInfo
 from aico.lib.session_find import find_session_file
@@ -150,9 +151,7 @@ def execute_addon(addon: AddonInfo, args: list[str]) -> None:
         # All addon paths are now guaranteed executable Paths on disk
         os.execvpe(addon.path, [addon.name] + args, env)
     except OSError as e:
-        print(f"Error executing addon '{addon.name}': {e}", file=sys.stderr)
-        # os.exec* replaces the process, so this exit is a fallback.
-        sys.exit(1)
+        raise AddonExecutionError(f"Error executing addon '{addon.name}': {e}") from e
 
 
 def create_click_command(addon: AddonInfo) -> click.Command:

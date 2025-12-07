@@ -4,6 +4,7 @@ import typer
 from pydantic import TypeAdapter, ValidationError
 
 from aico.consts import SESSION_FILE_NAME
+from aico.exceptions import ConfigurationError, InvalidInputError, SessionError
 from aico.historystore import from_legacy_session, switch_active_pointer
 from aico.historystore.migration import LegacySessionSnapshot
 from aico.lib.models import SessionPointer
@@ -17,17 +18,12 @@ def migrate_shared_history(
 ) -> None:
     session_file = find_session_file()
     if not session_file:
-        print(
-            f"Error: No session file '{SESSION_FILE_NAME}' found in this directory or its parents.",
-            file=sys.stderr,
-        )
-        raise typer.Exit(code=1)
+        raise ConfigurationError(f"No session file '{SESSION_FILE_NAME}' found in this directory or its parents.")
 
     try:
         raw_text = session_file.read_text(encoding="utf-8")
     except OSError as e:
-        print(f"Error: Could not read session file {session_file}: {e}", file=sys.stderr)
-        raise typer.Exit(code=1) from e
+        raise SessionError(f"Could not read session file {session_file}: {e}") from e
 
     # Already a pointer?
     try:
@@ -41,8 +37,7 @@ def migrate_shared_history(
     try:
         session_data = LegacySessionSnapshot.model_validate_json(raw_text)
     except ValidationError as e:
-        print(f"Error: Failed to parse session file as a valid legacy session {session_file}: {e}", file=sys.stderr)
-        raise typer.Exit(code=1) from e
+        raise SessionError(f"Failed to parse session file as a valid legacy session {session_file}: {e}") from e
 
     # Prepare paths
     session_root = session_file.parent
@@ -51,11 +46,9 @@ def migrate_shared_history(
     view_path = sessions_dir / f"{name}.json"
 
     if view_path.exists() and not force:
-        print(
-            f"Error: Target view already exists: {view_path}\nUse --force to overwrite or choose a different --name.",
-            file=sys.stderr,
+        raise InvalidInputError(
+            f"Target view already exists: {view_path}\nUse --force to overwrite or choose a different --name."
         )
-        raise typer.Exit(code=1)
 
     # Backup legacy file if requested
     if backup:
@@ -81,15 +74,13 @@ def migrate_shared_history(
             name=name,
         )
     except Exception as e:
-        print(f"Error: Migration failed: {e}", file=sys.stderr)
-        raise typer.Exit(code=1) from e
+        raise SessionError(f"Migration failed: {e}") from e
 
     # Switch pointer
     try:
         switch_active_pointer(session_file, view_path)
     except Exception as e:
-        print(f"Error: Failed to update session pointer: {e}", file=sys.stderr)
-        raise typer.Exit(code=1) from e
+        raise SessionError(f"Failed to update session pointer: {e}") from e
 
     print(
         "Migrated legacy session to shared-history:\n"

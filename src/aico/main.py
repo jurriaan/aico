@@ -1,11 +1,14 @@
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Annotated, final, override
+from sys import exit
+from typing import Annotated, Any, final, override
 
 import click
 import typer
 from click import Context
 from typer.core import TyperGroup
 
+from aico.exceptions import AicoError
 from aico.lib.session_find import complete_files_in_context
 from aico.prompts import DEFAULT_SYSTEM_PROMPT
 
@@ -14,6 +17,26 @@ app: typer.Typer
 
 @final
 class AliasGroup(TyperGroup):
+    @override
+    def main(  # pyright: ignore[reportAny]
+        self,
+        args: Sequence[str] | None = None,
+        prog_name: str | None = None,
+        complete_var: str | None = None,
+        standalone_mode: bool = True,
+        windows_expand_args: bool = True,
+        **extra: Any,  # pyright: ignore[reportAny, reportExplicitAny]
+    ) -> Any:  # pyright: ignore[reportExplicitAny]
+        try:
+            return super().main(args, prog_name, complete_var, standalone_mode, windows_expand_args, **extra)  #  pyright: ignore[reportAny]
+        except AicoError as e:
+            typer.secho(f"Error: {e.message}", err=True, fg=typer.colors.RED)
+            exit(e.exit_code)
+        except Exception as e:
+            typer.secho("Unexpected Internal Error", err=True, fg=typer.colors.RED)
+            typer.echo(str(e), err=True)
+            exit(1)
+
     def _load_addons(self) -> None:
         """Lazily discovers and registers addons to this group instance."""
         from aico.addons import create_click_command, discover_addons
