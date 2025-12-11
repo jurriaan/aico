@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -24,9 +25,9 @@ def validate_input_paths(
 
     for path in file_paths:
         # 1. Resolve to absolute path
-        # We use absolute() to preserve symlinks in the path name
-        # (e.g. keep 'sym.py' instead of resolving to 'target.py')
-        abs_path = path.absolute()
+        # We use absolute() to preserve symlinks in the path name,
+        # but we use os.path.normpath to collapse '..' and '.' segments lexically.
+        abs_path = Path(os.path.normpath(path.absolute()))
         resolved_path = path.resolve()
 
         # 2. Security check: Is it inside the session root?

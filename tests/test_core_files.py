@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from aico.core.files import get_context_file_contents
+from aico.core.files import get_context_file_contents, validate_input_paths
 
 
 def test_get_context_file_contents_only_includes_existing_and_warns_for_missing(
@@ -50,5 +50,37 @@ def test_get_context_file_contents_handles_empty_list(tmp_path: Path, capsys: py
 
     # THEN the result is an empty dictionary and no warnings are printed
     assert contents == {}
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_validate_input_paths_normalizes_relative_traversals(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Verifies that `validate_input_paths` normalizes relative paths
+    even when traversing up from the current working directory.
+    """
+    # GIVEN a session root and a file
+    session_root = tmp_path
+    target_file = session_root / "target.txt"
+    target_file.write_text("content")
+
+    # AND a subdirectory exists
+    subdir = session_root / "subdir"
+    subdir.mkdir()
+
+    # AND the current working directory is the SUBDIR (crucial for this test)
+    monkeypatch.chdir(subdir)
+
+    # WHEN validating a path that traverses back up (e.g. "../target.txt")
+    input_paths = [Path("../target.txt")]
+    valid_rels, has_errors = validate_input_paths(session_root, input_paths)
+
+    # THEN the path is normalized to just the filename, not "subdir/../target.txt"
+    assert valid_rels == ["target.txt"]
+    assert not has_errors
+
+    # AND no errors are printed
     captured = capsys.readouterr()
     assert captured.err == ""
