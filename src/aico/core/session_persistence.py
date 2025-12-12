@@ -89,6 +89,11 @@ class SharedHistoryPersistence:
             self._view_path_abs = load_pointer(self._pointer_file)
         return self._view_path_abs
 
+    @property
+    def history_root(self) -> Path:
+        """Returns the absolute path to the history store root directory."""
+        return self._history_root
+
     # ---------- Load helpers ----------
 
     def _load_view_and_store(self) -> tuple[HistoryStore, SessionView]:

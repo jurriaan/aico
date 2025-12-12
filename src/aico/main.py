@@ -531,6 +531,20 @@ def dump_context() -> None:
     dump_context.dump_context()
 
 
+@app.command("history-splice", hidden=True)
+def history_splice(
+    user_id: Annotated[int, typer.Argument(help="Global ID of the user message.")],
+    assistant_id: Annotated[int, typer.Argument(help="Global ID of the assistant message.")],
+    at_index: Annotated[int, typer.Option(..., help="Absolute pair index to insert at (0-based).")],
+) -> None:
+    """
+    [Plumbing] Surgically insert a message pair into history using global IDs.
+    """
+    from aico.commands import history_plumbing
+
+    history_plumbing.history_splice(user_id, assistant_id, at_index)
+
+
 @app.command("trust")
 def trust(
     path: Annotated[
