@@ -1,5 +1,6 @@
 # pyright: standard
 
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -10,6 +11,32 @@ from aico.main import app
 from tests.helpers import save_session
 
 runner = CliRunner()
+
+
+def test_status_json_outputs_sorted_context_files(tmp_path: Path) -> None:
+    """
+    Tests that `aico status --json` correctly outputs a sorted list
+    of context files in JSON format.
+    """
+    # GIVEN a session with an unsorted list of context files
+    with runner.isolated_filesystem(temp_dir=tmp_path) as td:
+        session_dir = Path(td)
+        session_data = SessionData(
+            model="test-model",
+            context_files=["src/file2.ts", "file1.py", "README.md"],
+        )
+        save_session(session_dir / SESSION_FILE_NAME, session_data)
+
+        # WHEN I run `aico status --json`
+        result = runner.invoke(app, ["status", "--json"])
+
+        # THEN the command succeeds
+        assert result.exit_code == 0
+
+        # AND the output is a JSON object with the sorted context files
+        output_data = json.loads(result.stdout)
+        expected_data = {"context_files": ["README.md", "file1.py", "src/file2.ts"]}
+        assert output_data == expected_data
 
 
 def test_status_full_breakdown(tmp_path: Path, mocker) -> None:

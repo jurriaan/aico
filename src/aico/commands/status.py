@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from rich.console import Console, Group
@@ -18,7 +19,7 @@ from aico.core.tokens import (
 )
 from aico.historystore.pointer import InvalidPointerError, MissingViewError, load_pointer
 from aico.lib.model_info import get_model_info
-from aico.lib.models import SessionData, TokenInfo
+from aico.lib.models import ContextFilesResponse, SessionData, TokenInfo
 
 
 def _get_session_name(session_file: Path) -> str | None:
@@ -75,8 +76,16 @@ def _get_history_summary_text(session_data: SessionData) -> Text | None:
     )
 
 
-def status() -> None:  # noqa: C901
+def status(json_output: bool = False) -> None:  # noqa: C901
     session = load_active_session()
+
+    if json_output:
+        response: ContextFilesResponse = {
+            "context_files": sorted(session.data.context_files),
+        }
+        print(json.dumps(response))
+        return
+
     console = Console()
 
     # Resolve context once for consistent token counting

@@ -19,7 +19,7 @@ fi
 PROJECT_ROOT=$(dirname "$AICO_SESSION_FILE")
 
 if [ -f "PROJECT_SUMMARY.md" ]; then
-    if ! aico dump-context | grep -q "PROJECT_SUMMARY.md"; then
+    if ! aico status --json | jq -e '.context_files[] | select(. == "PROJECT_SUMMARY.md")' >/dev/null 2>&1; then
         echo "⚠️  PROJECT_SUMMARY.md exists but is missing from context."
         echo "Summarizing without it may fragment your project history."
         read -p "Add it to context now? [Y/n] " -n 1 -r
@@ -70,7 +70,7 @@ aico last>"$SUMMARY_FILE"
 ln -sf "$SUMMARY_FILE" "$PROJECT_ROOT/PROJECT_SUMMARY.md"
 
 # 5. Add symlink to context if missing (check JSON output)
-if ! aico dump-context | jq -e '.context_files[] | select(. == "PROJECT_SUMMARY.md")' >/dev/null 2>&1; then
+if ! aico status --json | jq -e '.context_files[] | select(. == "PROJECT_SUMMARY.md")' >/dev/null 2>&1; then
   aico add "$PROJECT_ROOT/PROJECT_SUMMARY.md"
 fi
 

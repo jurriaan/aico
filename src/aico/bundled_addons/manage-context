@@ -53,9 +53,9 @@ UNTRACKED="$(git ls-files --others --exclude-standard)"
 TRACKED="$(git ls-files)"
 UNTRACKED="$(git ls-files --others --exclude-standard)"
 
-# Discover current context files via dump-context command
-# This uses the `aico dump-context` command, which provides a stable JSON output.
-CURRENT_CONTEXT_ORIGINAL="$(aico dump-context | jq -r '.context_files[]' | sort -u)"
+# Discover current context files via status --json command
+# This uses the `aico status --json` command, which provides a stable JSON output.
+CURRENT_CONTEXT_ORIGINAL="$(aico status --json | jq -r '.context_files[]' | sort -u)"
 
 # Combine git-managed files with current context files.
 # 1. printf generates the list (with potentially empty lines if variables are empty)

@@ -88,13 +88,21 @@ app = typer.Typer(cls=AliasGroup)
 
 
 @app.command("status")
-def status() -> None:
+def status(
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output the session context files as JSON.",
+        ),
+    ] = False,
+) -> None:
     """
     Show session status and token usage.
     """
     from aico.commands import status
 
-    status.status()
+    status.status(json_output)
 
 
 @app.command("log")
@@ -519,16 +527,6 @@ def migrate_shared_history(
     from aico.commands import migrate_shared_history
 
     migrate_shared_history.migrate_shared_history(name, backup, force)
-
-
-@app.command("dump-context")
-def dump_context() -> None:
-    """
-    Export the session context in a structured, machine-readable JSON format.
-    """
-    from aico.commands import dump_context
-
-    dump_context.dump_context()
 
 
 @app.command("history-splice", hidden=True)
