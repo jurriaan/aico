@@ -13,7 +13,7 @@ import click
 from aico.atomic_io import atomic_write_text
 from aico.exceptions import AddonExecutionError
 from aico.models import AddonInfo
-from aico.session_find import find_session_file
+from aico.session import find_session_file
 from aico.trust import is_project_trusted
 
 # Constants for addon directories

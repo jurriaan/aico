@@ -2,11 +2,11 @@ from pathlib import Path
 
 from aico.exceptions import InvalidInputError
 from aico.fs import validate_input_paths
-from aico.session_loader import load_active_session
+from aico.session import Session
 
 
 def add(file_paths: list[Path]) -> None:
-    session = load_active_session()
+    session = Session.load_active()
 
     current_files = set(session.data.context_files)
     valid_rels, errors_found = validate_input_paths(session.root, file_paths, require_file_exists=True)
@@ -21,7 +21,7 @@ def add(file_paths: list[Path]) -> None:
 
     if files_to_add:
         new_context = sorted(current_files | set(files_to_add))
-        session.persistence.update_view_metadata(context_files=new_context)
+        session.update_view_metadata(context_files=new_context)
 
     if errors_found:
         raise InvalidInputError("One or more files could not be added.")

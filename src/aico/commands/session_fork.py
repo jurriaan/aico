@@ -5,10 +5,9 @@ from pathlib import Path
 
 import typer
 
-from aico.exceptions import InvalidInputError, SessionError
+from aico.exceptions import InvalidInputError
 from aico.historystore import HistoryStore, find_message_pairs_in_view, fork_view, load_view, switch_active_pointer
-from aico.historystore.pointer import load_pointer
-from aico.session_loader import load_active_session
+from aico.session import Session
 
 
 def session_fork(
@@ -26,17 +25,12 @@ def session_fork(
     if ephemeral and not exec_args:
         raise InvalidInputError("--ephemeral is only valid when executing a command via '--'.")
 
-    session = load_active_session()
+    session = Session.load_active()
 
-    # At this point we know we are in a valid shared-history session.
-    active_view_path = load_pointer(session.file_path)
-
+    # We use valid properties from our Session object
+    active_view_path = session.view_path
     sessions_dir = session.root / ".aico" / "sessions"
-    history_root = session.root / ".aico" / "history"
-    if not sessions_dir.is_dir() or not history_root.is_dir():
-        raise SessionError("Shared-history directories missing (.aico/sessions or .aico/history).")
-    if not active_view_path.is_file():
-        raise SessionError(f"Active view file not found: {active_view_path}")
+    history_root = session.history_root
 
     if (sessions_dir / f"{new_name}.json").exists():
         raise InvalidInputError(f"A session view named '{new_name}' already exists.")

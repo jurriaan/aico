@@ -18,7 +18,7 @@ from aico.historystore import (
 from aico.historystore.models import HistoryRecord
 from aico.main import app
 from aico.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
-from aico.session_context import build_active_context
+from aico.session import build_active_context
 from tests.helpers import load_session_data, save_session
 
 runner = CliRunner()

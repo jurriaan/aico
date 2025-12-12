@@ -12,8 +12,7 @@ from aico.diffing.stream_processor import recompute_derived_content
 from aico.exceptions import AicoError, InvalidInputError
 from aico.historystore import load_view
 from aico.models import AssistantChatMessage, DisplayItem, UserChatMessage
-from aico.session_loader import load_session_and_resolve_indices
-from aico.session_persistence import SharedHistoryPersistence
+from aico.session import load_session_and_resolve_indices
 
 
 def _render_content(content: str, use_rich_markdown: bool) -> None:
@@ -47,16 +46,15 @@ def last(
         user_id: int | None = None
         assistant_id: int | None = None
 
-        if isinstance(session.persistence, SharedHistoryPersistence):
-            view = load_view(session.persistence.view_path)
-            # When full history is loaded, resolved_pair_index is already absolute (0-based from start of session).
-            # We do NOT add history_start_pair.
-            user_msg_idx = resolved_pair_index * 2
-            asst_msg_idx = resolved_pair_index * 2 + 1
+        # Session object always has access to view_path
+        view = load_view(session.view_path)
+        # When full history is loaded, resolved_pair_index is already absolute.
+        user_msg_idx = resolved_pair_index * 2
+        asst_msg_idx = resolved_pair_index * 2 + 1
 
-            if asst_msg_idx < len(view.message_indices):
-                user_id = view.message_indices[user_msg_idx]
-                assistant_id = view.message_indices[asst_msg_idx]
+        if asst_msg_idx < len(view.message_indices):
+            user_id = view.message_indices[user_msg_idx]
+            assistant_id = view.message_indices[asst_msg_idx]
 
         assert isinstance(user_msg, UserChatMessage)
         user_dict = TypeAdapter(UserChatMessage).dump_python(user_msg, mode="json")  # pyright: ignore[reportAny]

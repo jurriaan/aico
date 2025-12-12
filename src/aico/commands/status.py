@@ -18,8 +18,7 @@ from aico.llm.tokens import (
 )
 from aico.model_registry import get_model_info
 from aico.models import ContextFilesResponse, SessionData, TokenInfo
-from aico.session_context import build_active_context, summarize_active_window
-from aico.session_loader import load_active_session
+from aico.session import Session, build_active_context, summarize_active_window
 
 
 def _get_session_name(session_file: Path) -> str | None:
@@ -77,7 +76,7 @@ def _get_history_summary_text(session_data: SessionData) -> Text | None:
 
 
 def status(json_output: bool = False) -> None:  # noqa: C901
-    session = load_active_session()
+    session = Session.load_active()
 
     if json_output:
         response: ContextFilesResponse = {

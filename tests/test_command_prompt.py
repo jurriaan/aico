@@ -80,14 +80,13 @@ def load_final_session(tmp_path: Path) -> SessionData:
     # Temporarily change directory to ensure find_session_file works correctly
     import os
 
-    from aico.session_persistence import get_persistence
+    from aico.session import Session
 
     original_cwd = os.getcwd()
     os.chdir(tmp_path)
     try:
-        persistence = get_persistence()
-        _, session_data = persistence.load()
-        return session_data
+        session = Session.load_active()
+        return session.data
     finally:
         os.chdir(original_cwd)
 

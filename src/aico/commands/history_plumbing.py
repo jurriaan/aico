@@ -1,6 +1,6 @@
-from aico.exceptions import InvalidInputError, SessionError
+from aico.exceptions import InvalidInputError
 from aico.historystore import HistoryStore, load_view, save_view
-from aico.session_persistence import SharedHistoryPersistence, get_persistence
+from aico.session import Session
 
 
 def history_splice(
@@ -8,11 +8,12 @@ def history_splice(
     assistant_id: int,
     at_index: int,
 ) -> None:
-    persistence = get_persistence()
-    if not isinstance(persistence, SharedHistoryPersistence):
-        raise SessionError("This command requires a shared-history session.")
+    # Use Session.load_active logic to validate and get shared history paths
+    # Just loading the session gives us the path and validation
+    # Since this is "plumbing", we assume we are operating on the active session
+    session = Session.load_active()
 
-    history_root = persistence.history_root
+    history_root = session.history_root
     store = HistoryStore(history_root)
 
     # Validate User ID
@@ -35,7 +36,7 @@ def history_splice(
             raise
         raise InvalidInputError(f"Assistant message ID {assistant_id} not found: {e}") from e
 
-    view = load_view(persistence.view_path)
+    view = load_view(session.view_path)
 
     # Insert at position (pair index * 2)
     target_pos = at_index * 2
@@ -49,5 +50,5 @@ def history_splice(
     view.message_indices.insert(target_pos, user_id)
     view.message_indices.insert(target_pos + 1, assistant_id)
 
-    save_view(persistence.view_path, view)
+    save_view(session.view_path, view)
     print(f"Splice complete. Inserted pair ({user_id}, {assistant_id}) at index {at_index}.")

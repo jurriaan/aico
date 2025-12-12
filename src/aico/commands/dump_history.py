@@ -1,8 +1,7 @@
 from collections.abc import Sequence
 
 from aico.models import ChatMessageHistoryItem
-from aico.session_context import build_active_context
-from aico.session_loader import load_active_session
+from aico.session import Session, build_active_context
 
 
 def format_history_to_markdown(history: Sequence[ChatMessageHistoryItem]) -> str:
@@ -23,7 +22,7 @@ def format_history_to_markdown(history: Sequence[ChatMessageHistoryItem]) -> str
 
 
 def dump_history() -> None:
-    session = load_active_session()
+    session = Session.load_active()
     active_history = build_active_context(session.data)["active_history"]
     markdown_log = format_history_to_markdown(active_history)
     if markdown_log:

@@ -16,7 +16,7 @@ from aico.models import (
     Mode,
     UserChatMessage,
 )
-from aico.session_loader import load_active_session
+from aico.session import Session
 
 
 def _get_timestamp() -> str:
@@ -34,7 +34,7 @@ def _invoke_llm_logic(
     """
     Core logic for invoking the LLM that can be shared by all command wrappers.
     """
-    session = load_active_session()
+    session = Session.load_active()
     timestamp = _get_timestamp()
 
     piped_input = sys.stdin.read() if not is_input_terminal() else None
@@ -102,7 +102,7 @@ def _invoke_llm_logic(
         derived=derived_content,
     )
 
-    session.persistence.append_pair(user_msg, asst_msg)
+    session.append_pair(user_msg, asst_msg)
 
     if not is_terminal():
         if passthrough:

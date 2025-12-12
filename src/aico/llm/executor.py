@@ -34,7 +34,7 @@ from aico.models import (
     WarningMessage,
 )
 from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
-from aico.session_context import build_active_context
+from aico.session import build_active_context
 
 if TYPE_CHECKING:
     pass

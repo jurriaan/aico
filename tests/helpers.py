@@ -10,7 +10,6 @@ from aico.historystore import (
 )
 from aico.historystore.models import HistoryRecord
 from aico.models import AssistantChatMessage, SessionData, UserChatMessage
-from aico.session_persistence import SharedHistoryPersistence
 
 
 def save_session(path: Path, data: SessionData) -> None:
@@ -20,9 +19,14 @@ def save_session(path: Path, data: SessionData) -> None:
 
 
 def load_session_data(session_file: Path) -> SessionData:
-    persistence = SharedHistoryPersistence(session_file)
-    _, session_data = persistence.load()
-    return session_data
+    from aico.models import SessionData
+    from aico.session import Session
+
+    # Instantiate directly to bypass session discovery env vars
+    session = Session(session_file, SessionData(model="placeholder"))
+    # Load without full history to match default behavior of load()
+    session._load(full_history=False)  # pyright: ignore[reportPrivateUsage]
+    return session.data
 
 
 def init_shared_session(project_root: Path, data: SessionData, view_name: str = "main") -> None:

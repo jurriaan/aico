@@ -1,6 +1,6 @@
 import typer
 
-from aico.session_loader import expand_index_ranges, load_active_session, resolve_pair_index
+from aico.session import Session, expand_index_ranges, resolve_pair_index
 
 
 def redo(
@@ -12,7 +12,7 @@ def redo(
     # 1. Expand ranges
     expanded_indices = expand_index_ranges(indices)
 
-    session = load_active_session(full_history=True)
+    session = Session.load_active(full_history=True)
 
     resolved_indices: list[int] = []
     for idx_str in expanded_indices:
@@ -31,7 +31,7 @@ def redo(
         raise typer.Exit(code=0)
 
     new_excluded = sorted(current_excluded)
-    session.persistence.update_view_metadata(excluded_pairs=new_excluded)
+    session.update_view_metadata(excluded_pairs=new_excluded)
 
     if len(actually_changed) == 1:
         print(f"Re-included pair at index {actually_changed[0]} in context.")

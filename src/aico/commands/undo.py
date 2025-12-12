@@ -1,6 +1,6 @@
 import typer
 
-from aico.session_loader import expand_index_ranges, load_active_session, resolve_pair_index
+from aico.session import Session, expand_index_ranges, resolve_pair_index
 
 
 def undo(
@@ -12,8 +12,8 @@ def undo(
     # 1. Expand ranges
     expanded_indices = expand_index_ranges(indices)
 
-    # Load once
-    session = load_active_session(full_history=True)
+    # Load once, full history to resolve any index
+    session = Session.load_active(full_history=True)
 
     # Resolve all first
     resolved_indices: list[int] = []
@@ -35,7 +35,7 @@ def undo(
 
     # Save once
     new_excluded = sorted(current_excluded)
-    session.persistence.update_view_metadata(excluded_pairs=new_excluded)
+    session.update_view_metadata(excluded_pairs=new_excluded)
 
     if len(actually_changed) == 1:
         print(f"Marked pair at index {actually_changed[0]} as excluded.")

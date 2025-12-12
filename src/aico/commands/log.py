@@ -3,12 +3,11 @@ from rich.table import Table
 
 from aico.history_utils import find_message_pairs
 from aico.models import UserChatMessage
-from aico.session_context import active_message_indices, get_active_message_pairs
-from aico.session_loader import load_active_session
+from aico.session import Session, active_message_indices, get_active_message_pairs
 
 
 def log() -> None:
-    session = load_active_session()
+    session = Session.load_active()
     chat_history = session.data.chat_history
     console = Console()
 

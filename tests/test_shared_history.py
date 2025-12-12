@@ -293,11 +293,12 @@ def test_load_from_shared_history_restores_all_fields(tmp_path: Path) -> None:
     switch_active_pointer(pointer_file, view_path)
 
     # WHEN SharedHistoryPersistence.load is called
-    from aico.models import AssistantChatMessage, UserChatMessage
-    from aico.session_persistence import SharedHistoryPersistence
+    from aico.models import AssistantChatMessage, SessionData, UserChatMessage
+    from aico.session import Session
 
-    persistence = SharedHistoryPersistence(pointer_file)
-    _, session_data = persistence.load()
+    session = Session(pointer_file, SessionData(model="placeholder"))
+    session._load(full_history=False)
+    session_data = session.data
 
     # THEN the loaded SessionData contains all the restored fields
     assert len(session_data.chat_history) == 2

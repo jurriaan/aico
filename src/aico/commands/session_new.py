@@ -2,8 +2,7 @@ import typer
 
 from aico.exceptions import InvalidInputError
 from aico.historystore import SessionView, save_view, switch_active_pointer
-from aico.historystore.pointer import load_pointer
-from aico.session_loader import load_active_session
+from aico.session import Session
 
 
 def session_new(
@@ -13,10 +12,8 @@ def session_new(
     if not name.strip():
         raise InvalidInputError("New session name is required.")
 
-    session = load_active_session()
-
-    # We are guaranteed to be in a shared-history project; resolve active view path.
-    active_view_path = load_pointer(session.file_path)
+    session = Session.load_active()
+    active_view_path = session.view_path
 
     sessions_dir = active_view_path.parent
     new_view_path = sessions_dir / f"{name}.json"

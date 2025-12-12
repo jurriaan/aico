@@ -1,16 +1,12 @@
 from aico.exceptions import InvalidInputError, SessionError
 from aico.historystore import switch_active_pointer
-from aico.historystore.pointer import load_pointer
-from aico.session_loader import load_active_session
+from aico.session import Session
 
 
 def session_switch(
     name: str,
 ) -> None:
-    session = load_active_session()
-
-    # Validate pointer and resolve current active view (ensures shared-history)
-    _ = load_pointer(session.file_path)
+    session = Session.load_active()
 
     sessions_dir = session.root / ".aico" / "sessions"
     if not sessions_dir.is_dir():

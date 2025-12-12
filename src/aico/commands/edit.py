@@ -12,7 +12,7 @@ from aico.console import is_input_terminal
 from aico.diffing.stream_processor import recompute_derived_content
 from aico.exceptions import ExternalDependencyError
 from aico.models import AssistantChatMessage
-from aico.session_loader import load_session_and_resolve_indices
+from aico.session import load_session_and_resolve_indices
 
 
 def edit(
@@ -82,6 +82,6 @@ def edit(
         updated_message = replace(updated_message, derived=new_derived_content)
         new_asst_metadata = updated_message
 
-    session.persistence.edit_message(target_message_index, new_content, new_asst_metadata)
+    session.edit_message(target_message_index, new_content, new_asst_metadata)
 
     print(f"Updated {message_type} for message pair {resolved_pair_index}.")

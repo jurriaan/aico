@@ -2,16 +2,14 @@ from pathlib import Path
 
 import typer
 
-from aico.historystore.pointer import load_pointer
-from aico.session_loader import load_active_session
+from aico.session import Session
 
 
 def session_list() -> None:
-    session = load_active_session()
+    session = Session.load_active()
 
-    # Validate and resolve active view path via pointer helper
-    active_view_path = load_pointer(session.file_path)
-
+    # Valid properties
+    active_view_path = session.view_path
     sessions_dir = session.root / ".aico" / "sessions"
     if not sessions_dir.is_dir():
         typer.echo("Error: Sessions directory '.aico/sessions' not found.", err=True)
