@@ -56,10 +56,11 @@ if [ -z "$ORIG_RESP_JSON" ]; then
     exit 1
 fi
 
-# Extract mode from JSON to determine command
+# Extract mode and absolute index from JSON
 ORIG_MODE=$(echo "$ORIG_RESP_JSON" | jq -r .assistant.mode)
 ORIG_CONTENT=$(echo "$ORIG_RESP_JSON" | jq -r .assistant.content)
 ORIG_PROMPT_CONTENT=$(echo "$ORIG_RESP_JSON" | jq -r .user.content)
+ABS_INDEX=$(echo "$ORIG_RESP_JSON" | jq -r .pair_index)
 
 # Define System Prompt based on mode
 if [ "$ORIG_MODE" == "diff" ]; then
@@ -126,7 +127,7 @@ trap cleanup EXIT
 } > "$PROMPT_FILE"
 
 
-echo "Refining response at index $INDEX (Mode: $ORIG_MODE)..."
+echo "Refining response at index $ABS_INDEX (Mode: $ORIG_MODE)..."
 
 if [ "$ORIG_MODE" == "diff" ]; then
     CMD="generate-patch"
@@ -135,15 +136,44 @@ else
 fi
 
 # 1. Execute inside ephemeral fork
-# We pass the prompt file content via cat to avoid ARG_MAX limits on large files
-# We include $MODEL_FLAG (expanded on client side, so it passes --model X if set)
-aico session-fork --ephemeral "$SESSION_NAME" -- bash -c "cat \"$PROMPT_FILE\" | aico $CMD $MODEL_FLAG --system-prompt \"\$SYSTEM_PROMPT\" - && aico last --json > \"\$PAYLOAD\""
+# Define the inner logic as a literal string to avoid escaping hell.
+# This script will be executed inside the ephemeral session.
+REFINE_LOGIC='
+set -e
+
+# 1. Rewind history
+#    We must use absolute indices for the range (e.g. "5..10") because aico
+#    does not support mixed-sign ranges (e.g. "5..-1").
+aico undo "${REFINE_INDEX}..${REFINE_LAST_INDEX}" >/dev/null
+
+# 2. Generate
+#    Pipes the prompt file to the aico command.
+#    We allow REFINE_MODEL_ARGS to word-split naturally (for optional flags).
+cat "$REFINE_PROMPT_FILE" | aico "$REFINE_CMD" $REFINE_MODEL_ARGS --system-prompt "$REFINE_SYSTEM_PROMPT" -
+
+# 3. Capture result
+aico last --json > "$REFINE_PAYLOAD"
+'
+
+# Calculate the absolute end of history for the undo range
+LAST_INDEX=$(aico last -1 --json 2>/dev/null | jq -r .pair_index)
+
+# Export all context needed by the inner logic
+export REFINE_INDEX="$ABS_INDEX"
+export REFINE_LAST_INDEX="$LAST_INDEX"
+export REFINE_CMD="$CMD"
+export REFINE_MODEL_ARGS="$MODEL_FLAG"
+export REFINE_PROMPT_FILE="$PROMPT_FILE"
+export REFINE_SYSTEM_PROMPT="$SYSTEM_PROMPT"
+export REFINE_PAYLOAD="$PAYLOAD"
+
+# Execute in ephemeral fork
+aico session-fork --ephemeral "$SESSION_NAME" -- bash -c "$REFINE_LOGIC"
 
 # 2. Apply to Main Session
 if [ -s "$PAYLOAD" ]; then
     NEW_ASST_ID=$(cat "$PAYLOAD" | jq -r .assistant.id)
     ORIG_USER_ID=$(echo "$ORIG_RESP_JSON" | jq -r .user.id)
-    ABS_INDEX=$(echo "$ORIG_RESP_JSON" | jq -r .pair_index)
 
     if [ "$NEW_ASST_ID" == "null" ] || [ "$ORIG_USER_ID" == "null" ]; then
        echo "Error: IDs could not be resolved. Cannot use surgical history splice."
