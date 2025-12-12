@@ -13,18 +13,26 @@ def history_splice(
         raise SessionError("This command requires a shared-history session.")
 
     history_root = persistence.history_root
-
     store = HistoryStore(history_root)
 
-    # Validate IDs (store.read raises if missing)
+    # Validate User ID
     try:
-        _ = store.read(user_id)
+        user_rec = store.read(user_id)
+        if user_rec.role != "user":
+            raise InvalidInputError(f"Message {user_id} is role '{user_rec.role}', expected 'user'.")
     except Exception as e:
+        if isinstance(e, InvalidInputError):
+            raise
         raise InvalidInputError(f"User message ID {user_id} not found: {e}") from e
 
+    # Validate Assistant ID
     try:
-        _ = store.read(assistant_id)
+        asst_rec = store.read(assistant_id)
+        if asst_rec.role != "assistant":
+            raise InvalidInputError(f"Message {assistant_id} is role '{asst_rec.role}', expected 'assistant'.")
     except Exception as e:
+        if isinstance(e, InvalidInputError):
+            raise
         raise InvalidInputError(f"Assistant message ID {assistant_id} not found: {e}") from e
 
     view = load_view(persistence.view_path)

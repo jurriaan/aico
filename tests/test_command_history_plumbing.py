@@ -118,3 +118,53 @@ def test_history_splice_fails_invalid_ids(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "User message ID 999 not found" in result.stderr
+
+
+def test_history_splice_validates_user_role(tmp_path: Path) -> None:
+    # GIVEN a shared session (empty)
+    # We create artificial records to test ID validation
+    init_shared_session(tmp_path, SessionData(model="m", chat_history=[]))
+
+    project_root = tmp_path
+    history_root = project_root / ".aico" / "history"
+    store = HistoryStore(history_root)
+
+    # Store returns IDs for appended records
+    # Create two ASSISTANT records
+    rec1 = HistoryRecord(role="assistant", content="A1", mode=Mode.CONVERSATION, timestamp="t1")
+    rec2 = HistoryRecord(role="assistant", content="A2", mode=Mode.CONVERSATION, timestamp="t2")
+
+    id1 = store.append(rec1)
+    id2 = store.append(rec2)
+
+    # WHEN I try to splice them as if id1 is the User
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(app, ["history-splice", str(id1), str(id2), "--at-index", "0"])
+
+    # THEN it should fail with a role error for the first ID (User ID)
+    assert result.exit_code != 0
+    assert f"Message {id1} is role 'assistant', expected 'user'" in result.stderr
+
+
+def test_history_splice_validates_assistant_role(tmp_path: Path) -> None:
+    # GIVEN a shared session
+    init_shared_session(tmp_path, SessionData(model="m", chat_history=[]))
+
+    project_root = tmp_path
+    history_root = project_root / ".aico" / "history"
+    store = HistoryStore(history_root)
+
+    # Create two USER records
+    rec1 = HistoryRecord(role="user", content="U1", mode=Mode.CONVERSATION, timestamp="t1")
+    rec2 = HistoryRecord(role="user", content="U2", mode=Mode.CONVERSATION, timestamp="t2")
+
+    id1 = store.append(rec1)
+    id2 = store.append(rec2)
+
+    # WHEN I try to splice them as if id2 is the Assistant
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(app, ["history-splice", str(id1), str(id2), "--at-index", "0"])
+
+    # THEN it should fail with a role error for the second ID (Assistant ID)
+    assert result.exit_code != 0
+    assert f"Message {id2} is role 'user', expected 'assistant'" in result.stderr
