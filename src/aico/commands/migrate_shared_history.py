@@ -7,8 +7,8 @@ from aico.consts import SESSION_FILE_NAME
 from aico.exceptions import ConfigurationError, InvalidInputError, SessionError
 from aico.historystore import from_legacy_session, switch_active_pointer
 from aico.historystore.migration import LegacySessionSnapshot
-from aico.lib.models import SessionPointer
-from aico.lib.session_find import find_session_file
+from aico.models import SessionPointer
+from aico.session_find import find_session_file
 
 
 def migrate_shared_history(

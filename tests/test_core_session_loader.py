@@ -2,7 +2,7 @@
 
 import pytest
 
-from aico.core.session_loader import expand_index_ranges
+from aico.session_loader import expand_index_ranges
 
 
 @pytest.mark.parametrize(

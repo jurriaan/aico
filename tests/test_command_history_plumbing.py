@@ -5,8 +5,8 @@ from typer.testing import CliRunner
 
 from aico.historystore import HistoryStore, load_view
 from aico.historystore.models import HistoryRecord
-from aico.lib.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
 from aico.main import app
+from aico.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
 from tests.helpers import init_shared_session
 
 runner = CliRunner()

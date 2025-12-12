@@ -4,32 +4,32 @@ from pathlib import Path
 
 from pytest_mock import MockerFixture
 
-from aico.lib.model_info import (
+from aico.model_registry import (
     CACHE_FILENAME,
     ModelRegistry,
     _load_cache,
     _update_registry,
     get_model_info,
 )
-from aico.lib.models import ModelInfo
+from aico.models import ModelInfo
 
 
 def test_update_registry_merges_priority(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN mocked fetch functions returning conflicting data
     mock_cache_path = tmp_path / "models.json"
     _ = mocker.patch(
-        "aico.lib.model_info.get_cache_path",
+        "aico.model_registry.get_cache_path",
         return_value=mock_cache_path,
     )
     _ = mocker.patch(
-        "aico.lib.model_info._fetch_and_normalize_litellm",
+        "aico.model_registry._fetch_and_normalize_litellm",
         return_value={
             "gpt-4": ModelInfo(input_cost_per_token=1.0),
             "legacy-model": ModelInfo(input_cost_per_token=0.5),
         },
     )
     _ = mocker.patch(
-        "aico.lib.model_info._fetch_and_normalize_openrouter",
+        "aico.model_registry._fetch_and_normalize_openrouter",
         return_value={
             "gpt-4": ModelInfo(input_cost_per_token=2.0),  # OpenRouter overwrites
             "google/gemini": ModelInfo(input_cost_per_token=0.1),
@@ -62,8 +62,8 @@ def test_get_model_info_lookup_strategies(tmp_path: Path, mocker: MockerFixture)
             "claude-3-opus": ModelInfo(max_input_tokens=300),  # Vendor strip
         },
     }
-    _ = mocker.patch("aico.lib.model_info.get_cache_path")
-    _ = mocker.patch("aico.lib.model_info._ensure_cache", return_value=fake_registry)
+    _ = mocker.patch("aico.model_registry.get_cache_path")
+    _ = mocker.patch("aico.model_registry._ensure_cache", return_value=fake_registry)
 
     # WHEN get_model_info is called with various model IDs
     exact_match = get_model_info("gpt-4o")

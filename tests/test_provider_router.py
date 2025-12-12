@@ -4,9 +4,9 @@ from unittest import mock
 import pytest
 from openai import OpenAI
 
-from aico.core.provider_router import get_provider_for_model
-from aico.core.providers.openai import OpenAIProvider
-from aico.core.providers.openrouter import OpenRouterProvider
+from aico.llm.providers.openai import OpenAIProvider
+from aico.llm.providers.openrouter import OpenRouterProvider
+from aico.llm.router import get_provider_for_model
 
 
 def test_get_provider_for_model_openai():

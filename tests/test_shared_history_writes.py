@@ -7,8 +7,8 @@ from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
 from aico.historystore import HistoryRecord, HistoryStore, SessionView, load_view, save_view
-from aico.lib.models import Mode
 from aico.main import app
+from aico.models import Mode
 
 runner = CliRunner()
 
@@ -49,7 +49,7 @@ def _load_view(project_dir: Path) -> SessionView:
 
 def test_append_pair_via_ask_in_writable_shared_history(shared_writable_project: Path, mocker: MockerFixture) -> None:
     # GIVEN a writable shared-history session and mocked LLM execution
-    from aico.lib.models import InteractionResult
+    from aico.models import InteractionResult
 
     mocker.patch(
         "aico.commands.prompt.execute_interaction",
@@ -80,7 +80,7 @@ def test_append_pair_via_ask_in_writable_shared_history(shared_writable_project:
 
 def test_undo_and_redo_toggle_exclusions(shared_writable_project: Path, mocker: MockerFixture) -> None:
     # GIVEN: ensure there are two pairs by appending one
-    from aico.lib.models import InteractionResult
+    from aico.models import InteractionResult
 
     mocker.patch(
         "aico.commands.prompt.execute_interaction",
@@ -114,7 +114,7 @@ def test_undo_and_redo_toggle_exclusions(shared_writable_project: Path, mocker: 
 
 def test_set_history_updates_history_start_pair(shared_writable_project: Path, mocker: MockerFixture) -> None:
     # GIVEN: ensure two pairs exist
-    from aico.lib.models import InteractionResult
+    from aico.models import InteractionResult
 
     mocker.patch(
         "aico.commands.prompt.execute_interaction",
@@ -140,7 +140,7 @@ def test_set_history_updates_history_start_pair(shared_writable_project: Path, m
 
 def test_edit_updates_store_and_view(shared_writable_project: Path, mocker: MockerFixture) -> None:
     # GIVEN: ensure there's a recent pair to edit
-    from aico.lib.models import InteractionResult
+    from aico.models import InteractionResult
 
     mocker.patch("aico.commands.edit.is_input_terminal", return_value=True)
     mocker.patch(

@@ -15,8 +15,8 @@ from aico.historystore import (
     switch_active_pointer,
 )
 from aico.historystore.models import HistoryRecord
-from aico.lib.models import AssistantChatMessage, DerivedContent, Mode, SessionData, UserChatMessage
 from aico.main import app
+from aico.models import AssistantChatMessage, DerivedContent, Mode, SessionData, UserChatMessage
 from tests.helpers import save_session
 
 runner = CliRunner()

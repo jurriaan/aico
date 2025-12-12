@@ -6,8 +6,8 @@ from typing import Annotated, Any, TypedDict
 
 from pydantic import TypeAdapter, ValidationError, WrapValidator
 
-from aico.lib.atomic_io import atomic_write_text
-from aico.lib.models import ModelInfo
+from aico.atomic_io import atomic_write_text
+from aico.models import ModelInfo
 
 # URL for the litellm model cost map
 LITELLM_MODEL_COST_MAP_URL = (

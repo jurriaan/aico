@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from aico.lib.models import TokenUsage
+from aico.models import TokenUsage
 
 if TYPE_CHECKING:
     from openai import OpenAI

@@ -7,8 +7,8 @@ import pytest
 from typer.testing import CliRunner
 
 from aico.consts import SESSION_FILE_NAME
-from aico.lib.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
 from aico.main import app
+from aico.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
 from tests.helpers import save_session
 
 runner = CliRunner()

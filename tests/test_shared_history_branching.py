@@ -5,8 +5,8 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from aico.historystore import HistoryRecord, HistoryStore, SessionView, save_view, switch_active_pointer
-from aico.lib.models import Mode
 from aico.main import app
+from aico.models import Mode
 
 runner = CliRunner()
 

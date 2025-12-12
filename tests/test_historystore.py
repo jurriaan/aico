@@ -19,7 +19,7 @@ from aico.historystore import (
     save_view,
     switch_active_pointer,
 )
-from aico.lib.models import DerivedContent, TokenUsage
+from aico.models import DerivedContent, TokenUsage
 
 
 def _make_record(role: Literal["user", "assistant"], content: str, mode: Mode = Mode.CONVERSATION) -> HistoryRecord:

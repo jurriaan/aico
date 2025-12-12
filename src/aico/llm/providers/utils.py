@@ -1,8 +1,8 @@
 import os
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from aico.core.providers.base import NormalizedChunk
-from aico.lib.models import TokenUsage
+from aico.llm.providers.base import NormalizedChunk
+from aico.models import TokenUsage
 
 if TYPE_CHECKING:
     from openai.types.chat import ChatCompletionChunk

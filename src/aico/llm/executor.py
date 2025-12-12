@@ -7,13 +7,22 @@ from rich.console import Console
 from rich.live import Live
 from rich.spinner import Spinner
 
-from aico.aico_live_render import AicoLiveRender
-from aico.core.files import get_context_file_contents
-from aico.core.prompt_helpers import reconstruct_historical_messages
-from aico.core.provider_router import get_provider_for_model
-from aico.core.providers.base import LLMProvider
-from aico.core.session_context import build_active_context
-from aico.lib.models import (
+from aico.console import (
+    calculate_and_display_cost,
+    is_terminal,
+    render_display_items_to_rich,
+)
+from aico.diffing.stream_processor import (
+    generate_display_items,
+    generate_unified_diff,
+    process_llm_response_stream,
+)
+from aico.fs import get_context_file_contents
+from aico.live_render import AicoLiveRender
+from aico.llm.prompt_helpers import reconstruct_historical_messages
+from aico.llm.providers.base import LLMProvider
+from aico.llm.router import get_provider_for_model
+from aico.models import (
     ChatMessageHistoryItem,
     DisplayItem,
     FileContents,
@@ -24,17 +33,8 @@ from aico.lib.models import (
     TokenUsage,
     WarningMessage,
 )
-from aico.lib.stream_processor import (
-    generate_display_items,
-    generate_unified_diff,
-    process_llm_response_stream,
-)
-from aico.lib.ui import (
-    calculate_and_display_cost,
-    is_terminal,
-    render_display_items_to_rich,
-)
 from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
+from aico.session_context import build_active_context
 
 if TYPE_CHECKING:
     pass

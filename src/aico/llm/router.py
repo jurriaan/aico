@@ -1,6 +1,6 @@
-from aico.core.providers.base import LLMProvider
-from aico.core.providers.openai import OpenAIProvider
-from aico.core.providers.openrouter import OpenRouterProvider
+from aico.llm.providers.base import LLMProvider
+from aico.llm.providers.openai import OpenAIProvider
+from aico.llm.providers.openrouter import OpenRouterProvider
 
 
 def get_provider_for_model(full_model_string: str) -> tuple[LLMProvider, str]:

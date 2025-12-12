@@ -14,8 +14,8 @@ from aico.historystore import (
     switch_active_pointer,
 )
 from aico.historystore.models import HistoryRecord
-from aico.lib.models import Mode
 from aico.main import app
+from aico.models import Mode
 from tests.helpers import load_session_data, save_session
 
 runner = CliRunner()

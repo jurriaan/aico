@@ -1,6 +1,6 @@
-from aico.core.session_persistence import SharedHistoryPersistence, get_persistence
 from aico.exceptions import InvalidInputError, SessionError
 from aico.historystore import HistoryStore, load_view, save_view
+from aico.session_persistence import SharedHistoryPersistence, get_persistence
 
 
 def history_splice(

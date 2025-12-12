@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from typing import Literal, Protocol, runtime_checkable
 
-from aico.lib.models import MessagePairIndices
+from aico.models import MessagePairIndices
 
 
 @runtime_checkable

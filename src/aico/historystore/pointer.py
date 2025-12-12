@@ -3,7 +3,7 @@ from typing import final
 
 from pydantic import TypeAdapter, ValidationError
 
-from aico.lib.models import SessionPointer
+from aico.models import SessionPointer
 
 
 @final

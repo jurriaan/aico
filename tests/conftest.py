@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from aico.consts import SESSION_FILE_NAME
-from aico.lib.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
+from aico.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
 from tests.helpers import init_shared_session
 
 runner = CliRunner()

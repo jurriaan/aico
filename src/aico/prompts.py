@@ -1,4 +1,4 @@
-from aico.lib.models import (
+from aico.models import (
     BasicAssistantChatMessage,
     BasicUserChatMessage,
     Mode,

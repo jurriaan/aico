@@ -1,8 +1,8 @@
 from collections.abc import Sequence
 
-from aico.core.session_context import build_active_context
-from aico.core.session_loader import load_active_session
-from aico.lib.models import ChatMessageHistoryItem
+from aico.models import ChatMessageHistoryItem
+from aico.session_context import build_active_context
+from aico.session_loader import load_active_session
 
 
 def format_history_to_markdown(history: Sequence[ChatMessageHistoryItem]) -> str:

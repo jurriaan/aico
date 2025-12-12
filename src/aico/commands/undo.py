@@ -1,6 +1,6 @@
 import typer
 
-from aico.core.session_loader import expand_index_ranges, load_active_session, resolve_pair_index
+from aico.session_loader import expand_index_ranges, load_active_session, resolve_pair_index
 
 
 def undo(

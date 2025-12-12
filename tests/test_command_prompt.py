@@ -8,9 +8,9 @@ from pytest_mock import MockerFixture, MockType
 from typer.testing import CliRunner
 
 from aico.consts import SESSION_FILE_NAME
-from aico.core.providers.base import NormalizedChunk
-from aico.lib.models import AssistantChatMessage, Mode, SessionData, TokenUsage, UserChatMessage
+from aico.llm.providers.base import NormalizedChunk
 from aico.main import app
+from aico.models import AssistantChatMessage, Mode, SessionData, TokenUsage, UserChatMessage
 from tests.helpers import save_session
 
 runner = CliRunner()
@@ -57,7 +57,7 @@ def setup_prompt_test(
     mock_client = mocker.MagicMock()
     mock_provider.configure_request.return_value = (mock_client, "test-model", {})
     mock_get_provider = mocker.patch(
-        "aico.core.llm_executor.get_provider_for_model", return_value=(mock_provider, "test-model")
+        "aico.llm.executor.get_provider_for_model", return_value=(mock_provider, "test-model")
     )
 
     # Mock process_chunk to handle the raw chunks and return NormalizedChunk
@@ -80,7 +80,7 @@ def load_final_session(tmp_path: Path) -> SessionData:
     # Temporarily change directory to ensure find_session_file works correctly
     import os
 
-    from aico.core.session_persistence import get_persistence
+    from aico.session_persistence import get_persistence
 
     original_cwd = os.getcwd()
     os.chdir(tmp_path)
@@ -243,7 +243,7 @@ def test_ask_command_with_diff_response_outputs_diff_non_tty(tmp_path: Path, moc
     # GIVEN a non-TTY environment and a session with a context file
     # Note: We test the non-TTY path because CliRunner does not capture `rich.Live` TTY output.
     # This still validates the core parsing and diff generation logic.
-    mocker.patch("aico.core.llm_executor.is_terminal", return_value=False)
+    mocker.patch("aico.llm.executor.is_terminal", return_value=False)
     mocker.patch("aico.commands.prompt.is_terminal", return_value=False)
     llm_diff_response = (
         "File: code.py\n"
@@ -535,7 +535,7 @@ def test_prompt_passthrough_mode_bypasses_context_and_formatting(tmp_path: Path,
         mock_completion, _ = setup_prompt_test(
             mocker, Path(td), "raw response", context_files={"file.py": "some content"}
         )
-        mock_build_contents = mocker.patch("aico.core.llm_executor.get_context_file_contents")
+        mock_build_contents = mocker.patch("aico.llm.executor.get_context_file_contents")
 
         # WHEN `aico prompt --passthrough` is invoked
         result = runner.invoke(app, ["prompt", "--passthrough", prompt_text])

@@ -6,7 +6,7 @@ from typer import Context
 
 from aico.consts import SESSION_FILE_NAME
 from aico.exceptions import ConfigurationError
-from aico.lib.models import SessionData, SessionPointer
+from aico.models import SessionData, SessionPointer
 
 
 def find_session_file() -> Path | None:

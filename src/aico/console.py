@@ -9,10 +9,10 @@ from rich.markdown import Markdown
 from rich.syntax import Syntax
 from rich.text import Text
 
-from aico.core.tokens import compute_component_cost
-from aico.lib.history_utils import find_message_pairs
-from aico.lib.model_info import get_model_info
-from aico.lib.models import (
+from aico.history_utils import find_message_pairs
+from aico.llm.tokens import compute_component_cost
+from aico.model_registry import get_model_info
+from aico.models import (
     AssistantChatMessage,
     DisplayItem,
     Mode,

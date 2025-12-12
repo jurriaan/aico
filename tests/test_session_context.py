@@ -1,6 +1,6 @@
 # pyright: standard
-from aico.core.session_context import active_message_indices
-from aico.lib.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
+from aico.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
+from aico.session_context import active_message_indices
 
 
 def _make_msg(role: str, content: str) -> UserChatMessage | AssistantChatMessage:
@@ -36,8 +36,8 @@ def test_active_message_indices_shared_history_signal() -> None:
 
 def test__get_active_history_filters_and_slices() -> None:
     # GIVEN a SessionData object with a mix of messages
-    from aico.core.session_context import _get_active_history
-    from aico.lib.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
+    from aico.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
+    from aico.session_context import _get_active_history
 
     def _make_msg(role: str, content: str) -> UserChatMessage | AssistantChatMessage:
         if role == "user":

@@ -22,12 +22,12 @@ from aico.historystore.pointer import (
     MissingViewError,
 )
 from aico.historystore.pointer import load_pointer as load_pointer_helper
-from aico.lib.models import (
+from aico.models import (
     AssistantChatMessage,
     SessionData,
     UserChatMessage,
 )
-from aico.lib.session_find import find_session_file
+from aico.session_find import find_session_file
 
 
 @runtime_checkable

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pytest_mock import MockerFixture
 
-from aico.core.trust import (
+from aico.trust import (
     is_project_trusted,
     list_trusted_projects,
     trust_project,
@@ -15,7 +15,7 @@ from aico.core.trust import (
 def test_trust_flow(tmp_path: Path, mocker: MockerFixture) -> None:
     # SETUP: Mock trust file location to tmp_path
     trust_file = tmp_path / "trust.json"
-    mocker.patch("aico.core.trust._get_trust_file", return_value=trust_file)
+    mocker.patch("aico.trust._get_trust_file", return_value=trust_file)
 
     project_path = Path("/tmp/my-project").resolve()
 

@@ -17,10 +17,10 @@ from aico.historystore import (
     switch_active_pointer,
 )
 from aico.historystore.pointer import load_pointer
-from aico.lib.models import DerivedContent, Mode, ModelInfo, TokenUsage
 
 # aico imports
 from aico.main import app
+from aico.models import DerivedContent, Mode, ModelInfo, TokenUsage
 
 runner = CliRunner()
 
@@ -146,8 +146,8 @@ def test_status_renders_paths_with_special_characters_literal(
     save_view(view_path, view)
 
     # AND token counting/model info are mocked to keep output deterministic
-    mocker.patch("aico.core.tokens.count_tokens_for_messages", return_value=10)
-    mocker.patch("aico.lib.model_info.get_model_info", return_value=ModelInfo())
+    mocker.patch("aico.llm.tokens.count_tokens_for_messages", return_value=10)
+    mocker.patch("aico.model_registry.get_model_info", return_value=ModelInfo())
 
     # WHEN `aico status` is run
     result = runner.invoke(app, ["status"], catch_exceptions=False)
@@ -224,7 +224,7 @@ def test_mutating_commands_succeed_on_shared_session(
     if command_name in ["ask", "gen", "prompt"]:
         # For 'ask', 'gen', 'prompt': prevent real LLM calls which would fail due to the test model name.
         # Patch where it's used, not where it's defined.
-        from aico.lib.models import InteractionResult
+        from aico.models import InteractionResult
 
         mocker.patch(
             "aico.commands.prompt.execute_interaction",
@@ -293,8 +293,8 @@ def test_load_from_shared_history_restores_all_fields(tmp_path: Path) -> None:
     switch_active_pointer(pointer_file, view_path)
 
     # WHEN SharedHistoryPersistence.load is called
-    from aico.core.session_persistence import SharedHistoryPersistence
-    from aico.lib.models import AssistantChatMessage, UserChatMessage
+    from aico.models import AssistantChatMessage, UserChatMessage
+    from aico.session_persistence import SharedHistoryPersistence
 
     persistence = SharedHistoryPersistence(pointer_file)
     _, session_data = persistence.load()

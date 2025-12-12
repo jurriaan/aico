@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from aico.consts import SESSION_FILE_NAME
-from aico.core.session_persistence import SharedHistoryPersistence
 from aico.historystore import (
     HistoryStore,
     SessionView,
@@ -10,7 +9,8 @@ from aico.historystore import (
     switch_active_pointer,
 )
 from aico.historystore.models import HistoryRecord
-from aico.lib.models import AssistantChatMessage, SessionData, UserChatMessage
+from aico.models import AssistantChatMessage, SessionData, UserChatMessage
+from aico.session_persistence import SharedHistoryPersistence
 
 
 def save_session(path: Path, data: SessionData) -> None:

@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 from aico.addons import create_click_command, discover_addons, execute_addon
 from aico.consts import SESSION_FILE_NAME
 from aico.exceptions import AddonExecutionError
-from aico.lib.models import AddonInfo, SessionData
+from aico.models import AddonInfo, SessionData
 from tests.helpers import save_session
 
 runner = CliRunner()

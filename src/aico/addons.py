@@ -10,11 +10,11 @@ from typing import Literal
 
 import click
 
-from aico.core.trust import is_project_trusted
+from aico.atomic_io import atomic_write_text
 from aico.exceptions import AddonExecutionError
-from aico.lib.atomic_io import atomic_write_text
-from aico.lib.models import AddonInfo
-from aico.lib.session_find import find_session_file
+from aico.models import AddonInfo
+from aico.session_find import find_session_file
+from aico.trust import is_project_trusted
 
 # Constants for addon directories
 _PROJECT_ADDONS_DIR = ".aico/addons"

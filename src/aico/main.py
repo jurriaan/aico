@@ -9,8 +9,8 @@ from click import Context
 from typer.core import TyperGroup
 
 from aico.exceptions import AicoError
-from aico.lib.session_find import complete_files_in_context
 from aico.prompts import DEFAULT_SYSTEM_PROMPT
+from aico.session_find import complete_files_in_context
 
 app: typer.Typer
 

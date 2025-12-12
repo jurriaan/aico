@@ -8,11 +8,11 @@ from pathlib import Path
 
 import typer
 
-from aico.core.session_loader import load_session_and_resolve_indices
+from aico.console import is_input_terminal
+from aico.diffing.stream_processor import recompute_derived_content
 from aico.exceptions import ExternalDependencyError
-from aico.lib.models import AssistantChatMessage
-from aico.lib.stream_processor import recompute_derived_content
-from aico.lib.ui import is_input_terminal
+from aico.models import AssistantChatMessage
+from aico.session_loader import load_session_and_resolve_indices
 
 
 def edit(

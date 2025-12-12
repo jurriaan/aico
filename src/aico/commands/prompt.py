@@ -3,20 +3,20 @@ from datetime import UTC, datetime
 
 from rich.prompt import Prompt
 
-from aico.core.llm_executor import execute_interaction
-from aico.core.session_loader import load_active_session
+from aico.console import (
+    is_input_terminal,
+    is_terminal,
+    reconstruct_display_content_for_piping,
+)
 from aico.exceptions import InvalidInputError, ProviderError
-from aico.lib.models import (
+from aico.llm.executor import execute_interaction
+from aico.models import (
     AssistantChatMessage,
     DerivedContent,
     Mode,
     UserChatMessage,
 )
-from aico.lib.ui import (
-    is_input_terminal,
-    is_terminal,
-    reconstruct_display_content_for_piping,
-)
+from aico.session_loader import load_active_session
 
 
 def _get_timestamp() -> str:

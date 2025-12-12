@@ -3,9 +3,10 @@ from pathlib import Path
 
 import regex as re
 
-from aico.core.files import get_context_file_contents as build_original_file_contents
-from aico.lib.diff_utils import generate_diff_with_no_newline_handling
-from aico.lib.models import (
+from aico.diffing.diff_utils import generate_diff_with_no_newline_handling
+from aico.diffing.patching import create_patched_content
+from aico.fs import get_context_file_contents as build_original_file_contents
+from aico.models import (
     AIPatch,
     DerivedContent,
     DisplayItem,
@@ -19,7 +20,6 @@ from aico.lib.models import (
     UnparsedBlock,
     WarningMessage,
 )
-from aico.lib.patching import create_patched_content
 
 # This regex is the core of the parser. It finds a complete `File:` block.
 # It uses named capture groups and backreferences to be robust.

@@ -6,9 +6,9 @@ from typing import Any
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
-from aico.core.providers.base import NormalizedChunk
-from aico.lib.models import TokenUsage
+from aico.llm.providers.base import NormalizedChunk
 from aico.main import app
+from aico.models import TokenUsage
 
 runner = CliRunner()
 
@@ -43,13 +43,13 @@ def setup_piping_test(
 
     # For these tests, we are always in a non-TTY (piped) environment
     mocker.patch("aico.commands.prompt.is_terminal", return_value=False)
-    mocker.patch("aico.core.llm_executor.is_terminal", return_value=False)
+    mocker.patch("aico.llm.executor.is_terminal", return_value=False)
 
     # Mock the provider factory
     mock_provider = mocker.MagicMock()
     mock_client = mocker.MagicMock()
     mock_provider.configure_request.return_value = (mock_client, "test-model", {})
-    mocker.patch("aico.core.llm_executor.get_provider_for_model", return_value=(mock_provider, "test-model"))
+    mocker.patch("aico.llm.executor.get_provider_for_model", return_value=(mock_provider, "test-model"))
 
     usage = TokenUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20, cost=0.005)
 

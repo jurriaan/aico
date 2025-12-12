@@ -1,8 +1,8 @@
 import os
 from typing import TYPE_CHECKING, Any, override
 
-from aico.core.providers.base import LLMProvider, NormalizedChunk
-from aico.core.providers.utils import get_env_var_or_fail, parse_standard_openai_chunk
+from aico.llm.providers.base import LLMProvider, NormalizedChunk
+from aico.llm.providers.utils import get_env_var_or_fail, parse_standard_openai_chunk
 
 if TYPE_CHECKING:
     from openai import OpenAI

@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from aico.lib.models import FileHeader, PatchApplicationResult, ProcessedDiffBlock, WarningMessage
-from aico.lib.stream_processor import (
+from aico.diffing.stream_processor import (
     generate_display_items,
     generate_unified_diff,
     process_llm_response_stream,
     process_patches_sequentially,
 )
+from aico.models import FileHeader, PatchApplicationResult, ProcessedDiffBlock, WarningMessage
 
 
 def test_process_patches_sequentially_single_change(tmp_path: Path) -> None:

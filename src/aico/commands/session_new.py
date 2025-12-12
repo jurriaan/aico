@@ -1,9 +1,9 @@
 import typer
 
-from aico.core.session_loader import load_active_session
 from aico.exceptions import InvalidInputError
 from aico.historystore import SessionView, save_view, switch_active_pointer
 from aico.historystore.pointer import load_pointer
+from aico.session_loader import load_active_session
 
 
 def session_new(

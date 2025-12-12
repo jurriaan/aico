@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from aico.core.files import validate_input_paths
-from aico.core.session_loader import load_active_session
 from aico.exceptions import InvalidInputError
+from aico.fs import validate_input_paths
+from aico.session_loader import load_active_session
 
 
 def add(file_paths: list[Path]) -> None:

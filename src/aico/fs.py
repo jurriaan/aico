@@ -2,7 +2,7 @@ import os
 import sys
 from pathlib import Path
 
-from aico.lib.models import FileContents
+from aico.models import FileContents
 
 
 def validate_input_paths(

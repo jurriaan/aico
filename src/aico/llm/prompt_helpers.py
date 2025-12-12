@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from aico.lib.models import (
+from aico.models import (
     AssistantChatMessage,
     ChatMessageHistoryItem,
     LLMChatMessage,

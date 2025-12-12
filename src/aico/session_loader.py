@@ -1,14 +1,14 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from aico.core.session_persistence import (
+from aico.exceptions import InvalidInputError
+from aico.history_utils import find_message_pairs
+from aico.models import MessagePairIndices, SessionData
+from aico.session_persistence import (
     SharedHistoryPersistence,
     StatefulSessionPersistence,
     get_persistence,
 )
-from aico.exceptions import InvalidInputError
-from aico.lib.history_utils import find_message_pairs
-from aico.lib.models import MessagePairIndices, SessionData
 
 
 @dataclass(frozen=True, slots=True)

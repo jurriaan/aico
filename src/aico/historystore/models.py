@@ -7,7 +7,7 @@ from pydantic import Field, TypeAdapter, model_validator
 from pydantic.dataclasses import dataclass
 from pydantic_core import ArgsKwargs
 
-from aico.lib.models import (
+from aico.models import (
     AssistantChatMessage,
     DerivedContent,
     Mode,

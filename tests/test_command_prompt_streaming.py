@@ -6,7 +6,7 @@ from typing import Any
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
-from aico.core.providers.base import NormalizedChunk
+from aico.llm.providers.base import NormalizedChunk
 from aico.main import app
 
 runner = CliRunner()
@@ -45,7 +45,7 @@ def setup_streaming_test(
     mock_provider = mocker.MagicMock()
     mock_client = mocker.MagicMock()
     mock_provider.configure_request.return_value = (mock_client, "test-model", {})
-    mocker.patch("aico.core.llm_executor.get_provider_for_model", return_value=(mock_provider, "test-model"))
+    mocker.patch("aico.llm.executor.get_provider_for_model", return_value=(mock_provider, "test-model"))
 
     # Mock process_chunk for each chunk
     def mock_process_chunk(chunk):
@@ -73,7 +73,7 @@ def _run_multiple_patches_test(
     # GIVEN a file with multiple lines
     file_content = "line1\nline2\nline3\n"
     context_files = {"file.py": file_content}
-    mocker.patch("aico.core.llm_executor.is_terminal", return_value=is_tty)
+    mocker.patch("aico.llm.executor.is_terminal", return_value=is_tty)
     mocker.patch("aico.commands.prompt.is_terminal", return_value=is_tty)
 
     # AND an LLM response stream that contains two separate SEARCH/REPLACE blocks for the same file,
@@ -147,7 +147,7 @@ def test_streaming_renders_failed_diff_block_as_plain_text(tmp_path: Path, mocke
     # GIVEN a non-TTY environment and a file
     file_content = "original content\n"
     context_files = {"file.py": file_content}
-    mocker.patch("aico.core.llm_executor.is_terminal", return_value=False)
+    mocker.patch("aico.llm.executor.is_terminal", return_value=False)
     mocker.patch("aico.commands.prompt.is_terminal", return_value=False)
 
     # AND an LLM response stream containing a SEARCH/REPLACE block that will fail to apply
@@ -181,7 +181,7 @@ def test_streaming_renders_failed_diff_block_as_plain_text(tmp_path: Path, mocke
 
 def test_streaming_renders_incomplete_diff_block_as_plain_text(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a non-TTY environment and a file
-    mocker.patch("aico.core.llm_executor.is_terminal", return_value=False)
+    mocker.patch("aico.llm.executor.is_terminal", return_value=False)
     mocker.patch("aico.commands.prompt.is_terminal", return_value=False)
 
     # AND an LLM response stream that cuts off in the middle of a SEARCH/REPLACE block

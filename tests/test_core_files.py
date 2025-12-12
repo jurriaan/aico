@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from aico.core.files import get_context_file_contents, validate_input_paths
+from aico.fs import get_context_file_contents, validate_input_paths
 
 
 def test_get_context_file_contents_only_includes_existing_and_warns_for_missing(

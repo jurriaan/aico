@@ -9,7 +9,7 @@ Provides:
 - Migration helpers (legacy <-> sharded view)
 """
 
-from aico.lib.models import Mode
+from aico.models import Mode
 
 from .history_store import HistoryStore
 from .migration import (

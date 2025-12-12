@@ -4,9 +4,9 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from aico.core.llm_executor import _handle_unified_streaming, extract_reasoning_header
-from aico.core.providers.base import LLMProvider, NormalizedChunk
-from aico.lib.models import TokenUsage
+from aico.llm.executor import _handle_unified_streaming, extract_reasoning_header
+from aico.llm.providers.base import LLMProvider, NormalizedChunk
+from aico.models import TokenUsage
 
 
 def create_mock_chunk(content: str | None, usage_data: dict[str, Any] | None = None) -> Any:
@@ -99,7 +99,7 @@ def test_handle_unified_streaming_openrouter(tmp_path: Path):
 
 
 def test_openai_provider_process_chunk_reasoning():
-    from aico.core.providers.openai import OpenAIProvider
+    from aico.llm.providers.openai import OpenAIProvider
 
     provider = OpenAIProvider()
 

@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-from aico.core.files import read_file_safe
-from aico.core.prompt_helpers import reconstruct_historical_messages
-from aico.lib.models import ChatMessageHistoryItem, LLMChatMessage, ModelInfo, SessionData, TokenInfo
+from aico.fs import read_file_safe
+from aico.llm.prompt_helpers import reconstruct_historical_messages
+from aico.models import ChatMessageHistoryItem, LLMChatMessage, ModelInfo, SessionData, TokenInfo
 from aico.prompts import ALIGNMENT_PROMPTS, DEFAULT_SYSTEM_PROMPT, DIFF_MODE_INSTRUCTIONS
 
 

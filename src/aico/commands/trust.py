@@ -4,13 +4,13 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from aico.core.trust import (
+from aico.exceptions import ConfigurationError
+from aico.trust import (
     is_project_trusted,
     list_trusted_projects,
     trust_project,
     untrust_project,
 )
-from aico.exceptions import ConfigurationError
 
 
 def trust(

@@ -3,8 +3,8 @@ from dataclasses import dataclass
 
 import typer
 
-from aico.lib.history_utils import find_message_pairs
-from aico.lib.models import (
+from aico.history_utils import find_message_pairs
+from aico.models import (
     ActiveContext,
     ChatMessageHistoryItem,
     MessagePairIndices,

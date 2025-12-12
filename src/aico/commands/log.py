@@ -1,10 +1,10 @@
 from rich.console import Console
 from rich.table import Table
 
-from aico.core.session_context import active_message_indices, get_active_message_pairs
-from aico.core.session_loader import load_active_session
-from aico.lib.history_utils import find_message_pairs
-from aico.lib.models import UserChatMessage
+from aico.history_utils import find_message_pairs
+from aico.models import UserChatMessage
+from aico.session_context import active_message_indices, get_active_message_pairs
+from aico.session_loader import load_active_session
 
 
 def log() -> None:

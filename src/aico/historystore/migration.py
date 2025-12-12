@@ -5,10 +5,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from aico.lib.history_utils import (
+from aico.history_utils import (
     find_message_pairs_from_records,
 )
-from aico.lib.models import (
+from aico.models import (
     AssistantChatMessage,
     ChatMessageHistoryItem,
     DerivedContent,
@@ -82,7 +82,7 @@ def from_legacy_session(
 
     # Helper because the generic `find_message_pairs` expects objects with `.role`
     # and these Pydantic models have it.
-    from aico.lib.history_utils import find_message_pairs
+    from aico.history_utils import find_message_pairs
 
     for msg in session_data.chat_history:
         if isinstance(msg, LegacyUserChatMessage):

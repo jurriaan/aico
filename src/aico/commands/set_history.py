@@ -1,6 +1,6 @@
-from aico.core.session_context import resolve_start_pair_index
-from aico.core.session_loader import load_active_session
-from aico.lib.history_utils import find_message_pairs
+from aico.history_utils import find_message_pairs
+from aico.session_context import resolve_start_pair_index
+from aico.session_loader import load_active_session
 
 
 def set_history(

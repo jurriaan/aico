@@ -19,18 +19,18 @@ from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
 from aico.consts import SESSION_FILE_NAME
-from aico.core.providers.base import NormalizedChunk
+from aico.history_utils import find_message_pairs
 from aico.historystore import HistoryRecord, HistoryStore, append_pair_to_view, load_view, save_view
 from aico.historystore.pointer import load_pointer
-from aico.lib.history_utils import find_message_pairs
-from aico.lib.models import (
+from aico.llm.providers.base import NormalizedChunk
+from aico.main import app
+from aico.models import (
     AssistantChatMessage,
     Mode,
     SessionData,
     UserChatMessage,
 )
-from aico.lib.session_data_adapter import SessionDataAdapter
-from aico.main import app
+from aico.session_data_adapter import SessionDataAdapter
 from tests.helpers import save_session
 
 
@@ -196,7 +196,7 @@ def given_llm_will_stream_response(mocker: MockerFixture, docstring: str) -> Non
     mock_provider = mocker.MagicMock()
     mock_client = mocker.MagicMock()
     mock_provider.configure_request.return_value = (mock_client, "test-model", {})
-    mocker.patch("aico.core.llm_executor.get_provider_for_model", return_value=(mock_provider, "test-model"))
+    mocker.patch("aico.llm.executor.get_provider_for_model", return_value=(mock_provider, "test-model"))
 
     def mock_process_chunk(chunk):
         return NormalizedChunk(content=chunk.choices[0].delta.content if chunk.choices else None)
@@ -228,7 +228,7 @@ def given_llm_will_stream_response(mocker: MockerFixture, docstring: str) -> Non
 @given("for this scenario, the token counter will report pre-defined counts")
 def given_mocked_token_counts(mocker: MockerFixture) -> None:
     # Mock the centralized token counting helper used by `status`
-    mock_token_counter = mocker.patch("aico.core.tokens.count_tokens_for_messages")
+    mock_token_counter = mocker.patch("aico.llm.tokens.count_tokens_for_messages")
     mock_token_counter.side_effect = [
         100,  # system prompt
         40,  # alignment prompt 1
@@ -243,20 +243,20 @@ def given_model_has_cost(mocker: MockerFixture, model_name: str) -> None:
     # Mock the component cost calculator in utils to return simple predictable costs
     # Mock the component cost calculator in utils
     _ = mocker.patch(
-        "aico.core.tokens.compute_component_cost",
+        "aico.llm.tokens.compute_component_cost",
         side_effect=lambda model, prompt_tokens, completion_tokens=0: float(prompt_tokens + completion_tokens) * 0.0001,
     )
 
     # Also mock get_model_info to return a ModelInfo with max_input_tokens
     # and default costs so that the status bar (Context Window) and costs render.
-    from aico.lib.model_info import ModelInfo
+    from aico.model_registry import ModelInfo
 
     def fake_get_model_info(model_id: str) -> ModelInfo:
         if model_id == "test-model-with-cost":
             return ModelInfo(max_input_tokens=8192, input_cost_per_token=0.0001, output_cost_per_token=0.0001)
         return ModelInfo()
 
-    _ = mocker.patch("aico.lib.model_info.get_model_info", side_effect=fake_get_model_info)
+    _ = mocker.patch("aico.model_registry.get_model_info", side_effect=fake_get_model_info)
     _ = mocker.patch("aico.commands.status.get_model_info", side_effect=fake_get_model_info)
 
 
