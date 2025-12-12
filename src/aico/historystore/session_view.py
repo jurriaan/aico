@@ -2,7 +2,7 @@ from pathlib import Path
 
 from pydantic import TypeAdapter
 
-from aico.atomic_io import atomic_write_text
+from aico.fs import atomic_write_text
 from aico.history_utils import find_message_pairs_from_records
 from aico.models import SessionPointer
 

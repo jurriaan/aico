@@ -41,7 +41,7 @@ def _save_trusted_paths(paths: set[str]) -> None:
     data: TrustConfig = {"trusted_projects": sorted(list(paths))}
 
     # Atomic write to prevent corruption
-    from aico.atomic_io import atomic_write_text
+    from aico.fs import atomic_write_text
 
     atomic_write_text(trust_file, TypeAdapter(TrustConfig).dump_json(data, indent=2))
     trust_file.chmod(0o600)

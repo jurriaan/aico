@@ -10,8 +10,8 @@ from typing import Literal
 
 import click
 
-from aico.atomic_io import atomic_write_text
 from aico.exceptions import AddonExecutionError
+from aico.fs import atomic_write_text
 from aico.models import AddonInfo
 from aico.session import find_session_file
 from aico.trust import is_project_trusted
