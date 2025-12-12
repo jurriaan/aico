@@ -1,8 +1,12 @@
+import json
+
 from pydantic import TypeAdapter
 from rich.console import Console
 
 from aico.core.session_loader import load_session_and_resolve_indices
+from aico.core.session_persistence import SharedHistoryPersistence
 from aico.exceptions import AicoError, InvalidInputError
+from aico.historystore import load_view
 from aico.lib.models import AssistantChatMessage, DisplayItem, UserChatMessage
 from aico.lib.stream_processor import recompute_derived_content
 from aico.lib.ui import (
@@ -34,17 +38,47 @@ def last(
 ) -> None:
     from rich.markdown import Markdown
 
-    session, pair_indices, _ = load_session_and_resolve_indices(index)
+    session, pair_indices, resolved_pair_index = load_session_and_resolve_indices(index)
+
+    if json_output:
+        user_msg = session.data.chat_history[pair_indices.user_index]
+        asst_msg = session.data.chat_history[pair_indices.assistant_index]
+
+        user_id: int | None = None
+        assistant_id: int | None = None
+
+        if isinstance(session.persistence, SharedHistoryPersistence):
+            view = load_view(session.persistence.view_path)
+            # When full history is loaded, resolved_pair_index is already absolute (0-based from start of session).
+            # We do NOT add history_start_pair.
+            user_msg_idx = resolved_pair_index * 2
+            asst_msg_idx = resolved_pair_index * 2 + 1
+
+            if asst_msg_idx < len(view.message_indices):
+                user_id = view.message_indices[user_msg_idx]
+                assistant_id = view.message_indices[asst_msg_idx]
+
+        assert isinstance(user_msg, UserChatMessage)
+        user_dict = TypeAdapter(UserChatMessage).dump_python(user_msg, mode="json")  # pyright: ignore[reportAny]
+        user_dict["id"] = user_id
+
+        assert isinstance(asst_msg, AssistantChatMessage)
+        asst_dict = TypeAdapter(AssistantChatMessage).dump_python(asst_msg, mode="json")  # pyright: ignore[reportAny]
+        asst_dict["id"] = assistant_id
+
+        output = {
+            "pair_index": resolved_pair_index,
+            "user": user_dict,
+            "assistant": asst_dict,
+        }
+        print(json.dumps(output))
+        return
 
     if prompt:
         if recompute:
             raise InvalidInputError("--recompute cannot be used with --prompt.")
 
         target_user_msg = session.data.chat_history[pair_indices.user_index]
-        if json_output:
-            assert isinstance(target_user_msg, UserChatMessage)
-            print(TypeAdapter(UserChatMessage).dump_json(target_user_msg).decode("utf-8"))
-            return
 
         if target_user_msg.content:
             _render_content(target_user_msg.content, is_terminal() and not verbatim)
@@ -55,10 +89,6 @@ def last(
     if not isinstance(target_msg, AssistantChatMessage):
         # This is a safeguard; find_message_pairs should prevent this.
         raise AicoError("Internal error. Could not find a valid assistant message for this pair.")
-
-    if json_output:
-        print(TypeAdapter(AssistantChatMessage).dump_json(target_msg).decode("utf-8"))
-        return
 
     if verbatim:
         if target_msg.content:

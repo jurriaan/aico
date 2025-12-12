@@ -79,6 +79,16 @@ class SharedHistoryPersistence:
         self._view_path_abs = None
         self.writable = True
 
+    @property
+    def view_path(self) -> Path:
+        """Returns the resolved absolute path to the SessionView file."""
+        if self._view_path_abs is None:
+            # Lazy-load the pointer to resolve the view path
+            from aico.historystore.pointer import load_pointer
+
+            self._view_path_abs = load_pointer(self._pointer_file)
+        return self._view_path_abs
+
     # ---------- Load helpers ----------
 
     def _load_view_and_store(self) -> tuple[HistoryStore, SessionView]:

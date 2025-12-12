@@ -85,7 +85,7 @@ def test_last_verbatim_flag_for_prompt(session_with_two_pairs: Path, mocker: Moc
     assert result.stdout == "user prompt 1"
 
 
-def test_last_json_output_for_assistant_response(session_with_two_pairs: Path) -> None:
+def test_last_json_output(session_with_two_pairs: Path) -> None:
     # GIVEN a session with two pairs
     # WHEN `aico last --json` is run
     result = runner.invoke(app, ["last", "-1", "--json"])
@@ -99,38 +99,37 @@ def test_last_json_output_for_assistant_response(session_with_two_pairs: Path) -
     json_data = json.loads(result.stdout)
 
     # Check that we have the basic expected fields
-    assert "role" in json_data
-    assert "content" in json_data
-    assert "mode" in json_data
-    assert "timestamp" in json_data
+    assert "pair_index" in json_data
+    assert "user" in json_data
+    assert "assistant" in json_data
 
-    # Check the content and role are correct
-    assert json_data["role"] == "assistant"
-    assert "assistant response 1" in json_data["content"]
+    assert json_data["pair_index"] == 1
+    assert json_data["user"]["role"] == "user"
+    assert "user prompt 1" in json_data["user"]["content"]
+    assert json_data["assistant"]["role"] == "assistant"
+    assert "assistant response 1" in json_data["assistant"]["content"]
+
+    # Ensure IDs are populated (not null) for shared-history sessions
+    assert json_data["user"]["id"] is not None
+    assert json_data["assistant"]["id"] is not None
+    assert isinstance(json_data["user"]["id"], int)
+    assert isinstance(json_data["assistant"]["id"], int)
 
 
-def test_last_json_output_for_user_prompt(session_with_two_pairs: Path) -> None:
+def test_last_json_output_ignores_prompt_flag(session_with_two_pairs: Path) -> None:
     # GIVEN a session with two pairs
     # WHEN `aico last --json --prompt` is run
     result = runner.invoke(app, ["last", "-1", "--json", "--prompt"])
 
-    # THEN it should succeed and return valid JSON
+    # THEN it should still output the full pair structure
     assert result.exit_code == 0
 
-    # AND the JSON should be parseable and contain expected fields
     import json
 
     json_data = json.loads(result.stdout)
-
-    # Check that we have the basic expected fields
-    assert "role" in json_data
-    assert "content" in json_data
-    assert "mode" in json_data
-    assert "timestamp" in json_data
-
-    # Check the content and role are correct
-    assert json_data["role"] == "user"
-    assert "user prompt 1" in json_data["content"]
+    assert "user" in json_data
+    assert "assistant" in json_data
+    assert json_data["user"]["content"] == "user prompt 1"
 
 
 def test_last_json_output_with_specific_index(session_with_two_pairs: Path) -> None:
@@ -145,8 +144,9 @@ def test_last_json_output_with_specific_index(session_with_two_pairs: Path) -> N
     import json
 
     json_data = json.loads(result.stdout)
-    assert "assistant response 0" in json_data["content"]
-    assert "assistant response 1" not in json_data["content"]
+    assert json_data["pair_index"] == 0
+    assert "assistant response 0" in json_data["assistant"]["content"]
+    assert "assistant response 1" not in json_data["assistant"]["content"]
 
 
 def test_last_fails_when_no_pairs_exist(tmp_path: Path) -> None:
