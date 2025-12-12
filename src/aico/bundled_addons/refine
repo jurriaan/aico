@@ -7,6 +7,12 @@ if [[ "$1" == "--usage" ]]; then
   exit 0
 fi
 
+# Ensure jq is installed
+if ! command -v jq &> /dev/null; then
+    echo "Error: 'jq' is required for this addon."
+    exit 1
+fi
+
 # Default index
 INDEX="-1"
 
@@ -16,50 +22,142 @@ if [[ "$1" =~ ^-?[0-9]+$ ]]; then
     shift
 fi
 
+MODEL_FLAG=""
+INSTRUCTION_PARTS=()
+
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+        --model)
+        MODEL_FLAG="--model $2"
+        shift # past argument
+        shift # past value
+        ;;
+        *)
+        INSTRUCTION_PARTS+=("$1")
+        shift # past argument
+        ;;
+    esac
+done
+
+INSTRUCTION="${INSTRUCTION_PARTS[*]}"
+
 # Validate that we have an instruction
-if [ $# -eq 0 ]; then
+if [ -z "$INSTRUCTION" ]; then
   echo "Error: Missing instruction."
-  echo "Usage: aico refine [index] \"<instruction>\" [--model ...]"
+  echo "Usage: aico refine [index] \"<instruction>\" [--model <model>]"
   exit 1
 fi
 
-# Define System Prompt
-export SYSTEM_PROMPT="You are an automated Refinement Engine.
-Your goal is to rewrite the LAST Assistant response to satisfy the user's new instruction.
+# Get the original response metadata using the new --json flag
+ORIG_RESP_JSON=$(aico last "$INDEX" --json 2>/dev/null)
+if [ -z "$ORIG_RESP_JSON" ]; then
+    echo "Error: Could not retrieve message pair at index $INDEX."
+    exit 1
+fi
 
-**CRITICAL STATE RULES:**
-1. The XML <context> block contains the **live, current file state**.
-2. The previous Assistant response (which you are refining) has **NOT** been applied or finalized.
-3. **If** your output involves code or diffs, you MUST generate them based strictly on the content in <context>, ignoring any changes implied by the chat history that are not present in the files.
+# Extract mode from JSON to determine command
+ORIG_MODE=$(echo "$ORIG_RESP_JSON" | jq -r .assistant.mode)
+ORIG_CONTENT=$(echo "$ORIG_RESP_JSON" | jq -r .assistant.content)
+ORIG_PROMPT_CONTENT=$(echo "$ORIG_RESP_JSON" | jq -r .user.content)
 
-**OUTPUT RULES:**
-- Output ONLY the replacement content (whether text, plan, code, or diff).
-- Do NOT output conversational filler (e.g., 'Here is the fixed version')."
+# Define System Prompt based on mode
+if [ "$ORIG_MODE" == "diff" ]; then
+    export SYSTEM_PROMPT="You are a Code Refinement Engine.
+Your goal is to regenerate a code patch based on new instructions.
+
+**INPUT DATA:**
+- <original_prompt>: The user's original request.
+- <previous_draft>: The code you generated previously (which was incorrect or incomplete).
+- <critique>: The user's specific instructions on how to fix the draft.
+
+**CRITICAL RULES:**
+1. You must output **ONLY** the valid \`SEARCH/REPLACE\` blocks.
+2. Do **NOT** include conversational filler (e.g., 'Here is the fixed code').
+3. The <critique> **OVERRIDES** any conflicting instructions in the <original_prompt>.
+4. Your output will be spliced directly into the history as if it were your first and only response."
+else
+    export SYSTEM_PROMPT="You are a Content Refinement Engine.
+Your goal is to rewrite a previous response to satisfy a critique.
+
+**INPUT DATA:**
+- <original_prompt>: The user's original request.
+- <previous_draft>: The text you generated previously.
+- <critique>: The user's specific instructions on how to change the draft.
+
+**CRITICAL RULES:**
+1. You must output **ONLY** the new response content.
+2. Do **NOT** include conversational filler (e.g., 'I cannot edit history').
+3. Do **NOT** explain what you changed. Just output the result.
+4. The <critique> **OVERRIDES** any conflicting instructions in the <original_prompt>.
+   - Example: If original prompt was 'Draft a minimal deployment plan' and critique is 'Include rollback steps', you MUST output the full plan **with** rollback steps included.
+5. Your output will be spliced directly into the history as if it were your first and only response."
+fi
 
 # Ephemeral Execution Setup
-# We run the prompt in a temporary, forked session.
-# This avoids modifying the main history stack (no "undo" needed) and prevents index drift.
-# We capture the result via a side-channel file to preserve TTY output for the prompt.
-
-# Generate unique name using python for portability
 SESSION_NAME="refine-$(python3 -c 'import secrets; print(secrets.token_hex(4))')"
 export PAYLOAD=$(mktemp)
+export PROMPT_FILE=$(mktemp)
+
 cleanup() {
-    rm -f "$PAYLOAD"
+    rm -f "$PAYLOAD" "$PROMPT_FILE"
 }
 trap cleanup EXIT
 
-echo "Refining response at index $INDEX..."
+# Construct the "Frankenstein" Prompt safely
+# We use printf to avoid shell variable expansion on the content
+{
+  echo "<refinement_task>"
+  echo "    <original_prompt>"
+  printf '%s\n' "$ORIG_PROMPT_CONTENT"
+  echo "    </original_prompt>"
+  echo "    <previous_draft>"
+  printf '%s\n' "$ORIG_CONTENT"
+  echo "    </previous_draft>"
+  echo "    <critique>"
+  printf '%s\n' "$INSTRUCTION"
+  echo "    </critique>"
+  echo "    <instruction>"
+  echo "    Rewrite the content of <previous_draft> to satisfy the <critique>."
+  echo "    Respond to the <original_prompt> directly, but apply the modifications requested."
+  echo "    **Output ONLY the final rewritten content.**"
+  echo "    </instruction>"
+  echo "</refinement_task>"
+} > "$PROMPT_FILE"
+
+
+echo "Refining response at index $INDEX (Mode: $ORIG_MODE)..."
+
+if [ "$ORIG_MODE" == "diff" ]; then
+    CMD="generate-patch"
+else
+    CMD="ask"
+fi
 
 # 1. Execute inside ephemeral fork
-#    - aico prompt: Shows streaming output to user
-#    - aico last: Captures the final response content to our payload file
-aico session-fork --ephemeral "$SESSION_NAME" -- bash -c 'aico prompt --system-prompt "$SYSTEM_PROMPT" "$@" && aico last --verbatim > "$PAYLOAD"' -- "$@"
+# We pass the prompt file content via cat to avoid ARG_MAX limits on large files
+# We include $MODEL_FLAG (expanded on client side, so it passes --model X if set)
+aico session-fork --ephemeral "$SESSION_NAME" -- bash -c "cat \"$PROMPT_FILE\" | aico $CMD $MODEL_FLAG --system-prompt \"\$SYSTEM_PROMPT\" - && aico last --json > \"\$PAYLOAD\""
 
-# 2. Apply to Main Session in-place
+# 2. Apply to Main Session
 if [ -s "$PAYLOAD" ]; then
-    cat "$PAYLOAD" | aico edit "$INDEX"
-    echo "Refinement complete."
+    NEW_ASST_ID=$(cat "$PAYLOAD" | jq -r .assistant.id)
+    ORIG_USER_ID=$(echo "$ORIG_RESP_JSON" | jq -r .user.id)
+    ABS_INDEX=$(echo "$ORIG_RESP_JSON" | jq -r .pair_index)
+
+    if [ "$NEW_ASST_ID" == "null" ] || [ "$ORIG_USER_ID" == "null" ]; then
+       echo "Error: IDs could not be resolved. Cannot use surgical history splice."
+       exit 1
+    fi
+
+    # 1. Undo the old one (soft delete)
+    aico undo "$INDEX"
+
+    # 2. Splice the new pair immediately after
+    NEXT_INDEX=$((ABS_INDEX + 1))
+    aico history-splice "$ORIG_USER_ID" "$NEW_ASST_ID" --at-index "$NEXT_INDEX"
+
+    echo "Refinement complete (Original pair hidden, new pair spliced)."
 else
     echo "Refinement failed or returned empty content."
     exit 1
