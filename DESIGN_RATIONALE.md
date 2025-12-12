@@ -28,7 +28,7 @@ These records explain the motivation and consequences of key architectural decis
 
 -   **Context:** A series of rendering bugs revealed systemic issues. The live renderer showed garbled output for failed patches, and the `aico last` command showed the same garbled output for historical failed patches because the structural information from parsing was being lost during session saving.
 -   **Decision:** We made two related architectural changes:
-    1.  The `process_llm_response_stream` generator in `diffing.py` was made the **single source of truth** for all LLM output parsing (live rendering, final output, `last --recompute`).
+    1.  The `process_llm_response_stream` generator in `src/aico/diffing/stream_processor.py` was made the **single source of truth** for all LLM output parsing (live rendering, final output, `last --recompute`).
     2.  The result of this parsing is stored in the session history not as a pre-rendered string, but as a structured list of display items (`list[DisplayItem]`).
 -   **Rationale:**
     -   **Unified Parsing:** The initial bugs stemmed from having duplicated and slightly different parsing logic in multiple places. By centralizing all parsing into one stateful generator, we guarantee that the live view, the piped output, and the historical view (`aico last`) are all derived from the exact same logic, eliminating an entire class of rendering inconsistencies.
@@ -93,8 +93,8 @@ We explicitly migrated away from `litellm` to the standard `openai` Python libra
 -   **Decision:** We now use the official `openai` library combined with a custom, lightweight **Provider Router**.
 -   **Rationale:**
     -   **Stability & Standards:** The `openai` library is the industry standard. It offers superior type safety (essential for our `basedpyright` workflow), stable API contracts, and minimal overhead.
-    -   **Explicit Control:** By implementing our own thin router (`src/aico/core/provider_router.py`), we have precise control over how requests are directed (e.g., to OpenRouter or direct to OpenAI) without opaque middleware.
-    -   **Lightweight Metadata:** Instead of relying on a heavy library for model costs, we implemented a targeted metadata service (`src/aico/lib/model_info.py`) that caches only the data we need (context windows and pricing) from upstream sources.
+    -   **Explicit Control:** By implementing our own thin router (`src/aico/llm/router.py`), we have precise control over how requests are directed (e.g., to OpenRouter or direct to OpenAI) without opaque middleware.
+    -   **Lightweight Metadata:** Instead of relying on a heavy library for model costs, we implemented a targeted metadata service (`src/aico/model_registry.py`) that caches only the data we need (context windows and pricing) from upstream sources.
 
 ### Error Handling Philosophy: Fail Fast
 

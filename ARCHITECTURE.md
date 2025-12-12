@@ -18,12 +18,12 @@ The application is composed of several distinct components, each with a clear ro
 ### Data Modeling & Contracts
 
 -   **Role:** This is the application's data backbone. It provides a single source of truth for the shape of all data, including session state, chat history, and internal data structures. It ensures type safety and guarantees that data loaded from files or APIs is valid.
--   **Implementation:** All data structures are defined as Pydantic models in `src/aico/lib/models.py`.
+-   **Implementation:** All data structures are defined as Pydantic models in `src/aico/models.py`.
 
 ### State Persistence Layer
 
 -   **Role:** This layer abstracts the loading and saving of session state. It provides a consistent interface for all commands, regardless of the underlying storage format. It supports both the legacy single-file `.ai_session.json` and the next-generation `historystore` architecture (sharded history + lightweight session pointers).
--   **Implementation:** The core logic is centralized in `src/aico/core/session_persistence.py`.
+-   **Implementation:** The core logic is centralized in `src/aico/session.py`.
     -   A `SessionPersistence` protocol defines the `load()` and `save()` interface.
     -   A factory function, `get_persistence()`, inspects `.ai_session.json` to determine the storage format and returns the correct persistence backend.
     -   `LegacyJsonPersistence` handles the traditional single-file JSON format.
@@ -40,14 +40,14 @@ The application is composed of several distinct components, each with a clear ro
 These are specialized components that handle the most complex processing tasks.
 
 -   **LLM Interaction Engine:** This is the single entry point for all communication with the Large Language Model. It builds the full prompt (including system instructions, file context, and chat history) and orchestrates the request-response cycle. It relies on the **Provider Router** to instantiate the correct API client and processes the streaming response for real-time user feedback.
-    -   **Implementation:** This logic is located in `src/aico/core/llm_executor.py`.
+    -   **Implementation:** This logic is located in `src/aico/llm/executor.py`.
 
 -   **Provider Router & Model Info:** This layer abstracts the differences between API providers.
-    -   **Router:** Determines whether to route requests to OpenAI direct or OpenRouter based on the model string prefix (`openai/` vs `openrouter/`) and configures the HTTP client accordingly. Located in `src/aico/core/provider_router.py`.
-    -   **Model Metadata Service:** Fetches and caches model capabilities (context window size) and pricing data to `~/.cache/aico/`. This allows `aico status` to provide cost estimates without blocking on network calls or requiring a heavy dependency. Located in `src/aico/lib/model_info.py`.
+    -   **Router:** Determines whether to route requests to OpenAI direct or OpenRouter based on the model string prefix (`openai/` vs `openrouter/`) and configures the HTTP client accordingly. Located in `src/aico/llm/router.py`.
+    -   **Model Metadata Service:** Fetches and caches model capabilities (context window size) and pricing data to `~/.cache/aico/`. This allows `aico status` to provide cost estimates without blocking on network calls or requiring a heavy dependency. Located in `src/aico/model_registry.py`.
 
 -   **Diff & Patch Engine:** This engine processes the raw text from the LLM to find and parse structured `SEARCH/REPLACE` blocks. It can apply these blocks to in-memory file content to generate both machine-readable unified diffs (for piping) and human-readable, rich-formatted output (for terminal display).
-    -   **Implementation:** This is a dedicated, specialized component located in `src/aico/lib/diffing.py`.
+    -   **Implementation:** This is a dedicated, specialized component located in `src/aico/diffing/stream_processor.py`.
 
 ### Extensibility Hooks (Addons)
 
