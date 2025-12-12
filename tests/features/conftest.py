@@ -14,6 +14,7 @@ from click.testing import Result
 from gherkin.errors import CompositeParserException
 from gherkin.parser import Parser
 from gherkin.token_matcher_markdown import GherkinInMarkdownTokenMatcher
+from pydantic import TypeAdapter
 from pytest_bdd import exceptions, gherkin_parser, given, parsers, then, when
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
@@ -30,8 +31,9 @@ from aico.models import (
     SessionData,
     UserChatMessage,
 )
-from aico.session_data_adapter import SessionDataAdapter
 from tests.helpers import save_session
+
+SessionDataAdapter = TypeAdapter(SessionData)
 
 
 # This file is used to override the default `get_gherkin_document` function so that
