@@ -255,6 +255,13 @@ def last(
             help="Recalculate the response against the current state of files. Only valid for assistant responses.",
         ),
     ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Output the raw message object as JSON.",
+        ),
+    ] = False,
 ) -> None:
     """
     Output the last response or diff to stdout.
@@ -266,7 +273,7 @@ def last(
     """
     from aico.commands import last
 
-    last.last(index, prompt, verbatim, recompute)
+    last.last(index, prompt, verbatim, recompute, json_output)
 
 
 @app.command("edit", context_settings={"ignore_unknown_options": True})

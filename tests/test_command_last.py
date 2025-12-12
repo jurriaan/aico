@@ -85,6 +85,70 @@ def test_last_verbatim_flag_for_prompt(session_with_two_pairs: Path, mocker: Moc
     assert result.stdout == "user prompt 1"
 
 
+def test_last_json_output_for_assistant_response(session_with_two_pairs: Path) -> None:
+    # GIVEN a session with two pairs
+    # WHEN `aico last --json` is run
+    result = runner.invoke(app, ["last", "-1", "--json"])
+
+    # THEN it should succeed and return valid JSON
+    assert result.exit_code == 0
+
+    # AND the JSON should be parseable and contain expected fields
+    import json
+
+    json_data = json.loads(result.stdout)
+
+    # Check that we have the basic expected fields
+    assert "role" in json_data
+    assert "content" in json_data
+    assert "mode" in json_data
+    assert "timestamp" in json_data
+
+    # Check the content and role are correct
+    assert json_data["role"] == "assistant"
+    assert "assistant response 1" in json_data["content"]
+
+
+def test_last_json_output_for_user_prompt(session_with_two_pairs: Path) -> None:
+    # GIVEN a session with two pairs
+    # WHEN `aico last --json --prompt` is run
+    result = runner.invoke(app, ["last", "-1", "--json", "--prompt"])
+
+    # THEN it should succeed and return valid JSON
+    assert result.exit_code == 0
+
+    # AND the JSON should be parseable and contain expected fields
+    import json
+
+    json_data = json.loads(result.stdout)
+
+    # Check that we have the basic expected fields
+    assert "role" in json_data
+    assert "content" in json_data
+    assert "mode" in json_data
+    assert "timestamp" in json_data
+
+    # Check the content and role are correct
+    assert json_data["role"] == "user"
+    assert "user prompt 1" in json_data["content"]
+
+
+def test_last_json_output_with_specific_index(session_with_two_pairs: Path) -> None:
+    # GIVEN a session with two pairs
+    # WHEN `aico last 0 --json` is run to get the first pair
+    result = runner.invoke(app, ["last", "0", "--json"])
+
+    # THEN it should succeed and return valid JSON
+    assert result.exit_code == 0
+
+    # AND the JSON should contain the content from the first pair
+    import json
+
+    json_data = json.loads(result.stdout)
+    assert "assistant response 0" in json_data["content"]
+    assert "assistant response 1" not in json_data["content"]
+
+
 def test_last_fails_when_no_pairs_exist(tmp_path: Path) -> None:
     # GIVEN a session file with no message pairs
     with runner.isolated_filesystem(temp_dir=tmp_path):
