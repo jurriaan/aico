@@ -12,19 +12,18 @@ Provides:
 from aico.models import Mode
 
 from .history_store import HistoryStore
-from .migration import (
-    deserialize_assistant_record,
-    deserialize_user_record,
-    from_legacy_session,
-    reconstruct_chat_history,
-    reconstruct_full_chat_history,
-)
 from .models import (
     SHARD_SIZE,
     HistoryRecord,
     SessionView,
     dumps_history_record,
     load_history_record,
+)
+from .reconstruct import (
+    deserialize_assistant_record,
+    deserialize_user_record,
+    reconstruct_chat_history,
+    reconstruct_full_chat_history,
 )
 from .session_view import (
     append_pair_to_view,
@@ -51,7 +50,6 @@ __all__ = [
     "append_pair_to_view",
     "fork_view",
     "switch_active_pointer",
-    "from_legacy_session",
     "deserialize_user_record",
     "deserialize_assistant_record",
     "reconstruct_chat_history",

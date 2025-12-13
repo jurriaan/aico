@@ -6,9 +6,8 @@ from typing import Any, Literal
 from aico.historystore import (
     HistoryStore,
     find_message_pairs_in_view,
-    from_legacy_session,
 )
-from aico.historystore.migration import LegacySessionSnapshot
+from aico.historystore.migration import LegacySessionSnapshot, from_legacy_session
 from aico.historystore.models import SessionView as SessionViewModel
 
 
