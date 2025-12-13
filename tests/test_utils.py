@@ -153,3 +153,43 @@ def test_count_tokens_for_messages(mocker: MockerFixture) -> None:
 
     # THEN heuristic is applied: 11 // 4 = 2
     assert token_count == 2
+
+
+def test_calculate_and_display_cost_shows_cached_tokens(mocker: MockerFixture) -> None:
+    # GIVEN
+    mocker.patch("aico.console.is_terminal", return_value=False)
+    mock_print = mocker.patch("builtins.print")
+
+    from aico.model_registry import ModelInfo
+    from aico.models import UserChatMessage
+
+    # Mock ModelInfo to return zero costs
+    mock_model_info = ModelInfo(input_cost_per_token=0.0, output_cost_per_token=0.0)
+    mocker.patch("aico.console.get_model_info", return_value=mock_model_info)
+
+    chat_history: Sequence[ChatMessageHistoryItem] = [
+        UserChatMessage(role="user", content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
+        AssistantChatMessage(
+            role="assistant", content="a0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=1, cost=0.0
+        ),
+    ]
+    token_usage = TokenUsage(prompt_tokens=2048, cached_tokens=1024, completion_tokens=100, total_tokens=2148)
+    model_name = "test-model"
+
+    # Construct a modern SessionData object
+    session_data = SessionData(
+        model=model_name,
+        chat_history=list(chat_history),
+        history_start_pair=0,
+        excluded_pairs=[],
+    )
+
+    # WHEN calculate_and_display_cost is called with cached tokens
+    message_cost = calculate_and_display_cost(token_usage, model_name, session_data)
+
+    # THEN the returned cost for the new message is correct
+    assert message_cost == 0.0
+
+    # AND the printed output string to stderr contains the cached token info
+    expected_info_str = "Tokens: 2.0k (1.0k cached) sent, 100 received. Cost: $0.00, current chat: $0.00"
+    mock_print.assert_called_with(expected_info_str, file=sys.stderr)
