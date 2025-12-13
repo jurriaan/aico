@@ -88,6 +88,9 @@ class HistoryRecord:
         )
 
 
+HistoryRecordTypeAdapter = TypeAdapter(HistoryRecord)
+
+
 @dataclass(slots=True)
 class SessionView:
     """
@@ -120,11 +123,11 @@ def dumps_history_record(record: HistoryRecord) -> str:
     """
     Compact single-line JSON for a HistoryRecord.
     """
-    return TypeAdapter(HistoryRecord).dump_json(record, indent=None, exclude_none=True).decode()
+    return HistoryRecordTypeAdapter.dump_json(record, indent=None, exclude_none=True).decode()
 
 
 def load_history_record(line: str | bytes) -> HistoryRecord:
     """
     Parse a JSON line into a HistoryRecord.
     """
-    return TypeAdapter(HistoryRecord).validate_json(line)
+    return HistoryRecordTypeAdapter.validate_json(line)
