@@ -351,24 +351,19 @@ def process_llm_response_stream(
     )
 
 
-def generate_unified_diff(original_file_contents: FileContents, llm_response: str, session_root: Path) -> str:
+def _build_unified_diff(baseline_contents: FileContents, final_contents: FileContents) -> str:
     """
     Generates a single, clean, compound unified diff string of all successful changes.
-    This function creates a "best-effort" diff that can be piped to other tools.
-    It ignores any failed patches, as warnings about those are handled separately
-    by the calling display logic.
+    This is a pure function that takes baseline and final file contents and returns a diff.
     """
-    post_patch_contents, baseline_contents, _ = process_patches_sequentially(
-        original_file_contents, llm_response, session_root
-    )
     all_diffs: list[str] = []
 
     # Using keys from both dicts ensures we handle file creations and deletions.
-    all_files = sorted(list(set(baseline_contents.keys()) | set(post_patch_contents.keys())))
+    all_files = sorted(list(set(baseline_contents.keys()) | set(final_contents.keys())))
 
     for file_path in all_files:
         from_content = baseline_contents.get(file_path)
-        to_content = post_patch_contents.get(file_path)
+        to_content = final_contents.get(file_path)
 
         if from_content == to_content:
             continue
@@ -389,32 +384,48 @@ def generate_unified_diff(original_file_contents: FileContents, llm_response: st
     return "".join(all_diffs)
 
 
-def generate_display_items(
-    original_file_contents: FileContents, llm_response: str, session_root: Path
-) -> list[DisplayItem]:
+def analyze_response(
+    original_file_contents: FileContents,
+    llm_response: str,
+    session_root: Path,
+) -> tuple[str, list[DisplayItem], list[str]]:
     """
-    Generates a list of structured display items for rendering.
+    Analyzes the LLM response in a single pass, returning all derived outputs.
+
+    It processes the stream once and returns:
+    - The unified diff string
+    - The structured display items
+    - A list of warning messages
     """
-    items: list[DisplayItem] = []
+    display_items: list[DisplayItem] = []
+    warnings: list[str] = []
+    unified_diff: str = ""
+    baseline_contents: FileContents = {}
+    final_contents: FileContents = {}
+
     stream = process_llm_response_stream(original_file_contents, llm_response, session_root)
 
     for item in stream:
         match item:
             case str() as text:
                 if text:
-                    items.append({"type": "markdown", "content": text})
+                    display_items.append({"type": "markdown", "content": text})
             case FileHeader(llm_file_path=llm_file_path):
-                items.append({"type": "markdown", "content": f"File: `{llm_file_path}`\n"})
+                display_items.append({"type": "markdown", "content": f"File: `{llm_file_path}`\n"})
             case ProcessedDiffBlock(unified_diff=diff_string):
-                items.append({"type": "diff", "content": diff_string})
+                display_items.append({"type": "diff", "content": diff_string})
             case WarningMessage(text=warning_text):
-                items.append({"type": "text", "content": f"⚠️ {warning_text}\n"})
+                display_items.append({"type": "text", "content": f"⚠️ {warning_text}\n"})
+                warnings.append(warning_text)
             case UnparsedBlock(text=unparsed_text):
-                items.append({"type": "text", "content": unparsed_text})
-            case PatchApplicationResult():
-                pass  # Ignore final state object in display
+                display_items.append({"type": "text", "content": unparsed_text})
+            case PatchApplicationResult() as result:
+                baseline_contents = result.baseline_contents_for_diff
+                final_contents = result.post_patch_contents
 
-    return items
+    unified_diff = _build_unified_diff(baseline_contents, final_contents)
+
+    return unified_diff, display_items, warnings
 
 
 def recompute_derived_content(
@@ -429,8 +440,7 @@ def recompute_derived_content(
     """
     original_file_contents = build_original_file_contents(context_files, session_root)
 
-    unified_diff = generate_unified_diff(original_file_contents, assistant_content, session_root)
-    display_items = generate_display_items(original_file_contents, assistant_content, session_root)
+    unified_diff, display_items, _ = analyze_response(original_file_contents, assistant_content, session_root)
 
     # Logic from prompt.py: only create derived content if there's a diff or if
     # the display items are more than just the raw content (e.g., have warnings).

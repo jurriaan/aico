@@ -6,12 +6,19 @@ from pathlib import Path
 import pytest
 
 from aico.diffing.stream_processor import (
-    generate_display_items,
-    generate_unified_diff,
+    analyze_response,
     process_llm_response_stream,
     process_patches_sequentially,
 )
-from aico.models import FileHeader, PatchApplicationResult, ProcessedDiffBlock, WarningMessage
+from aico.models import DisplayItem, FileHeader, PatchApplicationResult, ProcessedDiffBlock, WarningMessage
+
+
+def generate_unified_diff(original_contents: dict[str, str], llm_response: str, tmp_path: Path) -> str:
+    return analyze_response(original_contents, llm_response, tmp_path)[0]
+
+
+def generate_display_items(original_contents: dict[str, str], llm_response: str, tmp_path: Path) -> list[DisplayItem]:
+    return analyze_response(original_contents, llm_response, tmp_path)[1]
 
 
 def test_process_patches_sequentially_single_change(tmp_path: Path) -> None:
@@ -251,7 +258,7 @@ def test_multi_block_llm_response_with_conversation(tmp_path: Path) -> None:
     )
 
     # WHEN the unified diff is generated
-    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
+    diff = analyze_response(original_contents, llm_response, tmp_path)[0]
 
     # THEN the output contains two complete, valid diffs and no conversation
     assert "Here is the first change" not in diff
@@ -266,7 +273,7 @@ def test_multi_block_llm_response_with_conversation(tmp_path: Path) -> None:
     assert "+2" in diff
 
     # WHEN the display items are generated
-    display_items = generate_display_items(original_contents, llm_response, tmp_path)
+    display_items = analyze_response(original_contents, llm_response, tmp_path)[1]
 
     # THEN the output contains the conversation and markdown diffs
     all_content = "".join(item["content"] for item in display_items)

@@ -13,9 +13,7 @@ from aico.console import (
     render_display_items_to_rich,
 )
 from aico.diffing.stream_processor import (
-    generate_display_items,
-    generate_unified_diff,
-    process_llm_response_stream,
+    analyze_response,
 )
 from aico.fs import get_context_file_contents
 from aico.live_render import AicoLiveRender
@@ -31,7 +29,6 @@ from aico.models import (
     Mode,
     SessionData,
     TokenUsage,
-    WarningMessage,
 )
 from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
 from aico.session import build_active_context
@@ -133,7 +130,7 @@ def _handle_unified_streaming(
     original_file_contents: FileContents,
     messages: list[LLMChatMessage],
     session_root: Path,
-) -> tuple[str, list[DisplayItem] | None, TokenUsage | None, float | None]:
+) -> tuple[str, list[DisplayItem] | None, TokenUsage | None, float | None, str | None]:
     from openai.types.chat import (
         ChatCompletionMessageParam,
         ChatCompletionStreamOptionsParam,
@@ -173,7 +170,7 @@ def _handle_unified_streaming(
             if normalized_chunk.content:
                 full_llm_response_buffer += normalized_chunk.content
 
-                display_items = generate_display_items(original_file_contents, full_llm_response_buffer, session_root)
+                _, display_items, _ = analyze_response(original_file_contents, full_llm_response_buffer, session_root)
                 renderable_group = render_display_items_to_rich(display_items)
 
                 live.update(renderable_group, refresh=True)
@@ -200,10 +197,16 @@ def _handle_unified_streaming(
             if normalized_chunk.cost is not None:
                 exact_cost = normalized_chunk.cost
 
-    # Warnings collection
+    # Warnings collection and unified analysis
+    unified_diff: str | None = None
+    final_display_items: list[DisplayItem] | None = None
+    warnings_to_display: list[str] = []
+
     if full_llm_response_buffer:
-        processed_stream = process_llm_response_stream(original_file_contents, full_llm_response_buffer, session_root)
-        warnings_to_display = [item.text for item in processed_stream if isinstance(item, WarningMessage)]
+        unified_diff, final_display_items, warnings_to_display = analyze_response(
+            original_file_contents, full_llm_response_buffer, session_root
+        )
+
         if warnings_to_display:
             if is_terminal():
                 print()
@@ -212,9 +215,7 @@ def _handle_unified_streaming(
             for warning in warnings_to_display:
                 console.print(f"[yellow]{warning}[/yellow]")
 
-    final_display_items = generate_display_items(original_file_contents, full_llm_response_buffer, session_root)
-
-    return full_llm_response_buffer, final_display_items or None, token_usage, exact_cost
+    return full_llm_response_buffer, final_display_items, token_usage, exact_cost, unified_diff
 
 
 def execute_interaction(
@@ -253,7 +254,7 @@ def execute_interaction(
     )
 
     start_time = time.monotonic()
-    llm_response_content, display_items, token_usage, exact_cost = _handle_unified_streaming(
+    llm_response_content, display_items, token_usage, exact_cost, unified_diff = _handle_unified_streaming(
         provider, clean_model_id, original_file_contents, messages, session_root
     )
     duration_ms = int((time.monotonic() - start_time) * 1000)
@@ -261,8 +262,6 @@ def execute_interaction(
     message_cost: float | None = None
     if token_usage:
         message_cost = calculate_and_display_cost(token_usage, model_name, session_data, exact_cost=exact_cost)
-
-    unified_diff = generate_unified_diff(original_file_contents, llm_response_content, session_root)
 
     return InteractionResult(
         content=llm_response_content,

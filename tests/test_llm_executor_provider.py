@@ -58,7 +58,7 @@ def test_handle_unified_streaming_openai(tmp_path: Path):
     ]
 
     # WHEN
-    content, _, usage, cost = _handle_unified_streaming(mock_provider, "gpt-4o", {}, [], tmp_path)
+    content, _, usage, cost, _ = _handle_unified_streaming(mock_provider, "gpt-4o", {}, [], tmp_path)
 
     # THEN
     assert content == "Hello World"
@@ -89,7 +89,7 @@ def test_handle_unified_streaming_openrouter(tmp_path: Path):
     ]
 
     # WHEN
-    content, _, usage, cost = _handle_unified_streaming(mock_provider, "claude-3-opus", {}, [], tmp_path)
+    content, _, usage, cost, _ = _handle_unified_streaming(mock_provider, "claude-3-opus", {}, [], tmp_path)
 
     # THEN
     assert content == "Test"
