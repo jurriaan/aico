@@ -8,11 +8,11 @@ def session_switch(
 ) -> None:
     session = Session.load_active()
 
-    sessions_dir = session.root / ".aico" / "sessions"
+    sessions_dir = session.sessions_dir
     if not sessions_dir.is_dir():
         raise SessionError("Sessions directory '.aico/sessions' not found.")
 
-    target_view_path = sessions_dir / f"{name}.json"
+    target_view_path = session.get_view_path(name)
     if not target_view_path.is_file():
         raise InvalidInputError(f"Session view '{name}' not found at {target_view_path}.")
 

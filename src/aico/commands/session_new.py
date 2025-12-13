@@ -13,10 +13,7 @@ def session_new(
         raise InvalidInputError("New session name is required.")
 
     session = Session.load_active()
-    active_view_path = session.view_path
-
-    sessions_dir = active_view_path.parent
-    new_view_path = sessions_dir / f"{name}.json"
+    new_view_path = session.get_view_path(name)
 
     if new_view_path.exists():
         raise InvalidInputError(f"A session view named '{name}' already exists.")

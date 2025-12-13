@@ -29,10 +29,10 @@ def session_fork(
 
     # We use valid properties from our Session object
     active_view_path = session.view_path
-    sessions_dir = session.root / ".aico" / "sessions"
+    sessions_dir = session.sessions_dir
     history_root = session.history_root
 
-    if (sessions_dir / f"{new_name}.json").exists():
+    if session.get_view_path(new_name).exists():
         raise InvalidInputError(f"A session view named '{new_name}' already exists.")
 
     store = HistoryStore(history_root)

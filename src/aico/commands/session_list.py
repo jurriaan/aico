@@ -10,7 +10,7 @@ def session_list() -> None:
 
     # Valid properties
     active_view_path = session.view_path
-    sessions_dir = session.root / ".aico" / "sessions"
+    sessions_dir = session.sessions_dir
     if not sessions_dir.is_dir():
         typer.echo("Error: Sessions directory '.aico/sessions' not found.", err=True)
         raise typer.Exit(code=1)

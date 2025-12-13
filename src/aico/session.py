@@ -341,6 +341,13 @@ class Session:
     def history_root(self) -> Path:
         return self.root / ".aico" / "history"
 
+    @property
+    def sessions_dir(self) -> Path:
+        return self.root / ".aico" / "sessions"
+
+    def get_view_path(self, name: str) -> Path:
+        return self.sessions_dir / f"{name}.json"
+
     # Persistence Methods (from SharedHistoryPersistence)
 
     def append_pair(self, user_msg: UserChatMessage, asst_msg: AssistantChatMessage) -> None:
