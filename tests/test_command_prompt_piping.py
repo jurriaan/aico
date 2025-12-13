@@ -1,72 +1,15 @@
 # pyright: standard
 
 from pathlib import Path
-from typing import Any
 
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
-from aico.llm.providers.base import NormalizedChunk
 from aico.main import app
 from aico.models import TokenUsage
+from tests import helpers
 
 runner = CliRunner()
-
-
-def _create_mock_stream_chunk(content: str | None, mocker: MockerFixture) -> Any:
-    """Creates a mock stream chunk."""
-    mock_delta = mocker.MagicMock()
-    mock_delta.content = content
-    mock_delta.reasoning_content = None
-
-    mock_choice = mocker.MagicMock()
-    mock_choice.delta = mock_delta
-
-    mock_chunk = mocker.MagicMock()
-    mock_chunk.choices = [mock_choice]
-    return mock_chunk
-
-
-def setup_piping_test(
-    mocker: MockerFixture,
-    tmp_path: Path,
-    llm_response_content: str,
-    context_files: dict[str, str] | None = None,
-) -> None:
-    """A helper to handle the common GIVEN steps for prompt piping tests."""
-    runner.invoke(app, ["init"])
-
-    if context_files:
-        for filename, content in context_files.items():
-            (tmp_path / filename).write_text(content)
-            runner.invoke(app, ["add", filename])
-
-    # For these tests, we are always in a non-TTY (piped) environment
-    mocker.patch("aico.commands.prompt.is_terminal", return_value=False)
-    mocker.patch("aico.llm.executor.is_terminal", return_value=False)
-
-    # Mock the provider factory
-    mock_provider = mocker.MagicMock()
-    mock_client = mocker.MagicMock()
-    mock_provider.configure_request.return_value = (mock_client, "test-model", {})
-    mocker.patch("aico.llm.executor.get_provider_for_model", return_value=(mock_provider, "test-model"))
-
-    usage = TokenUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20, cost=0.005)
-
-    # Mock process_chunk to handle the raw chunks and return NormalizedChunk
-    def mock_process_chunk(chunk):
-        content = chunk.choices[0].delta.content if chunk.choices else None
-        tu = usage if hasattr(chunk, "usage") and chunk.usage else None
-        # Add a default cost for these tests
-        cost = 0.005 if tu else None
-        return NormalizedChunk(content=content, token_usage=tu, cost=cost)
-
-    mock_provider.process_chunk.side_effect = mock_process_chunk
-
-    mock_chunk = _create_mock_stream_chunk(llm_response_content, mocker=mocker)
-    mock_chunk.usage = usage
-
-    mock_client.chat.completions.create.return_value = iter([mock_chunk])
 
 
 def test_gen_successful_diff_piped(tmp_path: Path, mocker: MockerFixture) -> None:
@@ -76,7 +19,21 @@ def test_gen_successful_diff_piped(tmp_path: Path, mocker: MockerFixture) -> Non
     # GIVEN a session with a file and a mocked LLM returning a valid diff
     llm_response = "File: file.py\n<<<<<<< SEARCH\nold content\n=======\nnew content\n>>>>>>> REPLACE"
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        setup_piping_test(mocker, Path(td), llm_response, context_files={"file.py": "old content"})
+        # For these tests, we are always in a non-TTY (piped) environment
+        mocker.patch("aico.commands.prompt.is_terminal", return_value=False)
+        mocker.patch("aico.llm.executor.is_terminal", return_value=False)
+
+        usage = TokenUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20, cost=0.005)
+
+        helpers.setup_test_session_and_llm(
+            runner,
+            app,
+            Path(td),
+            mocker,
+            llm_response,
+            context_files={"file.py": "old content"},
+            usage=usage,
+        )
 
         # WHEN `aico gen` is run
         result = runner.invoke(app, ["gen", "a prompt"])
@@ -100,7 +57,19 @@ def test_gen_failing_diff_piped(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a session with a file and a mocked LLM returning a failing diff
     llm_response = "File: file.py\n<<<<<<< SEARCH\ncontent not found\n=======\nnew content\n>>>>>>> REPLACE"
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        setup_piping_test(mocker, Path(td), llm_response, context_files={"file.py": "old content"})
+        mocker.patch("aico.commands.prompt.is_terminal", return_value=False)
+        mocker.patch("aico.llm.executor.is_terminal", return_value=False)
+        usage = TokenUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20, cost=0.005)
+
+        helpers.setup_test_session_and_llm(
+            runner,
+            app,
+            Path(td),
+            mocker,
+            llm_response,
+            context_files={"file.py": "old content"},
+            usage=usage,
+        )
 
         # WHEN `aico gen` is run
         result = runner.invoke(app, ["gen", "a prompt"])
@@ -121,7 +90,11 @@ def test_ask_conversational_text_piped(tmp_path: Path, mocker: MockerFixture) ->
     # GIVEN a session and an LLM returning plain text
     llm_response = "This is a simple conversational response."
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        setup_piping_test(mocker, Path(td), llm_response)
+        mocker.patch("aico.commands.prompt.is_terminal", return_value=False)
+        mocker.patch("aico.llm.executor.is_terminal", return_value=False)
+        usage = TokenUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20, cost=0.005)
+
+        helpers.setup_test_session_and_llm(runner, app, Path(td), mocker, llm_response, usage=usage)
 
         # WHEN `aico ask` is run
         result = runner.invoke(app, ["ask", "a prompt"])
@@ -139,7 +112,19 @@ def test_ask_successful_diff_piped(tmp_path: Path, mocker: MockerFixture) -> Non
     # GIVEN a session, a file, and an LLM returning a valid diff
     llm_response = "File: file.py\n<<<<<<< SEARCH\nold content\n=======\nnew content\n>>>>>>> REPLACE"
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        setup_piping_test(mocker, Path(td), llm_response, context_files={"file.py": "old content"})
+        mocker.patch("aico.commands.prompt.is_terminal", return_value=False)
+        mocker.patch("aico.llm.executor.is_terminal", return_value=False)
+        usage = TokenUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20, cost=0.005)
+
+        helpers.setup_test_session_and_llm(
+            runner,
+            app,
+            Path(td),
+            mocker,
+            llm_response,
+            context_files={"file.py": "old content"},
+            usage=usage,
+        )
 
         # WHEN `aico ask` is run
         result = runner.invoke(app, ["ask", "a prompt"])
@@ -160,7 +145,19 @@ def test_ask_failing_diff_piped(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a session, a file, and an LLM returning a failing diff
     llm_response = "File: file.py\n<<<<<<< SEARCH\ncontent not found\n=======\nnew content\n>>>>>>> REPLACE"
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        setup_piping_test(mocker, Path(td), llm_response, context_files={"file.py": "old content"})
+        mocker.patch("aico.commands.prompt.is_terminal", return_value=False)
+        mocker.patch("aico.llm.executor.is_terminal", return_value=False)
+        usage = TokenUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20, cost=0.005)
+
+        helpers.setup_test_session_and_llm(
+            runner,
+            app,
+            Path(td),
+            mocker,
+            llm_response,
+            context_files={"file.py": "old content"},
+            usage=usage,
+        )
 
         # WHEN `aico ask` is run
         result = runner.invoke(app, ["ask", "a prompt"])

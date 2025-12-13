@@ -1,78 +1,18 @@
 # pyright: standard
 
 from pathlib import Path
-from typing import Any
 
 import pytest
-from pytest_mock import MockerFixture, MockType
+from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
 from aico.consts import SESSION_FILE_NAME
-from aico.llm.providers.base import NormalizedChunk
 from aico.main import app
 from aico.models import AssistantChatMessage, Mode, SessionData, TokenUsage, UserChatMessage
-from tests.helpers import save_session
+from tests import helpers
+from tests.helpers import create_mock_stream_chunk, save_session
 
 runner = CliRunner()
-
-
-def _create_mock_stream_chunk(content: str | None, mocker: MockerFixture, usage: TokenUsage | None = None) -> Any:
-    """Creates a mock stream chunk that mimics ChatCompletionChunk."""
-    mock_delta = mocker.MagicMock()
-    mock_delta.content = content
-    mock_delta.reasoning_content = None
-    mock_delta.reasoning = None
-
-    mock_choice = mocker.MagicMock()
-    mock_choice.delta = mock_delta
-
-    mock_chunk = mocker.MagicMock()
-    mock_chunk.choices = [mock_choice]
-    mock_chunk.usage = usage
-    return mock_chunk
-
-
-def mock_normalized_chunk(content: str | None = None, **kwargs):
-    """Helper to create NormalizedChunk for test mocks."""
-    return NormalizedChunk(content=content, **kwargs)
-
-
-def setup_prompt_test(
-    mocker: MockerFixture,
-    tmp_path: Path,
-    llm_response_content: str,
-    context_files: dict[str, str] | None = None,
-    usage: Any | None = None,
-) -> tuple[MockType, MockType]:
-    """A helper to handle the common GIVEN steps for prompt command tests."""
-    runner.invoke(app, ["init"])
-
-    if context_files:
-        for filename, content in context_files.items():
-            (tmp_path / filename).write_text(content)
-            runner.invoke(app, ["add", filename])
-
-    # Mock the provider factory
-    mock_provider = mocker.MagicMock()
-    mock_client = mocker.MagicMock()
-    mock_provider.configure_request.return_value = (mock_client, "test-model", {})
-    mock_get_provider = mocker.patch(
-        "aico.llm.executor.get_provider_for_model", return_value=(mock_provider, "test-model")
-    )
-
-    # Mock process_chunk to handle the raw chunks and return NormalizedChunk
-    def mock_process_chunk(chunk):
-        content = chunk.choices[0].delta.content if chunk.choices else None
-        tu = usage if hasattr(chunk, "usage") and chunk.usage else None
-        return mock_normalized_chunk(content=content, token_usage=tu)
-
-    mock_provider.process_chunk.side_effect = mock_process_chunk
-
-    # Pass usage to the chunk creation so it's available in the chunk object
-    mock_chunk = _create_mock_stream_chunk(llm_response_content, mocker, usage=usage)
-    mock_client.chat.completions.create.return_value = iter([mock_chunk])
-
-    return mock_client.chat.completions.create, mock_get_provider
 
 
 def load_final_session(tmp_path: Path) -> SessionData:
@@ -99,8 +39,8 @@ def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) ->
     mock_usage = TokenUsage(prompt_tokens=100, completion_tokens=20, total_tokens=120)
 
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        mock_completion, _ = setup_prompt_test(
-            mocker, Path(td), llm_response, context_files=context_files, usage=mock_usage
+        mock_completion, _ = helpers.setup_test_session_and_llm(
+            runner, app, Path(td), mocker, llm_response, context_files=context_files, usage=mock_usage
         )
 
         # WHEN `aico ask` is run
@@ -190,7 +130,9 @@ def test_gen_command_generates_diff(tmp_path: Path, mocker: MockerFixture) -> No
         ">>>>>>> REPLACE"
     )
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        _ = setup_prompt_test(mocker, Path(td), llm_diff_response, context_files={"code.py": "def hello():\n    pass"})
+        _ = helpers.setup_test_session_and_llm(
+            runner, app, Path(td), mocker, llm_diff_response, context_files={"code.py": "def hello():\n    pass"}
+        )
 
         # WHEN `aico gen` is run
         result = runner.invoke(app, ["gen", "a prompt"])
@@ -223,7 +165,7 @@ def test_gen_command_generates_diff(tmp_path: Path, mocker: MockerFixture) -> No
 def test_prompt_command_raw_mode_no_alignment(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN an initialized session and mocked LLM
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        mock_completion, _ = setup_prompt_test(mocker, Path(td), "raw output")
+        mock_completion, _ = helpers.setup_test_session_and_llm(runner, app, Path(td), mocker, "raw output")
 
         # WHEN `aico prompt` is run (defaults to raw mode)
         result = runner.invoke(app, ["prompt", "some prompt"])
@@ -253,7 +195,9 @@ def test_ask_command_with_diff_response_outputs_diff_non_tty(tmp_path: Path, moc
         ">>>>>>> REPLACE"
     )
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        _ = setup_prompt_test(mocker, Path(td), llm_diff_response, context_files={"code.py": "def hello(): pass"})
+        _ = helpers.setup_test_session_and_llm(
+            runner, app, Path(td), mocker, llm_diff_response, context_files={"code.py": "def hello(): pass"}
+        )
 
         # WHEN `aico ask` is run
         result = runner.invoke(app, ["ask", "Add a name parameter and print it"])
@@ -275,7 +219,9 @@ def test_ask_command_with_diff_response_saves_derived_content(tmp_path: Path, mo
     # GIVEN a session and a mocked LLM returning a diff
     llm_diff_response = "File: file.py\n<<<<<<< SEARCH\nold content\n=======\nnew content\n>>>>>>> REPLACE"
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        _ = setup_prompt_test(mocker, Path(td), llm_diff_response, context_files={"file.py": "old content"})
+        _ = helpers.setup_test_session_and_llm(
+            runner, app, Path(td), mocker, llm_diff_response, context_files={"file.py": "old content"}
+        )
 
         # WHEN `aico ask` is run
         result = runner.invoke(app, ["ask", "make a change"])
@@ -340,7 +286,7 @@ def test_prompt_input_scenarios(
 ) -> None:
     # GIVEN an initialized session and mocked LLM
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        mock_completion, _ = setup_prompt_test(mocker, Path(td), "response")
+        mock_completion, _ = helpers.setup_test_session_and_llm(runner, app, Path(td), mocker, "response")
 
         # WHEN aico prompt is run with a combination of inputs
         invoke_args = ["prompt"]
@@ -372,13 +318,13 @@ def test_prompt_with_history_reconstructs_piped_content(tmp_path: Path, mocker: 
     piped_content = "Here is some code."
     cli_prompt = "Summarize this."
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        mock_completion, _ = setup_prompt_test(mocker, Path(td), "response 1")
+        mock_completion, _ = helpers.setup_test_session_and_llm(runner, app, Path(td), mocker, "response 1")
         # WHEN the first prompt has piped input and an argument
         runner.invoke(app, ["prompt", cli_prompt], input=piped_content)
 
         # AND a second prompt is made
         # Override side_effect for the next call
-        mock_completion.side_effect = [iter([_create_mock_stream_chunk("response 2", mocker=mocker)])]
+        mock_completion.side_effect = [iter([create_mock_stream_chunk("response 2", mocker=mocker)])]
         runner.invoke(app, ["prompt", "Thanks"])
 
         # THEN the LLM call for the second prompt contains the reconstructed history
@@ -440,7 +386,9 @@ def test_prompt_uses_session_default_model_when_not_overridden(tmp_path: Path, m
     # GIVEN an initialized session with a specific default model
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         runner.invoke(app, ["init", "--model", "session/default-model"])
-        mock_completion, mock_get_provider = setup_prompt_test(mocker, Path(td), "response")
+        mock_completion, mock_get_provider = helpers.setup_test_session_and_llm(
+            runner, app, Path(td), mocker, "response"
+        )
 
         # WHEN `aico prompt` is run without the --model flag
         result = runner.invoke(app, ["prompt", "A prompt"])
@@ -465,7 +413,9 @@ def test_prompt_model_flag_overrides_session_default(tmp_path: Path, mocker: Moc
     # GIVEN a session with a default model and a mocked LLM
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         runner.invoke(app, ["init", "--model", "session/default-model"])
-        mock_completion, mock_get_provider = setup_prompt_test(mocker, Path(td), "response")
+        mock_completion, mock_get_provider = helpers.setup_test_session_and_llm(
+            runner, app, Path(td), mocker, "response"
+        )
 
         # WHEN `aico prompt` is run with the --model flag
         override_model = "override/specific-model"
@@ -497,7 +447,7 @@ def test_gen_command_with_filesystem_fallback_and_warning(tmp_path: Path, mocker
     )
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         # Initialize an empty session and create files on disk
-        _ = setup_prompt_test(mocker, Path(td), llm_response, context_files=None)
+        _ = helpers.setup_test_session_and_llm(runner, app, Path(td), mocker, llm_response, context_files=None)
         (Path(td) / "fallback1.py").write_text("content 1")
         (Path(td) / "sub").mkdir()
         (Path(td) / "sub/fallback2.py").write_text("content 2\n")
@@ -531,8 +481,8 @@ def test_prompt_passthrough_mode_bypasses_context_and_formatting(tmp_path: Path,
     # GIVEN an initialized session with files in context
     prompt_text = "some raw prompt"
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        mock_completion, _ = setup_prompt_test(
-            mocker, Path(td), "raw response", context_files={"file.py": "some content"}
+        mock_completion, _ = helpers.setup_test_session_and_llm(
+            runner, app, Path(td), mocker, "raw response", context_files={"file.py": "some content"}
         )
         mock_build_contents = mocker.patch("aico.llm.executor.get_context_file_contents")
 
@@ -563,14 +513,14 @@ def test_prompt_with_excluded_history_omits_messages(tmp_path: Path, mocker: Moc
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         runner.invoke(app, ["init"])
         # Run a sequence of prompts to create history
-        mock_completion, _ = setup_prompt_test(mocker, Path(td), "response 1")
+        mock_completion, _ = helpers.setup_test_session_and_llm(runner, app, Path(td), mocker, "response 1")
 
         # Define full sequence of responses
         mock_completion.side_effect = [
-            iter([_create_mock_stream_chunk("response 1", mocker)]),
-            iter([_create_mock_stream_chunk("response 2", mocker)]),
-            iter([_create_mock_stream_chunk("response 3", mocker)]),
-            iter([_create_mock_stream_chunk("response 4", mocker)]),
+            iter([create_mock_stream_chunk("response 1", mocker)]),
+            iter([create_mock_stream_chunk("response 2", mocker)]),
+            iter([create_mock_stream_chunk("response 3", mocker)]),
+            iter([create_mock_stream_chunk("response 4", mocker)]),
         ]
 
         runner.invoke(app, ["ask", "prompt 1"])
@@ -600,16 +550,16 @@ def test_prompt_no_history_flag_omits_history_from_llm_call(tmp_path: Path, mock
     # GIVEN a session with existing history
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         # Create initial history: one user/assistant pair
-        mock_completion, _ = setup_prompt_test(mocker, Path(td), "initial response")
+        mock_completion, _ = helpers.setup_test_session_and_llm(runner, app, Path(td), mocker, "initial response")
 
         # We need to set the side effect for the first call (already consumed in setup?)
-        # setup_prompt_test prepares return_value, but we can overwrite side_effect
+        # setup_test_session_and_llm prepares return_value, but we can overwrite side_effect
         # to handle multiple calls.
         # 1. initial call
         # 2. no-history call
         mock_completion.side_effect = [
-            iter([_create_mock_stream_chunk("initial response", mocker=mocker)]),
-            iter([_create_mock_stream_chunk("no-history response", mocker=mocker)]),
+            iter([create_mock_stream_chunk("initial response", mocker=mocker)]),
+            iter([create_mock_stream_chunk("no-history response", mocker=mocker)]),
         ]
 
         runner.invoke(app, ["ask", "initial prompt"])

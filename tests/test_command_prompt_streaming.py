@@ -1,68 +1,14 @@
 # pyright: standard
 
 from pathlib import Path
-from typing import Any
 
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
-from aico.llm.providers.base import NormalizedChunk
 from aico.main import app
+from tests import helpers
 
 runner = CliRunner()
-
-
-def _create_mock_stream_chunk(content: str | None, mocker: MockerFixture, usage: Any | None = None) -> Any:
-    """Creates a mock stream chunk."""
-    mock_delta = mocker.MagicMock()
-    mock_delta.content = content
-    mock_delta.reasoning_content = None
-
-    mock_choice = mocker.MagicMock()
-    mock_choice.delta = mock_delta
-
-    mock_chunk = mocker.MagicMock()
-    mock_chunk.choices = [mock_choice]
-    mock_chunk.usage = usage
-    return mock_chunk
-
-
-def setup_streaming_test(
-    mocker: MockerFixture,
-    tmp_path: Path,
-    llm_response_chunks: list[str],
-    context_files: dict[str, str] | None = None,
-) -> MockerFixture:
-    """A helper to handle the common GIVEN steps for prompt command tests."""
-    runner.invoke(app, ["init"])
-
-    if context_files:
-        for filename, content in context_files.items():
-            (tmp_path / filename).write_text(content)
-            runner.invoke(app, ["add", filename])
-
-    # Mock the provider factory
-    mock_provider = mocker.MagicMock()
-    mock_client = mocker.MagicMock()
-    mock_provider.configure_request.return_value = (mock_client, "test-model", {})
-    mocker.patch("aico.llm.executor.get_provider_for_model", return_value=(mock_provider, "test-model"))
-
-    # Mock process_chunk for each chunk
-    def mock_process_chunk(chunk):
-        content = chunk.choices[0].delta.content if chunk.choices else None
-        return mock_normalized_chunk(content=content)
-
-    mock_provider.process_chunk.side_effect = mock_process_chunk
-
-    mock_chunks = [_create_mock_stream_chunk(content, mocker) for content in llm_response_chunks]
-    mock_client.chat.completions.create.return_value = iter(mock_chunks)
-
-    return mock_client.chat.completions.create
-
-
-def mock_normalized_chunk(content: str | None = None, **kwargs):
-    """Helper to create NormalizedChunk for test mocks."""
-    return NormalizedChunk(content=content, **kwargs)
 
 
 def _run_multiple_patches_test(
@@ -96,7 +42,9 @@ def _run_multiple_patches_test(
     ]
 
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        setup_streaming_test(mocker, Path(td), llm_response_chunks, context_files=context_files)
+        helpers.setup_test_session_and_llm(
+            runner, app, Path(td), mocker, llm_response_chunks, context_files=context_files
+        )
 
         # WHEN `aico gen` is run
         result = runner.invoke(app, ["gen", "a prompt"])
@@ -163,7 +111,9 @@ def test_streaming_renders_failed_diff_block_as_plain_text(tmp_path: Path, mocke
     ]
 
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        setup_streaming_test(mocker, Path(td), llm_response_chunks, context_files=context_files)
+        helpers.setup_test_session_and_llm(
+            runner, app, Path(td), mocker, llm_response_chunks, context_files=context_files
+        )
 
         # WHEN `aico gen` is run
         result = runner.invoke(app, ["gen", "a prompt that will fail"])
@@ -194,7 +144,14 @@ def test_streaming_renders_incomplete_diff_block_as_plain_text(tmp_path: Path, m
     ]
 
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        setup_streaming_test(mocker, Path(td), llm_response_chunks, context_files={"file.py": "some text\n"})
+        helpers.setup_test_session_and_llm(
+            runner,
+            app,
+            Path(td),
+            mocker,
+            llm_response_chunks,
+            context_files={"file.py": "some text\n"},
+        )
 
         # WHEN `aico gen` is run
         result = runner.invoke(app, ["gen", "a prompt that will be cut off"])

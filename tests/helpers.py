@@ -1,4 +1,12 @@
+# pyright: standard
+
 from pathlib import Path
+from typing import Any
+from unittest.mock import MagicMock
+
+from pytest_mock import MockerFixture, MockType
+from typer import Typer
+from typer.testing import CliRunner
 
 from aico.consts import SESSION_FILE_NAME
 from aico.historystore import (
@@ -9,7 +17,8 @@ from aico.historystore import (
     switch_active_pointer,
 )
 from aico.historystore.models import HistoryRecord
-from aico.models import AssistantChatMessage, SessionData, UserChatMessage
+from aico.llm.providers.base import NormalizedChunk
+from aico.models import AssistantChatMessage, SessionData, TokenUsage, UserChatMessage
 
 
 def save_session(path: Path, data: SessionData) -> None:
@@ -118,3 +127,70 @@ def init_shared_session(project_root: Path, data: SessionData, view_name: str = 
     # Create Pointer
     session_file = project_root / SESSION_FILE_NAME
     switch_active_pointer(session_file, view_path)
+
+
+def create_mock_stream_chunk(content: str | None, mocker: MockerFixture, usage: TokenUsage | None = None) -> MagicMock:
+    """Creates a mock stream chunk that mimics ChatCompletionChunk."""
+    mock_delta = mocker.MagicMock()
+    mock_delta.content = content
+    mock_delta.reasoning_content = None
+    mock_delta.reasoning = None
+
+    mock_choice = mocker.MagicMock()
+    mock_choice.delta = mock_delta
+
+    mock_chunk = mocker.MagicMock()
+    mock_chunk.choices = [mock_choice]
+    mock_chunk.usage = usage
+    return mock_chunk
+
+
+def mock_normalized_chunk(content: str | None = None, **kwargs: Any) -> NormalizedChunk:
+    """Helper to create NormalizedChunk for test mocks."""
+    return NormalizedChunk(content=content, **kwargs)
+
+
+def setup_test_session_and_llm(
+    runner: CliRunner,
+    app: Typer,
+    tmp_path: Path,
+    mocker: MockerFixture,
+    llm_response: str | list[str],
+    context_files: dict[str, str] | None = None,
+    usage: Any | None = None,
+) -> tuple[MockType, MockType]:
+    """Sets up a test session and mocks the LLM provider."""
+    runner.invoke(app, ["init"])
+
+    if context_files:
+        for filename, content in context_files.items():
+            (tmp_path / filename).write_text(content, encoding="utf-8")
+            runner.invoke(app, ["add", filename])
+
+    # Mock the provider factory
+    mock_provider = mocker.MagicMock()
+    mock_client = mocker.MagicMock()
+    mock_provider.configure_request.return_value = (mock_client, "test-model", {})
+    mock_get_provider = mocker.patch(
+        "aico.llm.executor.get_provider_for_model", return_value=(mock_provider, "test-model")
+    )
+
+    # Mock process_chunk to handle the raw chunks and return NormalizedChunk
+    def mock_process_chunk(chunk: Any) -> NormalizedChunk:
+        content = chunk.choices[0].delta.content if chunk.choices else None
+        tu = usage if hasattr(chunk, "usage") and chunk.usage else None
+        # Some tests might attach a 'cost' attribute to the usage object
+        cost = getattr(tu, "cost", None) if tu else None
+        return mock_normalized_chunk(content=content, token_usage=tu, cost=cost)
+
+    mock_provider.process_chunk.side_effect = mock_process_chunk
+
+    chunks: list[Any] = []
+    if isinstance(llm_response, str):
+        chunks.append(create_mock_stream_chunk(llm_response, mocker, usage=usage))
+    else:
+        chunks.extend([create_mock_stream_chunk(c, mocker) for c in llm_response])
+
+    mock_client.chat.completions.create.return_value = iter(chunks)
+
+    return mock_client.chat.completions.create, mock_get_provider
