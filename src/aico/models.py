@@ -1,11 +1,8 @@
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Literal, TypedDict
-
-from pydantic import Field
-from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 
 class Mode(str, Enum):
@@ -66,7 +63,7 @@ class ContextFilesResponse(TypedDict):
     context_files: list[str]
 
 
-@pydantic_dataclass(slots=True, frozen=True)
+@dataclass(slots=True, frozen=True)
 class UserChatMessage:
     role: Literal["user"]
     content: str
@@ -76,7 +73,7 @@ class UserChatMessage:
     passthrough: bool = False
 
 
-@pydantic_dataclass(slots=True, frozen=True)
+@dataclass(slots=True, frozen=True)
 class AssistantChatMessage:
     role: Literal["assistant"]
     content: str
@@ -98,13 +95,13 @@ class MessagePairIndices:
     assistant_index: int
 
 
-@pydantic_dataclass(slots=True)
+@dataclass(slots=True)
 class SessionData:
     model: str
-    context_files: list[str] = Field(default_factory=list)
-    chat_history: list[ChatMessageHistoryItem] = Field(default_factory=list)
+    context_files: list[str] = field(default_factory=list)
+    chat_history: list[ChatMessageHistoryItem] = field(default_factory=list)
     history_start_pair: int = 0
-    excluded_pairs: list[int] = Field(default_factory=list)
+    excluded_pairs: list[int] = field(default_factory=list)
     offset: int = 0
 
 
