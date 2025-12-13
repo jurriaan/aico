@@ -16,25 +16,18 @@ def history_splice(
     history_root = session.history_root
     store = HistoryStore(history_root)
 
-    # Validate User ID
+    # Validate User ID and Assistant ID using read_many
     try:
-        user_rec = store.read(user_id)
+        records = store.read_many([user_id, assistant_id])
+        user_rec, asst_rec = records
         if user_rec.role != "user":
             raise InvalidInputError(f"Message {user_id} is role '{user_rec.role}', expected 'user'.")
-    except Exception as e:
-        if isinstance(e, InvalidInputError):
-            raise
-        raise InvalidInputError(f"User message ID {user_id} not found: {e}") from e
-
-    # Validate Assistant ID
-    try:
-        asst_rec = store.read(assistant_id)
         if asst_rec.role != "assistant":
             raise InvalidInputError(f"Message {assistant_id} is role '{asst_rec.role}', expected 'assistant'.")
-    except Exception as e:
-        if isinstance(e, InvalidInputError):
-            raise
-        raise InvalidInputError(f"Assistant message ID {assistant_id} not found: {e}") from e
+    except IndexError as e:
+        raise InvalidInputError(f"Message ID {user_id} or {assistant_id} not found.") from e
+    except ValueError as e:
+        raise InvalidInputError(f"History data integrity error: {e}") from e
 
     view = load_view(session.view_path)
 

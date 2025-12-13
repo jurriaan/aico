@@ -117,7 +117,7 @@ def test_history_splice_fails_invalid_ids(tmp_path: Path) -> None:
         result = runner.invoke(app, ["history-splice", "999", "888", "--at-index", "0"])
 
     assert result.exit_code == 1
-    assert "User message ID 999 not found" in result.stderr
+    assert "Message ID 999 or 888 not found." in result.stderr
 
 
 def test_history_splice_validates_user_role(tmp_path: Path) -> None:
