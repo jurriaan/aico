@@ -80,36 +80,42 @@ def complete_files_in_context(ctx: typer.Context | None, args: list[str], incomp
 # === From session_context.py ===
 
 
-def resolve_start_pair_index(pair_index_str: str, num_pairs: int) -> int:
+def _normalize_index(index_str: str, num_pairs: int, allow_past_end: bool) -> int:
     try:
-        pair_index_val = int(pair_index_str)
+        index_val = int(index_str)
     except ValueError as e:
-        raise InvalidInputError(f"Invalid index '{pair_index_str}'. Must be an integer.") from e
+        raise InvalidInputError(f"Invalid index '{index_str}'. Must be an integer.") from e
 
-    resolved_index = pair_index_val
+    resolved_index = index_val
 
     if num_pairs == 0:
-        if pair_index_val == 0:
+        if index_val == 0:
             return 0
         else:
             raise InvalidInputError("No message pairs found. The only valid index is 0.")
 
-    if -num_pairs <= resolved_index < num_pairs:
-        if resolved_index < 0:
-            resolved_index += num_pairs
+    if resolved_index < 0:
+        resolved_index += num_pairs
+
+    max_valid_index = num_pairs if allow_past_end else num_pairs - 1
+
+    if 0 <= resolved_index <= max_valid_index:
         return resolved_index
-    elif resolved_index == num_pairs:
-        return num_pairs
     else:
         if num_pairs == 1:
-            err_msg = "Index out of bounds. Valid index is 0 (or -1), or 1 to clear context."
+            valid_range_str = "0 (or -1)"
+            if allow_past_end:
+                valid_range_str += f", or {num_pairs} to clear context"
         else:
             valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
-            err_msg = (
-                f"Index out of bounds. Valid indices are in the range {valid_range_str}, "
-                f"or {num_pairs} to clear context."
-            )
+            if allow_past_end:
+                valid_range_str += f", or {num_pairs} to clear context"
+        err_msg = f"Index out of bounds. Valid indices are in the range {valid_range_str}."
         raise InvalidInputError(err_msg)
+
+
+def resolve_start_pair_index(pair_index_str: str, num_pairs: int) -> int:
+    return _normalize_index(pair_index_str, num_pairs, allow_past_end=True)
 
 
 def get_active_message_pairs(session_data: SessionData) -> list[tuple[int, MessagePairIndices]]:
@@ -453,37 +459,13 @@ def expand_index_ranges(indices: list[str]) -> list[str]:
 
 
 def resolve_pair_index(session: Session, index_str: str) -> int:
-    try:
-        user_idx_val = int(index_str)
-    except ValueError as e:
-        raise InvalidInputError(f"Invalid index '{index_str}'. Must be an integer.") from e
-
     pairs = find_message_pairs(session.data.chat_history)
     num_pairs = len(pairs)
 
     if num_pairs == 0:
         raise InvalidInputError("No message pairs found in history.")
 
-    if user_idx_val < 0:
-        if user_idx_val < -num_pairs:
-            if num_pairs == 1:
-                err_msg = f"Pair at index {user_idx_val} not found. The only valid index is 0 (or -1)."
-            else:
-                valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
-                err_msg = f"Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
-            raise InvalidInputError(err_msg)
-        resolved_index = num_pairs + user_idx_val
-    else:
-        if user_idx_val >= num_pairs:
-            if num_pairs == 1:
-                err_msg = f"Pair at index {user_idx_val} not found. The only valid index is 0 (or -1)."
-            else:
-                valid_range_str = f"0 to {num_pairs - 1} (or -1 to -{num_pairs})"
-                err_msg = f"Pair at index {user_idx_val} not found. Valid indices are {valid_range_str}."
-            raise InvalidInputError(err_msg)
-        resolved_index = user_idx_val
-
-    return resolved_index
+    return _normalize_index(index_str, num_pairs, allow_past_end=False)
 
 
 def load_session_and_resolve_indices(index_str: str) -> tuple[Session, MessagePairIndices, int]:

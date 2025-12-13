@@ -189,7 +189,7 @@ def test_undo_fails_with_out_of_bounds_index(session_with_two_pairs: Path, inval
 
     # THEN it fails with a clear error message
     assert result.exit_code == 1
-    assert f"Error: Pair at index {invalid_index} not found." in result.stderr
+    assert "Error: Index out of bounds." in result.stderr
 
 
 def test_undo_on_already_excluded_pair_is_idempotent(session_with_two_pairs: Path) -> None:

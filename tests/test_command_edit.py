@@ -169,7 +169,7 @@ def test_edit_fails_on_bad_index(session_with_two_pairs: Path) -> None:  # noqa 
 
     # THEN it fails with a clear error
     assert result.exit_code == 1
-    assert "Error: Pair at index 99 not found." in result.stderr
+    assert "Error: Index out of bounds." in result.stderr
 
 
 def test_edit_fails_if_editor_not_found(session_with_two_pairs: Path, mocker: MockerFixture) -> None:  # noqa F811 module-private

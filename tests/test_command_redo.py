@@ -188,7 +188,7 @@ def test_redo_fails_with_out_of_bounds_index(session_with_excluded_pairs: Path, 
 
     # THEN it fails with a clear error message
     assert result.exit_code == 1
-    assert f"Error: Pair at index {invalid_index} not found." in result.stderr
+    assert "Error: Index out of bounds." in result.stderr
 
 
 def test_redo_on_already_active_pair_is_idempotent(session_with_excluded_pairs: Path) -> None:

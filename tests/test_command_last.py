@@ -170,7 +170,7 @@ def test_last_fails_with_out_of_bounds_index(session_with_two_pairs: Path, inval
 
     # THEN it fails with a clear error message
     assert result.exit_code == 1
-    assert f"Error: Pair at index {invalid_index} not found. Valid indices are 0 to 1 (or -1 to -2)." in result.stderr
+    assert "Error: Index out of bounds." in result.stderr
 
 
 def test_last_fails_with_invalid_index_format(session_with_two_pairs: Path) -> None:
