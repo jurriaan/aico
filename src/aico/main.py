@@ -84,7 +84,7 @@ class AliasGroup(TyperGroup):
         return default_name
 
 
-app = typer.Typer(cls=AliasGroup)
+app = typer.Typer(cls=AliasGroup, no_args_is_help=True)
 
 
 @app.command("status")
@@ -557,14 +557,6 @@ def trust(
     from aico.commands import trust
 
     trust.trust(path, revoke, show_list)
-
-
-# Workaround for `no_args_is_help` not working, keep this until #1240 in typer is fixed
-@app.callback(invoke_without_command=True)
-def main(ctx: typer.Context):
-    if ctx.invoked_subcommand is None:
-        print(ctx.get_help())
-        raise typer.Exit()
 
 
 if __name__ == "__main__":

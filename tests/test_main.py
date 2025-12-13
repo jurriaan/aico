@@ -13,8 +13,8 @@ def test_no_command_shows_help() -> None:
     # WHEN `aico` is run with no command
     result = runner.invoke(app, [])
 
-    # THEN the command succeeds and shows the help text with the flat command structure
-    assert result.exit_code == 0
+    # THEN the command shows the help text with the flat command structure
+    assert result.exit_code == 2
     assert "Usage: root [OPTIONS] COMMAND [ARGS]..." in result.stdout
     assert " status " in result.stdout
     assert " log " in result.stdout
