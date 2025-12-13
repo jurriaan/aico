@@ -396,7 +396,7 @@ def test_prompt_with_history_reconstructs_piped_content(tmp_path: Path, mocker: 
 def test_ask_command_invokes_correct_mode(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN an initialized session
     with runner.isolated_filesystem(temp_dir=tmp_path):
-        mock_invoke_logic = mocker.patch("aico.commands.prompt._invoke_llm_logic")
+        mock_invoke_logic = mocker.patch("aico.commands.prompt.run_llm_command")
 
         # WHEN `aico ask` is run
         result = runner.invoke(app, ["ask", "What does this code do?"])
@@ -411,7 +411,7 @@ def test_ask_command_invokes_correct_mode(tmp_path: Path, mocker: MockerFixture)
 def test_gen_commands_invoke_correct_mode(command: str, tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN an initialized session
     with runner.isolated_filesystem(temp_dir=tmp_path):
-        mock_invoke_logic = mocker.patch("aico.commands.prompt._invoke_llm_logic")
+        mock_invoke_logic = mocker.patch("aico.commands.prompt.run_llm_command")
 
         # WHEN `aico gen` or `aico generate-patch` is run
         result = runner.invoke(app, [command, "Add error handling"])
@@ -425,7 +425,7 @@ def test_gen_commands_invoke_correct_mode(command: str, tmp_path: Path, mocker: 
 def test_prompt_defaults_to_raw_mode(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN an initialized session
     with runner.isolated_filesystem(temp_dir=tmp_path):
-        mock_invoke_logic = mocker.patch("aico.commands.prompt._invoke_llm_logic")
+        mock_invoke_logic = mocker.patch("aico.commands.prompt.run_llm_command")
 
         # WHEN `aico prompt` is run without a --mode flag
         result = runner.invoke(app, ["prompt", "Generate a haiku"])

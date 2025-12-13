@@ -19,11 +19,7 @@ from aico.models import (
 from aico.session import Session
 
 
-def _get_timestamp() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _invoke_llm_logic(
+def run_llm_command(
     cli_prompt_text: str | None,
     system_prompt: str,
     mode: Mode,
@@ -35,7 +31,7 @@ def _invoke_llm_logic(
     Core logic for invoking the LLM that can be shared by all command wrappers.
     """
     session = Session.load_active()
-    timestamp = _get_timestamp()
+    timestamp = datetime.now(UTC).isoformat()
 
     piped_input = sys.stdin.read() if not is_input_terminal() else None
 
@@ -69,7 +65,7 @@ def _invoke_llm_logic(
     except Exception as e:
         raise ProviderError(f"Error calling LLM API: {e}") from e
 
-    assistant_response_timestamp = _get_timestamp()
+    assistant_response_timestamp = datetime.now(UTC).isoformat()
     derived_content: DerivedContent | None = None
 
     # Only create derived content if there is a meaningful diff, or if the structured
@@ -112,33 +108,3 @@ def _invoke_llm_logic(
                 interaction_result.display_items, mode, interaction_result.unified_diff
             )
             print(output_content, end="")
-
-
-def ask(
-    cli_prompt_text: str | None,
-    system_prompt: str,
-    passthrough: bool,
-    no_history: bool,
-    model: str | None,
-) -> None:
-    _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.CONVERSATION, passthrough, no_history, model)
-
-
-def generate_patch(
-    cli_prompt_text: str | None,
-    system_prompt: str,
-    passthrough: bool,
-    no_history: bool,
-    model: str | None,
-) -> None:
-    _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.DIFF, passthrough, no_history, model)
-
-
-def prompt(
-    cli_prompt_text: str | None,
-    system_prompt: str,
-    passthrough: bool,
-    no_history: bool,
-    model: str | None,
-) -> None:
-    _invoke_llm_logic(cli_prompt_text, system_prompt, Mode.RAW, passthrough, no_history, model)

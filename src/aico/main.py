@@ -164,8 +164,9 @@ def ask(
     Have a conversation for planning and discussion.
     """
     from aico.commands import prompt
+    from aico.models import Mode
 
-    prompt.ask(cli_prompt_text, system_prompt, passthrough, no_history, model)
+    prompt.run_llm_command(cli_prompt_text, system_prompt, Mode.CONVERSATION, passthrough, no_history, model)
 
 
 @app.command("dump-history")
@@ -201,8 +202,9 @@ def generate_patch(
     Generate code modifications as a unified diff.
     """
     from aico.commands import prompt
+    from aico.models import Mode
 
-    prompt.generate_patch(cli_prompt_text, system_prompt, passthrough, no_history, model)
+    prompt.run_llm_command(cli_prompt_text, system_prompt, Mode.DIFF, passthrough, no_history, model)
 
 
 @app.command("prompt")
@@ -228,8 +230,9 @@ def prompt(
     Send a raw prompt to the AI.
     """
     from aico.commands import prompt
+    from aico.models import Mode
 
-    prompt.prompt(cli_prompt_text, system_prompt, passthrough, no_history, model)
+    prompt.run_llm_command(cli_prompt_text, system_prompt, Mode.RAW, passthrough, no_history, model)
 
 
 @app.command("last", context_settings={"ignore_unknown_options": True})
