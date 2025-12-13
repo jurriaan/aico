@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import typer
-from pydantic import TypeAdapter, ValidationError
+from pydantic import TypeAdapter
 
 from aico.consts import SESSION_FILE_NAME
 from aico.exceptions import (
@@ -29,9 +29,7 @@ from aico.historystore.models import HistoryRecord
 from aico.historystore.pointer import (
     InvalidPointerError,
     MissingViewError,
-)
-from aico.historystore.pointer import (
-    load_pointer as load_pointer_helper,
+    load_pointer,
 )
 from aico.models import (
     ActiveContext,
@@ -39,7 +37,6 @@ from aico.models import (
     ChatMessageHistoryItem,
     MessagePairIndices,
     SessionData,
-    SessionPointer,
     UserChatMessage,
 )
 
@@ -71,21 +68,10 @@ def complete_files_in_context(ctx: typer.Context | None, args: list[str], incomp
     context_files: list[str] = []
 
     try:
-        raw_text = session_file.read_text(encoding="utf-8").strip()
-        if not raw_text:
-            return []
-
-        if '"aico_session_pointer_v1"' in raw_text:
-            try:
-                pointer = TypeAdapter(SessionPointer).validate_json(raw_text)
-                view_path = (session_file.parent / pointer["path"]).resolve()
-                if view_path.is_file():
-                    view_data = TypeAdapter(SessionData).validate_json(view_path.read_text(encoding="utf-8"))
-                    context_files = view_data.context_files
-            except (ValidationError, OSError):
-                pass
-
-    except OSError:
+        view_path = load_pointer(session_file)
+        view_data = TypeAdapter(SessionData).validate_json(view_path.read_text(encoding="utf-8"))
+        context_files = view_data.context_files
+    except (InvalidPointerError, MissingViewError, OSError):
         return []
 
     return [f for f in context_files if f.startswith(incomplete)]
@@ -298,7 +284,7 @@ class Session:
 
         # Basic Check
         try:
-            _ = load_pointer_helper(session_file)
+            _ = load_pointer(session_file)
         except (MissingViewError, InvalidPointerError) as e:
             raise SessionIntegrityError(str(e)) from e
 
@@ -329,7 +315,7 @@ class Session:
 
     def _load_view_and_store(self) -> tuple[HistoryStore, SessionView]:
         if self._view_path_abs is None:
-            self._view_path_abs = load_pointer_helper(self.file_path)
+            self._view_path_abs = load_pointer(self.file_path)
 
         store = HistoryStore(self.history_root)
         try:
@@ -342,7 +328,7 @@ class Session:
     @property
     def view_path(self) -> Path:
         if self._view_path_abs is None:
-            self._view_path_abs = load_pointer_helper(self.file_path)
+            self._view_path_abs = load_pointer(self.file_path)
         return self._view_path_abs
 
     @property
