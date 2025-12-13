@@ -473,7 +473,7 @@ def then_response_content_is_updated(project_dir: Path, session_type: str, pair_
         pairs_positions = find_message_pairs_in_view(store, view)
         assistant_pos = pairs_positions[pair_index][1]
         assistant_index = view.message_indices[assistant_pos]
-        assistant_record = store.read(assistant_index)
+        assistant_record = store.read_many([assistant_index])[0]
         assert assistant_record.content == new_content
     else:  # session_type == "legacy"
         session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())

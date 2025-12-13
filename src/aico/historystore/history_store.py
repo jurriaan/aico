@@ -71,26 +71,6 @@ class HistoryStore:
         second_idx = self.append(assistant)
         return first_idx, second_idx
 
-    def read(self, index: int) -> HistoryRecord:
-        """
-        Reads a single record by global index.
-        """
-        shard_base = self._shard_base_for(index)
-        local_offset = self._local_offset(index)
-        shard_path = self._shard_path(shard_base)
-        if not shard_path.is_file():
-            raise IndexError(f"Record index {index} out of range (missing shard).")
-
-        try:
-            with shard_path.open("r", encoding="utf-8") as f:
-                for i, line in enumerate(f):
-                    if i == local_offset:
-                        return load_history_record(line)
-        except ValidationError as e:
-            raise ValueError(f"Corrupt JSON in shard {shard_path}: {e}") from e
-
-        raise IndexError(f"Record index {index} out of range (offset not found).")
-
     def read_many(self, indices: Sequence[int]) -> list[HistoryRecord]:
         """
         Reads multiple records efficiently by grouping indices per shard.
@@ -112,7 +92,15 @@ class HistoryStore:
         for shard_base, offsets in grouped_offsets.items():
             shard_path = self._shard_path(shard_base)
             if not shard_path.is_file():
-                raise IndexError(f"Missing shard for indices in base {shard_base}")
+                missing_ids = sorted([shard_base + off for off in offsets])
+                missing_ids_sample = missing_ids[:3]
+                missing_ids_str = ", ".join(map(str, missing_ids_sample))
+                if len(missing_ids) > 3:
+                    missing_ids_str += ", ..."
+                raise IndexError(
+                    f"History data missing: Shard file '{shard_path.name}' not found. "
+                    + f"Cannot retrieve record IDs {missing_ids_str}."
+                )
 
             # We stop reading the file once we've found all needed offsets for this shard
             sorted_offsets = sorted(offsets, reverse=True)

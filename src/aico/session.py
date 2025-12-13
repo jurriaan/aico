@@ -366,7 +366,7 @@ class Session:
             raise SessionError("Edited message index out of bounds for current view.")
 
         original_msg_idx = view.message_indices[message_index]
-        old_record = store.read(original_msg_idx)
+        old_record = store.read_many([original_msg_idx])[0]
 
         if new_metadata:
             final_model = new_metadata.model

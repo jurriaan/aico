@@ -94,8 +94,8 @@ def test_append_and_next_index_with_shards(tmp_path: Path) -> None:
     assert (tmp_path / "history" / "0.jsonl").is_file()
     assert (tmp_path / "history" / "5.jsonl").is_file()
     # AND reading the first and last records returns the correct content
-    rec0 = store.read(0)
-    rec6 = store.read(6)
+    rec0 = store.read_many([0])[0]
+    rec6 = store.read_many([6])[0]
     assert rec0.content == "m0" and rec0.role == "user"
     assert rec6.content == "m6" and rec6.role == "user"
 
@@ -126,8 +126,8 @@ def test_append_pair_returns_sequential_indices(tmp_path: Path) -> None:
 
     # THEN the indices are sequential and readable
     assert a_idx == u_idx + 1
-    assert store.read(u_idx).content == "hello\nwith newline"
-    assert store.read(a_idx).role == "assistant"
+    assert store.read_many([u_idx])[0].content == "hello\nwith newline"
+    assert store.read_many([a_idx])[0].role == "assistant"
 
 
 def test_session_view_io_and_reconstruction(tmp_path: Path) -> None:
@@ -193,8 +193,8 @@ def test_edit_message_appends_and_repoints(tmp_path: Path) -> None:
     new_idx = edit_message(store, view, message_index=1, new_record=new_record)
 
     # THEN the store contains a new record with edit_of pointing to the original
-    original = store.read(a_idx)
-    edited = store.read(new_idx)
+    original = store.read_many([a_idx])[0]
+    edited = store.read_many([new_idx])[0]
     assert edited.content == "resp 0 - edited"
     assert edited.edit_of == a_idx
     assert original.content == "resp 0"  # original is untouched
@@ -223,8 +223,8 @@ def test_edit_message_chain_and_manual_revert(tmp_path: Path) -> None:
     idx3 = edit_message(store, view, 1, r3)
 
     # THEN each new record points to its immediate predecessor
-    r2_read = store.read(idx2)
-    r3_read = store.read(idx3)
+    r2_read = store.read_many([idx2])[0]
+    r3_read = store.read_many([idx3])[0]
     assert r2_read.edit_of == a
     assert r3_read.edit_of == idx2
 
@@ -236,7 +236,7 @@ def test_edit_message_chain_and_manual_revert(tmp_path: Path) -> None:
     assert records[1].content == "r2"
 
     # WHEN reverting again to the original
-    prev = store.read(view.message_indices[1]).edit_of
+    prev = store.read_many([view.message_indices[1]])[0].edit_of
     assert prev is not None
     view.message_indices[1] = prev  # revert to original 'a'
     # THEN reconstruction shows the original content
@@ -271,7 +271,7 @@ def test_edit_message_can_clear_optional_fields(tmp_path: Path) -> None:
     original_asst_idx = view.message_indices[1]
 
     # Verify setup
-    loaded = store.read(original_asst_idx)
+    loaded = store.read_many([original_asst_idx])[0]
     assert loaded.cost == 0.02
     assert loaded.derived is not None
 
@@ -294,7 +294,7 @@ def test_edit_message_can_clear_optional_fields(tmp_path: Path) -> None:
 
     # 4. Verify fields are actually gone
     new_idx = view.message_indices[1]
-    new_record = store.read(new_idx)
+    new_record = store.read_many([new_idx])[0]
 
     assert new_record.content == "hello updated"
     assert new_record.cost is None
@@ -318,8 +318,8 @@ def test_append_pair_to_view_helper(tmp_path: Path) -> None:
     # THEN indices are sequential and stored, and view updated
     assert a_idx == u_idx + 1
     assert view.message_indices == [u_idx, a_idx]
-    assert store.read(u_idx).content == "u"
-    assert store.read(a_idx).content == "a"
+    assert store.read_many([u_idx])[0].content == "u"
+    assert store.read_many([a_idx])[0].content == "a"
 
 
 def test_fork_view_truncates_at_pair(tmp_path: Path) -> None:

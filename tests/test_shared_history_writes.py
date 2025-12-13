@@ -74,8 +74,8 @@ def test_append_pair_via_ask_in_writable_shared_history(shared_writable_project:
     # AND records exist with correct roles and content
     store = HistoryStore(shared_writable_project / ".aico" / "history")
     u_idx, a_idx = view.message_indices[-2], view.message_indices[-1]
-    assert store.read(u_idx).role == "user" and store.read(u_idx).content == "prompt new"
-    assert store.read(a_idx).role == "assistant" and store.read(a_idx).content == "resp new"
+    assert store.read_many([u_idx])[0].role == "user" and store.read_many([u_idx])[0].content == "prompt new"
+    assert store.read_many([a_idx])[0].role == "assistant" and store.read_many([a_idx])[0].content == "resp new"
 
 
 def test_undo_and_redo_toggle_exclusions(shared_writable_project: Path, mocker: MockerFixture) -> None:
