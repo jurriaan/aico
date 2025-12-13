@@ -7,6 +7,9 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from aico.main import app
+from aico.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, UserChatMessage
+from aico.session import SessionData, load_view
+from tests.helpers import init_shared_session
 
 runner = CliRunner()
 
@@ -130,3 +133,114 @@ def test_session_fork_persistent_execution(tmp_path: Path) -> None:
         main_pointer = Path(td) / ".ai_session.json"
         pointer_data = json.loads(main_pointer.read_text())
         assert "my-exec-fork" not in pointer_data["path"]
+
+
+def test_session_fork_preserves_exclusions(tmp_path: Path) -> None:
+    # GIVEN a session with 3 pairs, where pair 1 (the middle one) is excluded
+    history: list[ChatMessageHistoryItem] = [
+        # Pair 0
+        UserChatMessage(role="user", content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
+        AssistantChatMessage(
+            role="assistant",
+            content="a0",
+            mode=Mode.CONVERSATION,
+            timestamp="t0",
+            model="m",
+            duration_ms=1,
+        ),
+        # Pair 1 (excluded)
+        UserChatMessage(role="user", content="u1", mode=Mode.CONVERSATION, timestamp="t1"),
+        AssistantChatMessage(
+            role="assistant",
+            content="a1",
+            mode=Mode.CONVERSATION,
+            timestamp="t1",
+            model="m",
+            duration_ms=1,
+        ),
+        # Pair 2
+        UserChatMessage(role="user", content="u2", mode=Mode.CONVERSATION, timestamp="t2"),
+        AssistantChatMessage(
+            role="assistant",
+            content="a2",
+            mode=Mode.CONVERSATION,
+            timestamp="t2",
+            model="m",
+            duration_ms=1,
+        ),
+    ]
+    session_data = SessionData(
+        model="test",
+        chat_history=history,
+        excluded_pairs=[1],
+    )
+    init_shared_session(tmp_path, session_data)
+
+    # WHEN forking the session
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(app, ["session-fork", "new-branch"])
+
+    # THEN the fork succeeds
+    assert result.exit_code == 0
+
+    # AND the new view preserves the exclusions
+    view_path = tmp_path / ".aico" / "sessions" / "new-branch.json"
+    view = load_view(view_path)
+    assert view.excluded_pairs == [1]
+
+
+def test_session_fork_truncates_exclusions(tmp_path: Path) -> None:
+    # GIVEN a session with 3 pairs, where pairs 0 and 2 are excluded
+    history: list[ChatMessageHistoryItem] = [
+        # Pair 0 (excluded)
+        UserChatMessage(role="user", content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
+        AssistantChatMessage(
+            role="assistant",
+            content="a0",
+            mode=Mode.CONVERSATION,
+            timestamp="t0",
+            model="m",
+            duration_ms=1,
+        ),
+        # Pair 1
+        UserChatMessage(role="user", content="u1", mode=Mode.CONVERSATION, timestamp="t1"),
+        AssistantChatMessage(
+            role="assistant",
+            content="a1",
+            mode=Mode.CONVERSATION,
+            timestamp="t1",
+            model="m",
+            duration_ms=1,
+        ),
+        # Pair 2 (excluded)
+        UserChatMessage(role="user", content="u2", mode=Mode.CONVERSATION, timestamp="t2"),
+        AssistantChatMessage(
+            role="assistant",
+            content="a2",
+            mode=Mode.CONVERSATION,
+            timestamp="t2",
+            model="m",
+            duration_ms=1,
+        ),
+    ]
+    session_data = SessionData(
+        model="test",
+        chat_history=history,
+        excluded_pairs=[0, 2],
+    )
+    init_shared_session(tmp_path, session_data)
+
+    # WHEN forking the session with --until-pair 1
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(app, ["session-fork", "shorter-branch", "--until-pair", "1"])
+
+    # THEN the fork succeeds
+    assert result.exit_code == 0
+
+    # AND the new view only excludes pair 0 (pair 2 is beyond the truncation point)
+    view_path = tmp_path / ".aico" / "sessions" / "shorter-branch.json"
+    view = load_view(view_path)
+    assert view.excluded_pairs == [0]
+
+    # AND the new view contains only 2 pairs (4 messages)
+    assert len(view.message_indices) == 4
