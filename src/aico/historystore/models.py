@@ -123,7 +123,7 @@ def dumps_history_record(record: HistoryRecord) -> str:
     return TypeAdapter(HistoryRecord).dump_json(record, indent=None, exclude_none=True).decode()
 
 
-def load_history_record(line: str) -> HistoryRecord:
+def load_history_record(line: str | bytes) -> HistoryRecord:
     """
     Parse a JSON line into a HistoryRecord.
     """

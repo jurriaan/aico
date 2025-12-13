@@ -1,12 +1,11 @@
-from __future__ import annotations
-
+import mmap
 import os
 from collections import defaultdict
 from collections.abc import Sequence
 from contextlib import suppress
 from pathlib import Path
 
-from pydantic import ValidationError
+from pydantic_core import ValidationError
 
 from .models import SHARD_SIZE, HistoryRecord, dumps_history_record, load_history_record
 
@@ -116,20 +115,26 @@ class HistoryStore:
                 raise IndexError(f"Missing shard for indices in base {shard_base}")
 
             # We stop reading the file once we've found all needed offsets for this shard
-            needed_count = len(offsets)
-            found_count = 0
-
+            sorted_offsets = sorted(offsets, reverse=True)
             try:
-                with shard_path.open("r", encoding="utf-8") as f:
-                    for i, line in enumerate(f):
-                        if i in offsets:
-                            # Parse immediately line-by-line
-                            global_idx = shard_base + i
-                            records_by_global_index[global_idx] = load_history_record(line)
-                            found_count += 1
+                with shard_path.open("r") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                    current_offset = 0
+                    line_number = 0
 
-                            if found_count == needed_count:
-                                break
+                    while sorted_offsets:
+                        next_newline = mm.find(b"\n", current_offset)
+
+                        if next_newline == -1:
+                            break  # End of file
+
+                        if line_number == sorted_offsets[-1]:
+                            _ = sorted_offsets.pop()
+                            line = mm[current_offset:next_newline]
+                            global_idx = shard_base + line_number
+                            records_by_global_index[global_idx] = load_history_record(line)
+
+                        current_offset = next_newline + 1
+                        line_number += 1
             except (ValueError, ValidationError) as e:
                 # Catch both Pydantic ValidationErrors and raw JSON errors
                 raise ValueError(f"Corrupt JSON in shard {shard_path}: {e}") from e
