@@ -177,50 +177,6 @@ def _process_single_diff_block(
     )
 
 
-def process_patches_sequentially(
-    original_file_contents: FileContents,
-    llm_response: str,
-    session_root: Path,
-) -> tuple[FileContents, FileContents, list[WarningMessage]]:
-    """
-    The single, robust parsing engine that drives all diffing operations.
-
-    This function consumes the `process_llm_response_stream` generator to calculate
-    the final state of all files after patches have been applied. It does this in
-    a single pass for efficiency.
-
-    Args:
-        original_file_contents: An immutable mapping of the original file contents.
-        llm_response: The raw response from the language model.
-        session_root: The root path of the session.
-
-    Returns:
-        A tuple containing:
-        - The final contents of all files after patches.
-        - The baseline "before" contents, updated with any filesystem fallbacks.
-        - A list of any warnings that were generated.
-    """
-    warnings: list[WarningMessage] = []
-    final_contents: FileContents = {}
-    baseline_contents: FileContents = {}
-
-    stream_processor = process_llm_response_stream(original_file_contents, llm_response, session_root)
-
-    for item in stream_processor:
-        match item:
-            case WarningMessage():
-                warnings.append(item)
-            case PatchApplicationResult() as result:
-                # This is always the last item, containing the final aggregated state.
-                final_contents = result.post_patch_contents
-                baseline_contents = result.baseline_contents_for_diff
-                break  # No need to process further
-            case _:
-                pass
-
-    return final_contents, baseline_contents, warnings
-
-
 def _yield_remaining_text(text: str) -> Iterator[str | UnparsedBlock]:
     """
     Helper to yield remaining text, classifying it as conversational or an incomplete block.

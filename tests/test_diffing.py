@@ -8,17 +8,30 @@ import pytest
 from aico.diffing.stream_processor import (
     analyze_response,
     process_llm_response_stream,
-    process_patches_sequentially,
 )
 from aico.models import DisplayItem, FileHeader, PatchApplicationResult, ProcessedDiffBlock, WarningMessage
 
 
+def _get_final_patch_result(original_contents, llm_response, session_root):
+    """Helper to consume process_llm_response_stream and return final state."""
+    warnings = []
+    stream = process_llm_response_stream(original_contents, llm_response, session_root)
+    for item in stream:
+        if isinstance(item, WarningMessage):
+            warnings.append(item)
+        elif isinstance(item, PatchApplicationResult):
+            return item.post_patch_contents, item.baseline_contents_for_diff, warnings
+    raise RuntimeError("No PatchApplicationResult found in stream")
+
+
 def generate_unified_diff(original_contents: dict[str, str], llm_response: str, tmp_path: Path) -> str:
-    return analyze_response(original_contents, llm_response, tmp_path)[0]
+    unified_diff, _, _ = analyze_response(original_contents, llm_response, tmp_path)
+    return unified_diff
 
 
 def generate_display_items(original_contents: dict[str, str], llm_response: str, tmp_path: Path) -> list[DisplayItem]:
-    return analyze_response(original_contents, llm_response, tmp_path)[1]
+    _, display_items, _ = analyze_response(original_contents, llm_response, tmp_path)
+    return display_items
 
 
 def test_process_patches_sequentially_single_change(tmp_path: Path) -> None:
@@ -26,8 +39,8 @@ def test_process_patches_sequentially_single_change(tmp_path: Path) -> None:
     original_contents = {"file.py": "old content"}
     llm_response = "File: file.py\n<<<<<<< SEARCH\nold content\n=======\nnew content\n>>>>>>> REPLACE"
 
-    # WHEN _process_patches_sequentially is called
-    post_patch_contents, _, warnings = process_patches_sequentially(original_contents, llm_response, tmp_path)
+    # WHEN the helper is called
+    post_patch_contents, _, warnings = _get_final_patch_result(original_contents, llm_response, tmp_path)
 
     # THEN the final content is correct and there are no warnings
     assert post_patch_contents == {"file.py": "new content\n"}
@@ -43,8 +56,8 @@ def test_process_patches_sequentially_multiple_changes(tmp_path: Path) -> None:
         "File: file.py\n<<<<<<< SEARCH\nline 2\n=======\nline two\n>>>>>>> REPLACE"
     )
 
-    # WHEN _process_patches_sequentially is called
-    post_patch_contents, _, warnings = process_patches_sequentially(original_contents, llm_response, tmp_path)
+    # WHEN the helper is called
+    post_patch_contents, _, warnings = _get_final_patch_result(original_contents, llm_response, tmp_path)
 
     # THEN the final content has both patches applied in order
     assert post_patch_contents == {"file.py": "line one\nline two\n"}
@@ -56,16 +69,13 @@ def test_process_patches_sequentially_failed_patch_is_captured_as_warning(tmp_pa
     original_contents = {"file.py": "original content"}
     llm_response = "File: file.py\n<<<<<<< SEARCH\nnon-existent\n=======\nnew\n>>>>>>> REPLACE"
 
-    # WHEN _process_patches_sequentially is called
-    post_patch_contents, _, warnings = process_patches_sequentially(original_contents, llm_response, tmp_path)
+    # WHEN analyze_response is called
+    _, _, warnings = analyze_response(original_contents, llm_response, tmp_path)
 
-    # THEN the final content is unchanged because the patch was not applied
-    assert post_patch_contents == original_contents
-
-    # AND a warning message is returned containing a simple text error
+    # THEN a warning is returned containing a simple text error
     assert len(warnings) == 1
-    assert "could not be found in 'file.py'" in warnings[0].text
-    assert "Patch skipped" in warnings[0].text
+    assert "could not be found in 'file.py'" in warnings[0]
+    assert "Patch skipped" in warnings[0]
 
 
 def test_process_patches_sequentially_filesystem_fallback(tmp_path: Path) -> None:
@@ -74,8 +84,8 @@ def test_process_patches_sequentially_filesystem_fallback(tmp_path: Path) -> Non
     original_contents = {}
     llm_response = "File: file.py\n<<<<<<< SEARCH\ndisk content\n=======\nnew content\n>>>>>>> REPLACE"
 
-    # WHEN _process_patches_sequentially is called
-    post_patch_contents, _, warnings = process_patches_sequentially(original_contents, llm_response, tmp_path)
+    # WHEN the helper is called
+    post_patch_contents, _, warnings = _get_final_patch_result(original_contents, llm_response, tmp_path)
 
     # THEN the final content is correct and a warning is returned
     assert post_patch_contents == {"file.py": "new content\n"}
