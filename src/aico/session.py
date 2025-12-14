@@ -483,3 +483,36 @@ def load_session_and_resolve_indices(index_str: str) -> tuple[Session, MessagePa
     pair_indices = pairs[resolved_index]
 
     return session, pair_indices, resolved_index
+
+
+def modify_pair_exclusions(raw_indices: list[str] | None, exclude: bool) -> list[int]:
+    if not raw_indices:
+        raw_indices = ["-1"]
+
+    # 1. Expand ranges
+    expanded_indices = expand_index_ranges(raw_indices)
+
+    session = Session.load_active(full_history=True)
+
+    # 2. Resolve all indices first
+    resolved_indices: list[int] = []
+    for idx_str in expanded_indices:
+        resolved_indices.append(resolve_pair_index(session, idx_str))
+
+    # Use set operations for cleaner logic
+    targets = set(resolved_indices)
+    current_excluded = set(session.data.excluded_pairs)
+
+    if exclude:
+        changed_set = targets - current_excluded
+        new_excluded = current_excluded | targets
+    else:
+        changed_set = targets & current_excluded
+        new_excluded = current_excluded - targets
+
+    actually_changed_sorted = sorted(changed_set)
+
+    if actually_changed_sorted:
+        session.update_view_metadata(excluded_pairs=sorted(new_excluded))
+
+    return actually_changed_sorted
