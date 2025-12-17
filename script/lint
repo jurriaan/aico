@@ -21,3 +21,4 @@ fi
 
 uv run basedpyright "${files_to_process_args[@]}"
 uv run ruff check "${files_to_process_args[@]}"
+uv run ty check "${files_to_process_args[@]}"

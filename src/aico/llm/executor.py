@@ -91,7 +91,7 @@ def _build_messages(
     # Inject alignment prompts
     if mode in ALIGNMENT_PROMPTS:
         messages.extend(reconstruct_historical_messages(history_to_use))
-        messages.extend([{"role": msg.role, "content": msg.content} for msg in ALIGNMENT_PROMPTS[mode]])
+        messages.extend([LLMChatMessage(role=msg.role, content=msg.content) for msg in ALIGNMENT_PROMPTS[mode]])
     else:
         messages.extend(reconstruct_historical_messages(history_to_use))
 

@@ -54,7 +54,7 @@ def new_get_gherkin_document(abs_filename: str, encoding: str = "utf-8") -> gher
         raise exceptions.GherkinParseError(f"Unknown parsing error: {message}", line, line_content, filename) from e
 
     # At this point, the `gherkin_data` should be valid if no exception was raised
-    return gherkin_parser.GherkinDocument.from_dict(dict(gherkin_data))
+    return gherkin_parser.GherkinDocument.from_dict(dict(gherkin_data.items()))
 
 
 _ = mock.patch("pytest_bdd.parser.get_gherkin_document", new=new_get_gherkin_document).start()

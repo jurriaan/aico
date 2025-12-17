@@ -100,7 +100,7 @@ def _resolve_file_path(
     return ResolvedFilePath(path=None, warning=None, fallback_content=None)
 
 
-def _create_aipatch_from_match(match: re.Match[str], llm_file_path: str) -> AIPatch:
+def _create_aipatch_from_match(match: re.Match[str], llm_file_path: str) -> AIPatch: # ty: ignore[invalid-type-form]
     """Helper to create an AIPatch from a regex match object."""
     return AIPatch(
         llm_file_path=llm_file_path,
@@ -216,8 +216,8 @@ def process_llm_response_stream(
     Yields:
         Either a string (for conversational text), a ProcessedDiffBlock, or a WarningMessage.
     """
-    current_file_contents = dict(original_file_contents)
-    original_contents_for_diffing = dict(original_file_contents)
+    current_file_contents: dict[str, str] = dict(original_file_contents)
+    original_contents_for_diffing: dict[str, str] = dict(original_file_contents)
     last_end = 0
 
     for file_header_match in _FILE_HEADER_REGEX.finditer(llm_response):

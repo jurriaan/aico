@@ -46,7 +46,7 @@ def count_max_alignment_tokens(model: str) -> int:
     if not ALIGNMENT_PROMPTS:
         return 0
     max_tokens = max(
-        count_tokens_for_messages(model, [{"role": msg.role, "content": msg.content} for msg in prompt_set])
+        count_tokens_for_messages(model, [LLMChatMessage(role=msg.role, content=msg.content) for msg in prompt_set])
         for prompt_set in ALIGNMENT_PROMPTS.values()
     )
     return max_tokens
