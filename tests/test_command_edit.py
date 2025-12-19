@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+from copy import replace
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -85,7 +86,6 @@ def test_edit_response_and_invalidate_derived_content(session_with_two_pairs: Pa
     # GIVEN a session where the last response has derived content
     session_file = session_with_two_pairs
     session_data = load_session_data(session_file)
-    from dataclasses import replace
 
     last_response = session_data.chat_history[-1]
     last_response_with_derived = replace(
@@ -209,9 +209,8 @@ def test_edit_response_recomputes_derived_content_on_change(
     session_file = session_with_context_file
     session_data = load_session_data(session_file)
 
-    user_msg = UserChatMessage(role="user", content="prompt", mode=Mode.CONVERSATION, timestamp="ts")
+    user_msg = UserChatMessage(content="prompt", mode=Mode.CONVERSATION, timestamp="ts")
     assistant_msg = AssistantChatMessage(
-        role="assistant",
         content="Initial conversational response.",
         mode=Mode.CONVERSATION,
         timestamp="ts",

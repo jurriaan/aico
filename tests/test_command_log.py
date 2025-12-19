@@ -21,14 +21,11 @@ def session_for_log_tests(tmp_path: Path) -> Iterator[Path]:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         history: list[ChatMessageHistoryItem] = [
             # Pair 0 (inactive)
-            UserChatMessage(role="user", content="prompt 0", mode=Mode.CONVERSATION, timestamp="t0"),
-            AssistantChatMessage(
-                role="assistant", content="resp 0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=1
-            ),
+            UserChatMessage(content="prompt 0", mode=Mode.CONVERSATION, timestamp="t0"),
+            AssistantChatMessage(content="resp 0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=1),
             # Pair 1 (active, excluded)
-            UserChatMessage(role="user", content="prompt 1 excluded", mode=Mode.CONVERSATION, timestamp="t2"),
+            UserChatMessage(content="prompt 1 excluded", mode=Mode.CONVERSATION, timestamp="t2"),
             AssistantChatMessage(
-                role="assistant",
                 content="resp 1 excluded",
                 mode=Mode.CONVERSATION,
                 timestamp="t2",
@@ -36,12 +33,10 @@ def session_for_log_tests(tmp_path: Path) -> Iterator[Path]:
                 duration_ms=1,
             ),
             # Pair 2 (active, multiline)
-            UserChatMessage(role="user", content="prompt 2\nsecond line", mode=Mode.CONVERSATION, timestamp="t3"),
-            AssistantChatMessage(
-                role="assistant", content="resp 2", mode=Mode.CONVERSATION, timestamp="t3", model="m", duration_ms=1
-            ),
+            UserChatMessage(content="prompt 2\nsecond line", mode=Mode.CONVERSATION, timestamp="t3"),
+            AssistantChatMessage(content="resp 2", mode=Mode.CONVERSATION, timestamp="t3", model="m", duration_ms=1),
             # Dangling user message (active, after start)
-            UserChatMessage(role="user", content="dangling prompt", mode=Mode.CONVERSATION, timestamp="t4"),
+            UserChatMessage(content="dangling prompt", mode=Mode.CONVERSATION, timestamp="t4"),
         ]
         # Set start index to 2, so the first pair is inactive
         session_data = SessionData(
@@ -100,7 +95,7 @@ def test_log_with_only_dangling_messages(tmp_path: Path) -> None:
     # GIVEN a session with only a single user message
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         history: list[ChatMessageHistoryItem] = [
-            UserChatMessage(role="user", content="only a prompt", mode=Mode.CONVERSATION, timestamp="t0"),
+            UserChatMessage(content="only a prompt", mode=Mode.CONVERSATION, timestamp="t0"),
         ]
         session_data = SessionData(model="test-model", chat_history=history, context_files=[])
         save_session(Path(td) / SESSION_FILE_NAME, session_data)

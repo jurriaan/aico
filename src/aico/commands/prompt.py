@@ -79,7 +79,6 @@ def run_llm_command(
         )
 
     user_msg = UserChatMessage(
-        role="user",
         content=primary_prompt,
         piped_content=secondary_piped_content,
         mode=mode,
@@ -87,7 +86,6 @@ def run_llm_command(
         passthrough=passthrough,
     )
     asst_msg = AssistantChatMessage(
-        role="assistant",
         content=interaction_result.content,
         mode=mode,
         token_usage=interaction_result.token_usage,

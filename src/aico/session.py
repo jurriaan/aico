@@ -1,8 +1,8 @@
 import os
-from dataclasses import dataclass
 from pathlib import Path
 
 import typer
+from msgspec import Struct
 
 from aico.consts import SESSION_FILE_NAME
 from aico.exceptions import (
@@ -182,8 +182,7 @@ def is_pair_excluded(session_data: SessionData, pair_index: int) -> bool:
     return pair_index in set(session_data.excluded_pairs)
 
 
-@dataclass(slots=True)
-class ActiveWindowSummary:
+class ActiveWindowSummary(Struct):
     active_pairs: int
     active_start_id: int
     active_end_id: int

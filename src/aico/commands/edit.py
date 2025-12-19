@@ -3,7 +3,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
-from dataclasses import replace
+from copy import replace
 from pathlib import Path
 
 import typer

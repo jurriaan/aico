@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 import msgspec
+from msgspec import Struct, field
 
 from aico.models import (
     DerivedContent,
@@ -51,8 +51,7 @@ class LegacyAssistantChatMessage(msgspec.Struct, tag="assistant", tag_field="rol
 type LegacyChatMessage = LegacyUserChatMessage | LegacyAssistantChatMessage
 
 
-@dataclass
-class LegacySessionSnapshot:
+class LegacySessionSnapshot(Struct):
     model: str
     context_files: list[str] = field(default_factory=list)
     chat_history: list[LegacyChatMessage] = field(default_factory=list)

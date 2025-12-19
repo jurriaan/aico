@@ -107,18 +107,12 @@ def test_calculate_and_display_cost_logic(mocker: MockerFixture) -> None:
     mocker.patch("aico.console.get_model_info", return_value=mock_model_info)
 
     chat_history: Sequence[ChatMessageHistoryItem] = [
-        UserChatMessage(role="user", content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
-        AssistantChatMessage(
-            role="assistant", content="a0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=1, cost=10.0
-        ),
-        UserChatMessage(role="user", content="u1", mode=Mode.CONVERSATION, timestamp="t1"),
-        AssistantChatMessage(
-            role="assistant", content="a1", mode=Mode.CONVERSATION, timestamp="t1", model="m", duration_ms=1, cost=1.0
-        ),
-        UserChatMessage(role="user", content="u2", mode=Mode.CONVERSATION, timestamp="t2"),
-        AssistantChatMessage(
-            role="assistant", content="a2", mode=Mode.CONVERSATION, timestamp="t2", model="m", duration_ms=1, cost=2.0
-        ),
+        UserChatMessage(content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
+        AssistantChatMessage(content="a0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=1, cost=10.0),
+        UserChatMessage(content="u1", mode=Mode.CONVERSATION, timestamp="t1"),
+        AssistantChatMessage(content="a1", mode=Mode.CONVERSATION, timestamp="t1", model="m", duration_ms=1, cost=1.0),
+        UserChatMessage(content="u2", mode=Mode.CONVERSATION, timestamp="t2"),
+        AssistantChatMessage(content="a2", mode=Mode.CONVERSATION, timestamp="t2", model="m", duration_ms=1, cost=2.0),
     ]
     token_usage = TokenUsage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
     model_name = "test-model"
@@ -168,10 +162,8 @@ def test_calculate_and_display_cost_shows_cached_tokens(mocker: MockerFixture) -
     mocker.patch("aico.console.get_model_info", return_value=mock_model_info)
 
     chat_history: Sequence[ChatMessageHistoryItem] = [
-        UserChatMessage(role="user", content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
-        AssistantChatMessage(
-            role="assistant", content="a0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=1, cost=0.0
-        ),
+        UserChatMessage(content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
+        AssistantChatMessage(content="a0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=1, cost=0.0),
     ]
     token_usage = TokenUsage(prompt_tokens=2048, cached_tokens=1024, completion_tokens=100, total_tokens=2148)
     model_name = "test-model"

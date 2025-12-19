@@ -196,9 +196,8 @@ def test_last_recompute_fails_with_prompt_flag(session_with_two_pairs: Path) -> 
 def test_last_recompute_for_diff_response(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a session with a diff response
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        user_message = UserChatMessage(role="user", content="p1", mode=Mode.DIFF, timestamp="t1")
+        user_message = UserChatMessage(content="p1", mode=Mode.DIFF, timestamp="t1")
         assistant_message = AssistantChatMessage(
-            role="assistant",
             content="File: file.py\n<<<<<<< SEARCH\nold line\n=======\nnew line\n>>>>>>> REPLACE",
             mode=Mode.DIFF,
             model="test-model",
@@ -236,27 +235,24 @@ def test_last_can_access_pair_before_active_window(tmp_path: Path) -> None:
     # GIVEN a session with 3 pairs and an active window starting at pair 1
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         history = [
-            UserChatMessage(role="user", content="prompt 0", mode=Mode.CONVERSATION, timestamp="t0"),
+            UserChatMessage(content="prompt 0", mode=Mode.CONVERSATION, timestamp="t0"),
             AssistantChatMessage(
-                role="assistant",
                 content="response 0",
                 mode=Mode.CONVERSATION,
                 timestamp="t0",
                 model="test",
                 duration_ms=1,
             ),
-            UserChatMessage(role="user", content="prompt 1", mode=Mode.CONVERSATION, timestamp="t1"),
+            UserChatMessage(content="prompt 1", mode=Mode.CONVERSATION, timestamp="t1"),
             AssistantChatMessage(
-                role="assistant",
                 content="response 1",
                 mode=Mode.CONVERSATION,
                 timestamp="t1",
                 model="test",
                 duration_ms=1,
             ),
-            UserChatMessage(role="user", content="prompt 2", mode=Mode.CONVERSATION, timestamp="t2"),
+            UserChatMessage(content="prompt 2", mode=Mode.CONVERSATION, timestamp="t2"),
             AssistantChatMessage(
-                role="assistant",
                 content="response 2",
                 mode=Mode.CONVERSATION,
                 timestamp="t2",

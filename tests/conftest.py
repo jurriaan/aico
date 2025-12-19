@@ -20,7 +20,6 @@ def session_with_two_pairs(tmp_path: Path) -> Iterator[Path]:
         for i in range(2):
             history.append(
                 UserChatMessage(
-                    role="user",
                     content=f"user prompt {i}",
                     mode=Mode.CONVERSATION,
                     timestamp=f"ts{i}",
@@ -28,7 +27,6 @@ def session_with_two_pairs(tmp_path: Path) -> Iterator[Path]:
             )
             history.append(
                 AssistantChatMessage(
-                    role="assistant",
                     content=f"assistant response {i}",
                     mode=Mode.CONVERSATION,
                     timestamp=f"ts{i}",
@@ -52,7 +50,6 @@ def session_with_excluded_pairs(tmp_path: Path) -> Iterator[Path]:
         for i in range(2):
             history.append(
                 UserChatMessage(
-                    role="user",
                     content=f"user prompt {i}",
                     mode=Mode.CONVERSATION,
                     timestamp=f"ts{i}",
@@ -60,7 +57,6 @@ def session_with_excluded_pairs(tmp_path: Path) -> Iterator[Path]:
             )
             history.append(
                 AssistantChatMessage(
-                    role="assistant",
                     content=f"assistant response {i}",
                     mode=Mode.CONVERSATION,
                     timestamp=f"ts{i}",

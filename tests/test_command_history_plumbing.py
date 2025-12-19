@@ -17,9 +17,8 @@ def test_history_splice_inserts_correctly(tmp_path: Path) -> None:
     # GIVEN a shared session with 2 pairs
     history: list[ChatMessageHistoryItem] = [
         # Pair 0
-        UserChatMessage(role="user", content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
+        UserChatMessage(content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
         AssistantChatMessage(
-            role="assistant",
             content="a0",
             mode=Mode.CONVERSATION,
             timestamp="t0",
@@ -27,9 +26,8 @@ def test_history_splice_inserts_correctly(tmp_path: Path) -> None:
             duration_ms=1,
         ),
         # Pair 1
-        UserChatMessage(role="user", content="u1", mode=Mode.CONVERSATION, timestamp="t1"),
+        UserChatMessage(content="u1", mode=Mode.CONVERSATION, timestamp="t1"),
         AssistantChatMessage(
-            role="assistant",
             content="a1",
             mode=Mode.CONVERSATION,
             timestamp="t1",
@@ -85,9 +83,8 @@ def test_history_splice_fails_invalid_index(tmp_path: Path) -> None:
         SessionData(
             model="m",
             chat_history=[
-                UserChatMessage(role="user", content="u", mode=Mode.CONVERSATION, timestamp="ts"),
+                UserChatMessage(content="u", mode=Mode.CONVERSATION, timestamp="ts"),
                 AssistantChatMessage(
-                    role="assistant",
                     content="a",
                     mode=Mode.CONVERSATION,
                     timestamp="ts",
@@ -174,18 +171,12 @@ def test_history_splice_validates_assistant_role(tmp_path: Path) -> None:
 def test_history_splice_shifts_metadata_pointers(tmp_path: Path) -> None:
     # GIVEN a shared session with 3 pairs
     history: list[ChatMessageHistoryItem] = [
-        UserChatMessage(role="user", content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
-        AssistantChatMessage(
-            role="assistant", content="a0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=0
-        ),
-        UserChatMessage(role="user", content="u1", mode=Mode.CONVERSATION, timestamp="t1"),
-        AssistantChatMessage(
-            role="assistant", content="a1", mode=Mode.CONVERSATION, timestamp="t1", model="m", duration_ms=0
-        ),
-        UserChatMessage(role="user", content="u2", mode=Mode.CONVERSATION, timestamp="t2"),
-        AssistantChatMessage(
-            role="assistant", content="a2", mode=Mode.CONVERSATION, timestamp="t2", model="m", duration_ms=0
-        ),
+        UserChatMessage(content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
+        AssistantChatMessage(content="a0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=0),
+        UserChatMessage(content="u1", mode=Mode.CONVERSATION, timestamp="t1"),
+        AssistantChatMessage(content="a1", mode=Mode.CONVERSATION, timestamp="t1", model="m", duration_ms=0),
+        UserChatMessage(content="u2", mode=Mode.CONVERSATION, timestamp="t2"),
+        AssistantChatMessage(content="a2", mode=Mode.CONVERSATION, timestamp="t2", model="m", duration_ms=0),
     ]
     init_shared_session(tmp_path, SessionData(model="test", chat_history=history))
 
@@ -215,18 +206,12 @@ def test_history_splice_shifts_metadata_pointers(tmp_path: Path) -> None:
 def test_history_splice_preserves_pointers_before_splice_index(tmp_path: Path) -> None:
     # GIVEN a shared session with 3 pairs
     history: list[ChatMessageHistoryItem] = [
-        UserChatMessage(role="user", content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
-        AssistantChatMessage(
-            role="assistant", content="a0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=0
-        ),
-        UserChatMessage(role="user", content="u1", mode=Mode.CONVERSATION, timestamp="t1"),
-        AssistantChatMessage(
-            role="assistant", content="a1", mode=Mode.CONVERSATION, timestamp="t1", model="m", duration_ms=0
-        ),
-        UserChatMessage(role="user", content="u2", mode=Mode.CONVERSATION, timestamp="t2"),
-        AssistantChatMessage(
-            role="assistant", content="a2", mode=Mode.CONVERSATION, timestamp="t2", model="m", duration_ms=0
-        ),
+        UserChatMessage(content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
+        AssistantChatMessage(content="a0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=0),
+        UserChatMessage(content="u1", mode=Mode.CONVERSATION, timestamp="t1"),
+        AssistantChatMessage(content="a1", mode=Mode.CONVERSATION, timestamp="t1", model="m", duration_ms=0),
+        UserChatMessage(content="u2", mode=Mode.CONVERSATION, timestamp="t2"),
+        AssistantChatMessage(content="a2", mode=Mode.CONVERSATION, timestamp="t2", model="m", duration_ms=0),
     ]
     init_shared_session(tmp_path, SessionData(model="test", chat_history=history))
 

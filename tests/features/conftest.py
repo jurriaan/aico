@@ -154,9 +154,8 @@ def _add_pair_to_history(
         session_data = from_json(SessionData, session_file.read_text())
         session_data.chat_history.extend(
             [
-                UserChatMessage(role="user", content=user_content, mode=Mode.CONVERSATION, timestamp="t1"),
+                UserChatMessage(content=user_content, mode=Mode.CONVERSATION, timestamp="t1"),
                 AssistantChatMessage(
-                    role="assistant",
                     content=assistant_content,
                     mode=Mode.CONVERSATION,
                     timestamp="t1",
@@ -208,7 +207,7 @@ def given_llm_will_stream_response(mocker: MockerFixture, docstring: str) -> Non
 
     mock_provider.process_chunk.side_effect = mock_process_chunk
 
-    def response_generator() -> Generator[Any, None, None]:
+    def response_generator() -> Generator[Any]:
         chunk_size = 10
         response_text = docstring
         for i in range(0, len(response_text), chunk_size):

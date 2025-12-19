@@ -1,9 +1,10 @@
 # pyright: standard
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Literal
+
+from msgspec import Struct, field
 
 from aico.models import (
     AssistantChatMessage,
@@ -16,8 +17,7 @@ from aico.serialization import from_json, to_json
 SHARD_SIZE = 10_000
 
 
-@dataclass(slots=True, frozen=True)
-class HistoryRecord:
+class HistoryRecord(Struct, frozen=True):
     """
     Immutable representation of a single message (user or assistant).
 
@@ -79,8 +79,7 @@ class HistoryRecord:
         )
 
 
-@dataclass(slots=True)
-class SessionView:
+class SessionView(Struct):
     """
     Lightweight view/branch descriptor referencing global message indices.
 

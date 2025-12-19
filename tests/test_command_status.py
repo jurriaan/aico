@@ -55,13 +55,11 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
             context_files=["file1.py"],
             chat_history=[
                 UserChatMessage(
-                    role="user",
                     content="message 1",
                     mode=Mode.CONVERSATION,
                     timestamp="ts1",
                 ),
                 AssistantChatMessage(
-                    role="assistant",
                     content="response 1",
                     mode=Mode.CONVERSATION,
                     timestamp="ts1",
@@ -165,18 +163,16 @@ def test_status_omits_excluded_messages(tmp_path: Path, mocker) -> None:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
         history = [
-            UserChatMessage(role="user", content="active message", mode=Mode.CONVERSATION, timestamp="t1"),
+            UserChatMessage(content="active message", mode=Mode.CONVERSATION, timestamp="t1"),
             AssistantChatMessage(
-                role="assistant",
                 content="active resp",
                 mode=Mode.CONVERSATION,
                 timestamp="t2",
                 model="m",
                 duration_ms=1,
             ),
-            UserChatMessage(role="user", content="excluded message", mode=Mode.CONVERSATION, timestamp="t3"),
+            UserChatMessage(content="excluded message", mode=Mode.CONVERSATION, timestamp="t3"),
             AssistantChatMessage(
-                role="assistant",
                 content="excluded resp",
                 mode=Mode.CONVERSATION,
                 timestamp="t3",
@@ -233,17 +229,12 @@ def test_status_history_summary_logic(tmp_path: Path, mocker) -> None:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
         history = [
-            UserChatMessage(role="user", content="msg 0", mode=Mode.CONVERSATION, timestamp="t0"),
+            UserChatMessage(content="msg 0", mode=Mode.CONVERSATION, timestamp="t0"),
+            AssistantChatMessage(content="resp 0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=1),
+            UserChatMessage(content="msg 1", mode=Mode.CONVERSATION, timestamp="t1"),
+            AssistantChatMessage(content="resp 1", mode=Mode.CONVERSATION, timestamp="t1", model="m", duration_ms=1),
+            UserChatMessage(content="msg 2", mode=Mode.CONVERSATION, timestamp="t2"),
             AssistantChatMessage(
-                role="assistant", content="resp 0", mode=Mode.CONVERSATION, timestamp="t0", model="m", duration_ms=1
-            ),
-            UserChatMessage(role="user", content="msg 1", mode=Mode.CONVERSATION, timestamp="t1"),
-            AssistantChatMessage(
-                role="assistant", content="resp 1", mode=Mode.CONVERSATION, timestamp="t1", model="m", duration_ms=1
-            ),
-            UserChatMessage(role="user", content="msg 2", mode=Mode.CONVERSATION, timestamp="t2"),
-            AssistantChatMessage(
-                role="assistant",
                 content="resp 2",
                 mode=Mode.CONVERSATION,
                 timestamp="t2",
@@ -278,7 +269,7 @@ def test_status_handles_dangling_messages(tmp_path: Path, mocker) -> None:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
         history: list[ChatMessageHistoryItem] = [
-            UserChatMessage(role="user", content="dangling", mode=Mode.CONVERSATION, timestamp="t1")
+            UserChatMessage(content="dangling", mode=Mode.CONVERSATION, timestamp="t1")
         ]
         session_data = SessionData(model="test-model", chat_history=history, context_files=[])
         save_session(session_dir / SESSION_FILE_NAME, session_data)

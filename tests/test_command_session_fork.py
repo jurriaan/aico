@@ -139,9 +139,8 @@ def test_session_fork_preserves_exclusions(tmp_path: Path) -> None:
     # GIVEN a session with 3 pairs, where pair 1 (the middle one) is excluded
     history: list[ChatMessageHistoryItem] = [
         # Pair 0
-        UserChatMessage(role="user", content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
+        UserChatMessage(content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
         AssistantChatMessage(
-            role="assistant",
             content="a0",
             mode=Mode.CONVERSATION,
             timestamp="t0",
@@ -149,9 +148,8 @@ def test_session_fork_preserves_exclusions(tmp_path: Path) -> None:
             duration_ms=1,
         ),
         # Pair 1 (excluded)
-        UserChatMessage(role="user", content="u1", mode=Mode.CONVERSATION, timestamp="t1"),
+        UserChatMessage(content="u1", mode=Mode.CONVERSATION, timestamp="t1"),
         AssistantChatMessage(
-            role="assistant",
             content="a1",
             mode=Mode.CONVERSATION,
             timestamp="t1",
@@ -159,9 +157,8 @@ def test_session_fork_preserves_exclusions(tmp_path: Path) -> None:
             duration_ms=1,
         ),
         # Pair 2
-        UserChatMessage(role="user", content="u2", mode=Mode.CONVERSATION, timestamp="t2"),
+        UserChatMessage(content="u2", mode=Mode.CONVERSATION, timestamp="t2"),
         AssistantChatMessage(
-            role="assistant",
             content="a2",
             mode=Mode.CONVERSATION,
             timestamp="t2",
@@ -193,9 +190,8 @@ def test_session_fork_truncates_exclusions(tmp_path: Path) -> None:
     # GIVEN a session with 3 pairs, where pairs 0 and 2 are excluded
     history: list[ChatMessageHistoryItem] = [
         # Pair 0 (excluded)
-        UserChatMessage(role="user", content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
+        UserChatMessage(content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
         AssistantChatMessage(
-            role="assistant",
             content="a0",
             mode=Mode.CONVERSATION,
             timestamp="t0",
@@ -203,9 +199,8 @@ def test_session_fork_truncates_exclusions(tmp_path: Path) -> None:
             duration_ms=1,
         ),
         # Pair 1
-        UserChatMessage(role="user", content="u1", mode=Mode.CONVERSATION, timestamp="t1"),
+        UserChatMessage(content="u1", mode=Mode.CONVERSATION, timestamp="t1"),
         AssistantChatMessage(
-            role="assistant",
             content="a1",
             mode=Mode.CONVERSATION,
             timestamp="t1",
@@ -213,9 +208,8 @@ def test_session_fork_truncates_exclusions(tmp_path: Path) -> None:
             duration_ms=1,
         ),
         # Pair 2 (excluded)
-        UserChatMessage(role="user", content="u2", mode=Mode.CONVERSATION, timestamp="t2"),
+        UserChatMessage(content="u2", mode=Mode.CONVERSATION, timestamp="t2"),
         AssistantChatMessage(
-            role="assistant",
             content="a2",
             mode=Mode.CONVERSATION,
             timestamp="t2",

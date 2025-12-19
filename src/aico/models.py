@@ -1,10 +1,10 @@
 from collections.abc import Mapping
-from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Literal, TypedDict
 
 import msgspec
+from msgspec import Struct, field
 
 
 class Mode(str, Enum):
@@ -18,23 +18,26 @@ class SessionPointer(TypedDict):
     path: str
 
 
-@dataclass(slots=True, frozen=True)
-class BasicUserChatMessage:
+class BasicUserChatMessage(Struct, frozen=True, tag="user", tag_field="role"):
     content: str
-    role: Literal["user"] = "user"
+
+    @property
+    def role(self) -> Literal["user"]:
+        return "user"
 
 
-@dataclass(slots=True, frozen=True)
-class BasicAssistantChatMessage:
+class BasicAssistantChatMessage(Struct, frozen=True, tag="assistant", tag_field="role"):
     content: str
-    role: Literal["assistant"] = "assistant"
+
+    @property
+    def role(self) -> Literal["assistant"]:
+        return "assistant"
 
 
 type AlignmentMessage = BasicUserChatMessage | BasicAssistantChatMessage
 
 
-@dataclass(slots=True, frozen=True)
-class TokenUsage:
+class TokenUsage(Struct, frozen=True):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
@@ -48,14 +51,12 @@ class DisplayItem(TypedDict):
     content: str
 
 
-@dataclass(slots=True, frozen=True)
-class DerivedContent:
+class DerivedContent(Struct, frozen=True):
     unified_diff: str | None = None
     display_content: list[DisplayItem] | str | None = None
 
 
-@dataclass(slots=True)
-class TokenInfo:
+class TokenInfo(Struct):
     description: str
     tokens: int
     cost: float | None = None
@@ -65,19 +66,19 @@ class ContextFilesResponse(TypedDict):
     context_files: list[str]
 
 
-@dataclass(slots=True, frozen=True)
-class UserChatMessage:
-    role: Literal["user"]
+class UserChatMessage(Struct, frozen=True, tag="user", tag_field="role"):
     content: str
     mode: Mode
     timestamp: str
     piped_content: str | None = None
     passthrough: bool = False
 
+    @property
+    def role(self) -> Literal["user"]:
+        return "user"
 
-@dataclass(slots=True, frozen=True)
-class AssistantChatMessage:
-    role: Literal["assistant"]
+
+class AssistantChatMessage(Struct, frozen=True, tag="assistant", tag_field="role"):
     content: str
     mode: Mode
     timestamp: str
@@ -87,18 +88,20 @@ class AssistantChatMessage:
     token_usage: TokenUsage | None = None
     cost: float | None = None
 
+    @property
+    def role(self) -> Literal["assistant"]:
+        return "assistant"
+
 
 type ChatMessageHistoryItem = UserChatMessage | AssistantChatMessage
 
 
-@dataclass(slots=True, frozen=True)
-class MessagePairIndices:
+class MessagePairIndices(Struct, frozen=True):
     user_index: int
     assistant_index: int
 
 
-@dataclass(slots=True)
-class SessionData:
+class SessionData(Struct):
     model: str
     context_files: list[str] = field(default_factory=list)
     chat_history: list[ChatMessageHistoryItem] = field(default_factory=list)
@@ -107,34 +110,29 @@ class SessionData:
     offset: int = 0
 
 
-@dataclass(slots=True, frozen=True)
-class ContextFile:
+class ContextFile(Struct, frozen=True):
     path: str
     content: str
     mtime: float
 
 
-@dataclass(slots=True, frozen=True)
-class AIPatch:
+class AIPatch(Struct, frozen=True):
     llm_file_path: str
     search_content: str
     replace_content: str
 
 
-@dataclass(slots=True, frozen=True)
-class ProcessedDiffBlock:
+class ProcessedDiffBlock(Struct, frozen=True):
     llm_file_path: str
     unified_diff: str
 
 
-@dataclass(slots=True, frozen=True)
-class ProcessedPatchResult:
+class ProcessedPatchResult(Struct, frozen=True):
     new_content: str
     diff_block: ProcessedDiffBlock
 
 
-@dataclass(slots=True, frozen=True)
-class PatchApplicationResult:
+class PatchApplicationResult(Struct, frozen=True):
     """The result of applying all patches from an LLM response."""
 
     post_patch_contents: "FileContents"
@@ -142,25 +140,21 @@ class PatchApplicationResult:
     warnings: list["WarningMessage"]
 
 
-@dataclass(slots=True, frozen=True)
-class ResolvedFilePath:
+class ResolvedFilePath(Struct, frozen=True):
     path: str | None
     warning: str | None
     fallback_content: str | None
 
 
-@dataclass(slots=True, frozen=True)
-class WarningMessage:
+class WarningMessage(Struct, frozen=True):
     text: str
 
 
-@dataclass(slots=True, frozen=True)
-class FileHeader:
+class FileHeader(Struct, frozen=True):
     llm_file_path: str
 
 
-@dataclass(slots=True, frozen=True)
-class UnparsedBlock:
+class UnparsedBlock(Struct, frozen=True):
     text: str
 
 
@@ -201,8 +195,7 @@ class ModelInfo(msgspec.Struct, frozen=True):
     output_cost_per_token: float | None = None
 
 
-@dataclass(slots=True, frozen=True)
-class InteractionResult:
+class InteractionResult(Struct, frozen=True):
     content: str
     display_items: list[DisplayItem] | None
     token_usage: TokenUsage | None

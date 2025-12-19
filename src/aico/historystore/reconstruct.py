@@ -19,7 +19,6 @@ from .models import HistoryRecord, SessionView
 
 def deserialize_user_record(rec: HistoryRecord) -> UserChatMessage:
     return UserChatMessage(
-        role="user",
         content=rec.content,
         mode=rec.mode,
         timestamp=rec.timestamp,
@@ -41,7 +40,6 @@ def deserialize_assistant_record(
         derived_obj = rec.derived if isinstance(rec.derived, DerivedContent) else convert(rec.derived, DerivedContent)
 
     return AssistantChatMessage(
-        role="assistant",
         content=rec.content,
         mode=rec.mode,
         timestamp=rec.timestamp,

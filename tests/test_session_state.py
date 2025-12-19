@@ -5,10 +5,8 @@ from aico.session import active_message_indices
 
 def _make_msg(role: str, content: str) -> UserChatMessage | AssistantChatMessage:
     if role == "user":
-        return UserChatMessage(role="user", content=content, mode=Mode.CONVERSATION, timestamp="ts")
-    return AssistantChatMessage(
-        role="assistant", content=content, mode=Mode.CONVERSATION, timestamp="ts", model="m", duration_ms=0
-    )
+        return UserChatMessage(content=content, mode=Mode.CONVERSATION, timestamp="ts")
+    return AssistantChatMessage(content=content, mode=Mode.CONVERSATION, timestamp="ts", model="m", duration_ms=0)
 
 
 def test_active_message_indices_shared_history_signal() -> None:
@@ -41,10 +39,8 @@ def test__get_active_history_filters_and_slices() -> None:
 
     def _make_msg(role: str, content: str) -> UserChatMessage | AssistantChatMessage:
         if role == "user":
-            return UserChatMessage(role="user", content=content, mode=Mode.RAW, timestamp="t")
-        return AssistantChatMessage(
-            role="assistant", content=content, mode=Mode.RAW, timestamp="t", model="m", duration_ms=0
-        )
+            return UserChatMessage(content=content, mode=Mode.RAW, timestamp="t")
+        return AssistantChatMessage(content=content, mode=Mode.RAW, timestamp="t", model="m", duration_ms=0)
 
     history = [
         _make_msg("user", "msg 0 - pair 0, inactive"),

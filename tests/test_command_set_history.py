@@ -29,10 +29,9 @@ def test_set_history_with_negative_index_argument(tmp_path: Path) -> None:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         history: list[ChatMessageHistoryItem] = []
         for i in range(5):
-            history.append(UserChatMessage(role="user", content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
+            history.append(UserChatMessage(content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
             history.append(
                 AssistantChatMessage(
-                    role="assistant",
                     content=f"r{i}",
                     mode=Mode.CONVERSATION,
                     timestamp=f"t{i}",
@@ -63,10 +62,9 @@ def test_set_history_with_positive_pair_index(tmp_path: Path) -> None:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         history: list[ChatMessageHistoryItem] = []
         for i in range(3):
-            history.append(UserChatMessage(role="user", content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
+            history.append(UserChatMessage(content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
             history.append(
                 AssistantChatMessage(
-                    role="assistant",
                     content=f"r{i}",
                     mode=Mode.CONVERSATION,
                     timestamp=f"t{i}",
@@ -96,10 +94,9 @@ def test_set_history_to_clear_context(tmp_path: Path) -> None:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         history: list[ChatMessageHistoryItem] = []
         for i in range(2):
-            history.append(UserChatMessage(role="user", content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
+            history.append(UserChatMessage(content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
             history.append(
                 AssistantChatMessage(
-                    role="assistant",
                     content=f"r{i}",
                     mode=Mode.CONVERSATION,
                     timestamp=f"t{i}",
@@ -143,10 +140,9 @@ def test_set_history_fails_with_invalid_index(tmp_path: Path, invalid_input: str
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         history: list[ChatMessageHistoryItem] = []
         for i in range(3):
-            history.append(UserChatMessage(role="user", content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
+            history.append(UserChatMessage(content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
             history.append(
                 AssistantChatMessage(
-                    role="assistant",
                     content=f"r{i}",
                     mode=Mode.CONVERSATION,
                     timestamp=f"t{i}",
@@ -189,13 +185,10 @@ def test_set_history_with_zero_sets_index_to_zero(tmp_path: Path) -> None:
         history: list[ChatMessageHistoryItem] = []
         for i in range(5):
             history.append(
-                UserChatMessage(
-                    role="user", content=f"p{i}", mode=Mode.CONVERSATION, timestamp=datetime.now(UTC).isoformat()
-                )
+                UserChatMessage(content=f"p{i}", mode=Mode.CONVERSATION, timestamp=datetime.now(UTC).isoformat())
             )
             history.append(
                 AssistantChatMessage(
-                    role="assistant",
                     content=f"r{i}",
                     mode=Mode.CONVERSATION,
                     timestamp=datetime.now(UTC).isoformat(),
@@ -233,10 +226,9 @@ def test_set_history_with_clear_keyword(tmp_path: Path) -> None:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         history: list[ChatMessageHistoryItem] = []
         for i in range(2):
-            history.append(UserChatMessage(role="user", content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
+            history.append(UserChatMessage(content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
             history.append(
                 AssistantChatMessage(
-                    role="assistant",
                     content=f"r{i}",
                     mode=Mode.CONVERSATION,
                     timestamp=f"t{i}",
@@ -266,10 +258,9 @@ def test_set_history_can_move_pointer_backwards(tmp_path: Path) -> None:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         history: list[ChatMessageHistoryItem] = []
         for i in range(3):
-            history.append(UserChatMessage(role="user", content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
+            history.append(UserChatMessage(content=f"p{i}", mode=Mode.CONVERSATION, timestamp=f"t{i}"))
             history.append(
                 AssistantChatMessage(
-                    role="assistant",
                     content=f"r{i}",
                     mode=Mode.CONVERSATION,
                     timestamp=f"t{i}",

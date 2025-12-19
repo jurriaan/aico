@@ -17,16 +17,15 @@ def test_interleaved_chronology() -> None:
     # File B (T=25) -> Floating.
     # Msg 1 (T=10). Msg 2 (T=20). Msg 3 (T=30).
     history = [
-        UserChatMessage(role="user", content="Msg 1", mode=Mode.CONVERSATION, timestamp="2023-01-01T10:00:10Z"),
+        UserChatMessage(content="Msg 1", mode=Mode.CONVERSATION, timestamp="2023-01-01T10:00:10Z"),
         AssistantChatMessage(
-            role="assistant",
             content="Msg 2",
             mode=Mode.CONVERSATION,
             timestamp="2023-01-01T10:00:20Z",
             model="test",
             duration_ms=0,
         ),
-        UserChatMessage(role="user", content="Msg 3", mode=Mode.CONVERSATION, timestamp="2023-01-01T10:00:30Z"),
+        UserChatMessage(content="Msg 3", mode=Mode.CONVERSATION, timestamp="2023-01-01T10:00:30Z"),
     ]
 
     # File A: Modified before history starts (T=5)

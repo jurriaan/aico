@@ -84,7 +84,7 @@ class AliasGroup(TyperGroup):
         return default_name
 
 
-app = typer.Typer(cls=AliasGroup, no_args_is_help=True)
+app = typer.Typer(cls=AliasGroup, no_args_is_help=True, pretty_exceptions_enable=False)
 
 
 @app.command("status")
