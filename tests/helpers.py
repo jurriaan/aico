@@ -17,7 +17,7 @@ from aico.historystore import (
     switch_active_pointer,
 )
 from aico.historystore.models import HistoryRecord
-from aico.llm.providers.base import NormalizedChunk
+from aico.llm.providers.base import LLMRequestConfig, NormalizedChunk
 from aico.models import AssistantChatMessage, SessionData, TokenUsage, UserChatMessage
 
 
@@ -170,9 +170,12 @@ def setup_test_session_and_llm(
     # Mock the provider factory
     mock_provider = mocker.MagicMock()
     mock_client = mocker.MagicMock()
-    mock_provider.configure_request.return_value = (mock_client, "test-model", {})
+    mock_provider.configure_request.return_value = LLMRequestConfig(
+        client=mock_client, model_id="test-model", extra_kwargs={}
+    )
     mock_get_provider = mocker.patch(
-        "aico.llm.executor.get_provider_for_model", return_value=(mock_provider, "test-model")
+        "aico.llm.executor.get_provider_for_model",
+        return_value=(mock_provider, "test-model", {}),
     )
 
     # Mock process_chunk to handle the raw chunks and return NormalizedChunk

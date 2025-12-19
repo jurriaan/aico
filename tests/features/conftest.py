@@ -23,7 +23,7 @@ from aico.consts import SESSION_FILE_NAME
 from aico.history_utils import find_message_pairs
 from aico.historystore import HistoryRecord, HistoryStore, append_pair_to_view, load_view, save_view
 from aico.historystore.pointer import load_pointer
-from aico.llm.providers.base import NormalizedChunk
+from aico.llm.providers.base import LLMRequestConfig, NormalizedChunk
 from aico.main import app
 from aico.models import (
     AssistantChatMessage,
@@ -197,8 +197,13 @@ def given_history_with_specific_content(
 def given_llm_will_stream_response(mocker: MockerFixture, docstring: str) -> None:
     mock_provider = mocker.MagicMock()
     mock_client = mocker.MagicMock()
-    mock_provider.configure_request.return_value = (mock_client, "test-model", {})
-    mocker.patch("aico.llm.executor.get_provider_for_model", return_value=(mock_provider, "test-model"))
+    mock_provider.configure_request.return_value = LLMRequestConfig(
+        client=mock_client, model_id="test-model", extra_kwargs={}
+    )
+    mocker.patch(
+        "aico.llm.executor.get_provider_for_model",
+        return_value=(mock_provider, "test-model", {}),
+    )
 
     def mock_process_chunk(chunk):
         return NormalizedChunk(content=chunk.choices[0].delta.content if chunk.choices else None)

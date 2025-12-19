@@ -326,12 +326,7 @@ def test_flexible_patching_preserves_internal_relative_indentation(tmp_path: Pat
     minimum indentation as the base.
     """
     # GIVEN original content
-    original_contents = {
-        "table.md": (
-            "  Line 1\n"
-            "    Subline 2\n"
-        )
-    }
+    original_contents = {"table.md": ("  Line 1\n    Subline 2\n")}
 
     # AND an LLM response where the SEARCH block has different indentation
     # AND the REPLACE block is shifted right but keeps its internal structure
@@ -362,16 +357,11 @@ def test_flexible_patching_preserves_internal_relative_indentation(tmp_path: Pat
 
 def test_flexible_patching_reproduction_uneven_indentation(tmp_path: Path) -> None:
     """
-    Forces the flexible patcher to handle a block where the first line 
+    Forces the flexible patcher to handle a block where the first line
     has a different indentation than the common denominator of the block.
     """
     # GIVEN original content
-    original_contents = {
-        "file.py": (
-            "    def func():\n"
-            "        pass\n"
-        )
-    }
+    original_contents = {"file.py": ("    def func():\n        pass\n")}
 
     # AND an LLM response with a whitespace mismatch in SEARCH (forcing flexible patch)
     # AND a REPLACE block where the first line is indented MORE than the second line.
@@ -380,7 +370,7 @@ def test_flexible_patching_reproduction_uneven_indentation(tmp_path: Path) -> No
         "<<<<<<< SEARCH\ndef func():\n    pass\n"
         "=======\n"
         "          def renamed():\n"  # 10 spaces
-        "    pass\n"                 # 4 spaces
+        "    pass\n"  # 4 spaces
         ">>>>>>> REPLACE"
     )
 
@@ -388,10 +378,10 @@ def test_flexible_patching_reproduction_uneven_indentation(tmp_path: Path) -> No
     diff = generate_unified_diff(original_contents, llm_response, tmp_path)
 
     # THEN the patch should succeed and preserve the relative structure.
-    # The original base was 4 spaces. 
-    # Logic: 
+    # The original base was 4 spaces.
+    # Logic:
     # Replace Min Indent = 4 spaces.
-    # Line 1 (10 spaces) -> relative +6. 
+    # Line 1 (10 spaces) -> relative +6.
     # Line 1 Result: Original Base (4) + 6 = 10 spaces.
     # Line 2 (4 spaces) -> relative +0.
     # Line 2 Result: Original Base (4) + 0 = 4 spaces.

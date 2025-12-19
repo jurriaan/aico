@@ -5,7 +5,7 @@ from typing import Any
 from unittest import mock
 
 from aico.llm.executor import _handle_unified_streaming, extract_reasoning_header
-from aico.llm.providers.base import LLMProvider, NormalizedChunk
+from aico.llm.providers.base import LLMProvider, LLMRequestConfig, NormalizedChunk
 from aico.models import TokenUsage
 
 
@@ -42,7 +42,9 @@ def test_handle_unified_streaming_openai(tmp_path: Path):
     # GIVEN a mock provider
     mock_provider = mock.MagicMock(spec=LLMProvider)
     mock_client = mock.MagicMock()
-    mock_provider.configure_request.return_value = (mock_client, "gpt-4o", {})
+    mock_provider.configure_request.return_value = LLMRequestConfig(
+        client=mock_client, model_id="gpt-4o", extra_kwargs={}
+    )
 
     mock_stream = [
         create_mock_chunk("Hello "),
@@ -58,7 +60,7 @@ def test_handle_unified_streaming_openai(tmp_path: Path):
     ]
 
     # WHEN
-    content, _, usage, cost, _ = _handle_unified_streaming(mock_provider, "gpt-4o", {}, [], tmp_path)
+    content, _, usage, cost, _ = _handle_unified_streaming(mock_provider, "gpt-4o", {}, {}, [], tmp_path)
 
     # THEN
     assert content == "Hello World"
@@ -71,10 +73,10 @@ def test_handle_unified_streaming_openrouter(tmp_path: Path):
     # GIVEN a mock provider
     mock_provider = mock.MagicMock(spec=LLMProvider)
     mock_client = mock.MagicMock()
-    mock_provider.configure_request.return_value = (
-        mock_client,
-        "claude-3-opus",
-        {"extra_body": {"usage": {"include": True}}},
+    mock_provider.configure_request.return_value = LLMRequestConfig(
+        client=mock_client,
+        model_id="claude-3-opus",
+        extra_kwargs={"extra_body": {"usage": {"include": True}}},
     )
 
     mock_stream = [
@@ -89,7 +91,7 @@ def test_handle_unified_streaming_openrouter(tmp_path: Path):
     ]
 
     # WHEN
-    content, _, usage, cost, _ = _handle_unified_streaming(mock_provider, "claude-3-opus", {}, [], tmp_path)
+    content, _, usage, cost, _ = _handle_unified_streaming(mock_provider, "claude-3-opus", {}, {}, [], tmp_path)
 
     # THEN
     assert content == "Test"

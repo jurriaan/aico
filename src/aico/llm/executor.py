@@ -1,5 +1,6 @@
 import math
 import time
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -183,6 +184,7 @@ def extract_reasoning_header(reasoning_buffer: str) -> str | None:
 def _handle_unified_streaming(
     provider: LLMProvider,
     clean_model_id: str,
+    extra_params: Mapping[str, str],
     original_file_contents: FileContents,
     messages: list[LLMChatMessage],
     session_root: Path,
@@ -198,7 +200,8 @@ def _handle_unified_streaming(
     live: Live | None = None
 
     # Create configured client and get resolved model/params
-    client, actual_model, extra_kwargs = provider.configure_request(clean_model_id)
+    config = provider.configure_request(clean_model_id, extra_params)
+    client, actual_model, extra_kwargs = config.client, config.model_id, config.extra_kwargs
 
     # OpenAI native usage requirement
     stream_options: ChatCompletionStreamOptionsParam = {"include_usage": True}
@@ -291,7 +294,7 @@ def execute_interaction(
     """
     context = build_active_context(session_data)
     model_name = model_override or context["model"]
-    provider, clean_model_id = get_provider_for_model(model_name)
+    provider, clean_model_id, extra_params = get_provider_for_model(model_name)
 
     if passthrough:
         file_metadata: MetadataFileContents = {}
@@ -313,7 +316,7 @@ def execute_interaction(
 
     start_time = time.monotonic()
     llm_response_content, display_items, token_usage, exact_cost, unified_diff = _handle_unified_streaming(
-        provider, clean_model_id, original_file_contents, messages, session_root
+        provider, clean_model_id, extra_params, original_file_contents, messages, session_root
     )
     duration_ms = int((time.monotonic() - start_time) * 1000)
 

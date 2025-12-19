@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -19,9 +20,19 @@ class NormalizedChunk:
     cost: float | None = None
 
 
+@dataclass(slots=True, frozen=True)
+class LLMRequestConfig:
+    client: OpenAI
+    model_id: str
+    extra_kwargs: dict[str, Any]  # pyright: ignore[reportExplicitAny]
+
+
+EMPTY_MAP: Mapping[str, str] = {}
+
+
 class LLMProvider(ABC):
     @abstractmethod
-    def configure_request(self, model_id: str) -> tuple[OpenAI, str, dict[str, Any]]:  # pyright: ignore[reportExplicitAny]
+    def configure_request(self, model_id: str, extra_params: Mapping[str, str] = EMPTY_MAP) -> LLMRequestConfig:
         """Returns the configured client, actual model name, and extra kwargs."""
         ...
 
