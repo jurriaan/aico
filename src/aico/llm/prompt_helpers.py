@@ -30,7 +30,7 @@ def reconstruct_historical_messages(
             case UserChatMessage(content=str(prompt)):
                 reconstructed_msg = {
                     "role": "user",
-                    "content": f"<prompt>\n{prompt}\n</prompt>",
+                    "content": f"{prompt}",
                 }
             case AssistantChatMessage(content=str(content)):
                 reconstructed_msg = {"role": "assistant", "content": content}

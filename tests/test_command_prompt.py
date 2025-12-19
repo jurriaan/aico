@@ -54,7 +54,7 @@ def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) ->
         mock_completion.assert_called_once()
         messages = mock_completion.call_args.kwargs["messages"]
         assert len(messages) == 6
-        assert "UPDATED CONTEXT" in messages[1]["content"]
+        assert "Ground Truth" in messages[1]["content"]
         assert messages[2]["content"] == "I have read and acknowledged this file state."
         assert "conversational assistant" in messages[3]["content"]
         assert '<file path="code.py">' in messages[1]["content"]
@@ -86,7 +86,7 @@ def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) ->
         mock_completion.assert_called_once()
         messages = mock_completion.call_args.kwargs["messages"]
         assert len(messages) == 6
-        assert "UPDATED CONTEXT" in messages[1]["content"]
+        assert "Ground Truth" in messages[1]["content"]
         assert messages[2]["content"] == "I have read and acknowledged this file state."
         assert "conversational assistant" in messages[3]["content"]
         assert '<file path="code.py">' in messages[1]["content"]
@@ -534,9 +534,9 @@ def test_prompt_with_excluded_history_omits_messages(tmp_path: Path, mocker: Moc
         messages = mock_completion.call_args.kwargs["messages"]
         assert len(messages) == 8  # sys, user1, asst1, user3, asst3, align_user, align_asst, user4
         user_prompts = [m["content"] for m in messages if m["role"] == "user"]
-        assert "<prompt>\nprompt 1\n</prompt>" in user_prompts
-        assert "<prompt>\nprompt 2\n</prompt>" not in user_prompts
-        assert "<prompt>\nprompt 3\n</prompt>" in user_prompts
+        assert "prompt 1" in user_prompts
+        assert "prompt 2" not in user_prompts
+        assert "prompt 3" in user_prompts
         assert user_prompts[-1] == "prompt 4"
 
 
