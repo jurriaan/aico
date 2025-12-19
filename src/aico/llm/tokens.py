@@ -67,6 +67,8 @@ def count_context_files_tokens(
         content = read_file_safe(file_path)
         if content is not None:
             wrapper = f'<file path="{file_path_str}">\n{content}\n</file>\n'
+            # Note: For cost estimation, we count using basic wrappers.
+            # Splice overhead (assistant acknowledgments) is accounted for in alignment tokens.
             tokens = count_tokens_for_messages(model, [{"role": "user", "content": wrapper}])
             file_infos.append(TokenInfo(description=file_path_str, tokens=tokens))
         else:

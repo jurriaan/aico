@@ -106,6 +106,13 @@ class SessionData:
 
 
 @dataclass(slots=True, frozen=True)
+class ContextFile:
+    path: str
+    content: str
+    mtime: float
+
+
+@dataclass(slots=True, frozen=True)
 class AIPatch:
     llm_file_path: str
     search_content: str
@@ -164,6 +171,7 @@ class LLMChatMessage(TypedDict):
 
 
 type FileContents = Mapping[str, str]
+type MetadataFileContents = Mapping[str, ContextFile]
 
 
 class ActiveContext(TypedDict):

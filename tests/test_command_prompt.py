@@ -54,11 +54,8 @@ def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) ->
         mock_completion.assert_called_once()
         messages = mock_completion.call_args.kwargs["messages"]
         assert len(messages) == 6
-        assert "This is the Ground Truth" in messages[1]["content"]
-        assert (
-            messages[2]["content"]
-            == "I have read the current file state. I will use this block as the ground truth for all code generation."
-        )
+        assert "UPDATED CONTEXT" in messages[1]["content"]
+        assert messages[2]["content"] == "I have read and acknowledged this file state."
         assert "conversational assistant" in messages[3]["content"]
         assert '<file path="code.py">' in messages[1]["content"]
         assert prompt_text in messages[-1]["content"]
@@ -89,11 +86,8 @@ def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) ->
         mock_completion.assert_called_once()
         messages = mock_completion.call_args.kwargs["messages"]
         assert len(messages) == 6
-        assert "This is the Ground Truth" in messages[1]["content"]
-        assert (
-            messages[2]["content"]
-            == "I have read the current file state. I will use this block as the ground truth for all code generation."
-        )
+        assert "UPDATED CONTEXT" in messages[1]["content"]
+        assert messages[2]["content"] == "I have read and acknowledged this file state."
         assert "conversational assistant" in messages[3]["content"]
         assert '<file path="code.py">' in messages[1]["content"]
         assert prompt_text in messages[-1]["content"]
@@ -484,7 +478,7 @@ def test_prompt_passthrough_mode_bypasses_context_and_formatting(tmp_path: Path,
         mock_completion, _ = helpers.setup_test_session_and_llm(
             runner, app, Path(td), mocker, "raw response", context_files={"file.py": "some content"}
         )
-        mock_build_contents = mocker.patch("aico.llm.executor.get_context_file_contents")
+        mock_build_contents = mocker.patch("aico.llm.executor.get_context_files_with_metadata")
 
         # WHEN `aico prompt --passthrough` is invoked
         result = runner.invoke(app, ["prompt", "--passthrough", prompt_text])

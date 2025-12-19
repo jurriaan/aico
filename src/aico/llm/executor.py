@@ -1,4 +1,6 @@
+import math
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -15,7 +17,7 @@ from aico.console import (
 from aico.diffing.stream_processor import (
     analyze_response,
 )
-from aico.fs import get_context_file_contents
+from aico.fs import get_context_files_with_metadata
 from aico.live_render import AicoLiveRender
 from aico.llm.prompt_helpers import reconstruct_historical_messages
 from aico.llm.providers.base import LLMProvider
@@ -26,6 +28,7 @@ from aico.models import (
     FileContents,
     InteractionResult,
     LLMChatMessage,
+    MetadataFileContents,
     Mode,
     SessionData,
     TokenUsage,
@@ -37,13 +40,29 @@ if TYPE_CHECKING:
     pass
 
 
+def _format_file_block(files: MetadataFileContents, intro_text: str) -> list[LLMChatMessage]:
+    """Helper to generate standard context blocks."""
+    if not files:
+        return []
+
+    xml_content = "<context>\n"
+    for path, meta in files.items():
+        xml_content += f'  <file path="{path}">\n{meta.content}\n</file>\n'
+    xml_content += "</context>\n"
+
+    return [
+        {"role": "user", "content": f"{intro_text}\n\n{xml_content}"},
+        {"role": "assistant", "content": "I have read and acknowledged this file state."},
+    ]
+
+
 def _build_messages(
     active_history: list[ChatMessageHistoryItem],
     system_prompt: str,
     prompt_text: str,
     piped_content: str | None,
     mode: Mode,
-    original_file_contents: FileContents,
+    file_metadata: MetadataFileContents,
     passthrough: bool,
     no_history: bool,
 ) -> list[LLMChatMessage]:
@@ -56,52 +75,89 @@ def _build_messages(
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
 
-    # --- 2. Context Injection (Ground Truth) ---
-    # We only do this if NOT in passthrough and if we actually have files.
-    if not passthrough and original_file_contents:
-        context_str = "<context>\n"
-        for relative_path_str, content in original_file_contents.items():
-            context_str += f'  <file path="{relative_path_str}">\n{content}\n</file>\n'
-        context_str += "</context>\n"
+    history_to_use = active_history if not no_history else []
 
-        # The wrapper that enforces "Ground Truth"
-        context_wrapper = (
-            "The following XML block contains the CURRENT contents of the files in this session. "
-            "This is the Ground Truth.\n\n"
-            "Always refer to this block for the latest code state. "
-            "If code blocks in the conversation history conflict with this block, ignore the history "
-            "and use this block.\n\n"
-            f"{context_str}"
+    if passthrough:
+        messages.extend(reconstruct_historical_messages(history_to_use))
+        user_prompt = (
+            (f"<stdin_content>\n{piped_content}\n</stdin_content>\n<prompt>\n{prompt_text}\n</prompt>")
+            if piped_content is not None
+            else f"{prompt_text}"
         )
+        messages.append({"role": "user", "content": user_prompt})
+        return messages
 
-        messages.append({"role": "user", "content": context_wrapper})
+    # --- 2. Chronological Context Calculations ---
+    def to_dt(iso_ts: str) -> datetime:
+        if iso_ts.endswith("Z"):
+            iso_ts = iso_ts[:-1] + "+00:00"
+        return datetime.fromisoformat(iso_ts)
 
-        # The Anchor to lock it in and maintain User/Assistant turn structure
-        messages.append(
-            {
-                "role": "assistant",
-                "content": "I have read the current file state. I will use this block as the ground truth "
-                + "for all code generation.",
-            }
-        )
+    # Horizon: Time of first message. If no history, we are at the start of time (everything is static).
+    # We use a far future horizon for fresh sessions to ensure mtime < horizon is always True.
+    horizon = to_dt(history_to_use[0].timestamp) if history_to_use else datetime(3000, 1, 1, tzinfo=UTC)
 
-    # --- 3. History Injection ---
-    history_to_use: list[ChatMessageHistoryItem] = [] if no_history else active_history
+    static_files: MetadataFileContents = {}
+    floating_files: MetadataFileContents = {}
 
-    # Inject alignment prompts
+    for path, meta in file_metadata.items():
+        # Ceil mtime to prevent ISO precision inaccuracies
+        file_time = datetime.fromtimestamp(math.ceil(meta.mtime), tz=UTC)
+        if file_time < horizon:
+            static_files[path] = meta
+        else:
+            floating_files[path] = meta
+
+    # --- 3. Determine Splice Point ---
+    # Default: Insert at the very end of history
+    splice_idx = len(history_to_use)
+
+    if floating_files:
+        # Event Horizon: The moment the code became valid
+        t_update = max(datetime.fromtimestamp(math.ceil(f.mtime), tz=UTC) for f in floating_files.values())
+
+        # Scan for the first message that happened *after* the update
+        for i, msg in enumerate(history_to_use):
+            if to_dt(msg.timestamp) > t_update:
+                splice_idx = i
+                break
+
+    # --- 4. Linear Assembly ---
+
+    # A. Static Context (Ground Truth)
+    static_intro = (
+        "The following XML block contains the CURRENT contents of the files in this session. "
+        "This is the Ground Truth.\n\n"
+        "Always refer to this block for the latest code state. "
+        "If code blocks in the conversation history conflict with this block, ignore the history "
+        "and use this block."
+    )
+    messages.extend(_format_file_block(static_files, static_intro))
+
+    # B. History Part 1 (Before Edits)
+    messages.extend(reconstruct_historical_messages(history_to_use[:splice_idx]))
+
+    # C. Floating Context (The Update)
+    floating_intro = (
+        "UPDATED CONTEXT: The files below have been modified during this session. "
+        "This block contains their **current on-disk state**. It **strictly supersedes** "
+        "any previous code blocks or diffs found in the history above. "
+        "Use this as the definitive ground truth for these paths:"
+    )
+    messages.extend(_format_file_block(floating_files, floating_intro))
+
+    # D. History Part 2 (After Edits)
+    messages.extend(reconstruct_historical_messages(history_to_use[splice_idx:]))
+
+    # --- 5. Final Alignment and User Prompt ---
     if mode in ALIGNMENT_PROMPTS:
-        messages.extend(reconstruct_historical_messages(history_to_use))
         messages.extend([LLMChatMessage(role=msg.role, content=msg.content) for msg in ALIGNMENT_PROMPTS[mode]])
-    else:
-        messages.extend(reconstruct_historical_messages(history_to_use))
 
-    # --- 4. Final User Prompt ---
     user_prompt = (
         (f"<stdin_content>\n{piped_content}\n</stdin_content>\n<prompt>\n{prompt_text}\n</prompt>")
         if piped_content is not None
         else f"{prompt_text}"
     )
-
     messages.append({"role": "user", "content": user_prompt})
 
     return messages
@@ -238,9 +294,11 @@ def execute_interaction(
     provider, clean_model_id = get_provider_for_model(model_name)
 
     if passthrough:
+        file_metadata: MetadataFileContents = {}
         original_file_contents: FileContents = {}
     else:
-        original_file_contents = get_context_file_contents(context["context_files"], session_root)
+        file_metadata = get_context_files_with_metadata(context["context_files"], session_root)
+        original_file_contents = {p: meta.content for p, meta in file_metadata.items()}
 
     messages = _build_messages(
         active_history=context["active_history"],
@@ -248,7 +306,7 @@ def execute_interaction(
         prompt_text=prompt_text,
         piped_content=piped_content,
         mode=mode,
-        original_file_contents=original_file_contents,
+        file_metadata=file_metadata,
         passthrough=passthrough,
         no_history=no_history,
     )

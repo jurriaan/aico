@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 from tempfile import mkstemp
 
-from aico.models import FileContents
+from aico.models import ContextFile, FileContents, MetadataFileContents
 
 
 def validate_input_paths(
@@ -86,24 +86,28 @@ def atomic_write_text(path: Path, text: str | bytes, encoding: str = "utf-8") ->
         tmp_path.unlink(missing_ok=True)
 
 
-def get_context_file_contents(
+def get_context_files_with_metadata(
     context_files: list[str],
     session_root: Path,
-) -> FileContents:
+) -> MetadataFileContents:
     """
-    Reads the contents of context files relative to the session root.
+    Reads the contents and modification times of context files relative to the session root.
 
     Skips missing or unreadable files with a warning to stderr.
-    Returns a mapping of relative path strings to file contents.
+    Returns a mapping of relative path strings to ContextFile objects.
     """
-    contents: FileContents = {}
+    contents: dict[str, ContextFile] = {}
     missing_files: list[str] = []
 
     for rel_path_str in context_files:
         abs_path = session_root / rel_path_str
         content = read_file_safe(abs_path)
         if content is not None:
-            contents[rel_path_str] = content
+            try:
+                mtime = os.stat(abs_path).st_mtime
+                contents[rel_path_str] = ContextFile(path=rel_path_str, content=content, mtime=mtime)
+            except OSError:
+                missing_files.append(rel_path_str)
         else:
             missing_files.append(rel_path_str)
 
@@ -114,3 +118,12 @@ def get_context_file_contents(
         )
 
     return contents
+
+
+def get_context_file_contents(
+    context_files: list[str],
+    session_root: Path,
+) -> FileContents:
+    """Wrapper for backward compatibility with diffing engine."""
+    meta = get_context_files_with_metadata(context_files, session_root)
+    return {p: m.content for p, m in meta.items()}
