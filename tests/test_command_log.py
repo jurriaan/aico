@@ -1,5 +1,6 @@
 # pyright: standard
 
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -58,25 +59,27 @@ def test_log_displays_only_active_history(session_for_log_tests: Path) -> None:
 
     # THEN it succeeds and the output is correct
     assert result.exit_code == 0
-    output = result.stdout.replace("│", "").replace(" ", "")  # Simplify for robust matching
 
-    assert "ActiveContextLog" in output
+    # Normalize whitespace to single spaces for safer matching
+    output = re.sub(r"\s+", " ", result.stdout).strip()
+
+    assert "Active Context Log" in output
 
     # AND it does NOT show the inactive pair (ID 0)
-    assert "prompt0" not in output
-    assert "assistantresp0" not in output
+    assert " 0 user prompt 0 " not in output
+    assert " assistant resp 0 " not in output
 
-    # AND it shows the active excluded pair (ID 1)
-    assert "1userprompt1excluded" in output
+    # AND it shows the active excluded pair (ID 1) with textual marker
+    assert "1[-] user prompt 1 excluded" in output
+    assert "assistant resp 1 excluded" in output
 
     # AND it shows the active normal pair (ID 2), truncating the prompt
-    assert "2userprompt2" in output
-    assert "secondline" not in output
-    assert "assistantresp2" in output
+    assert "2 user prompt 2" in output
+    assert "second line" not in output
+    assert "assistant resp 2" in output
 
     # AND it shows the dangling message section for ACTIVE dangling messages
-    assert "Danglingmessagesinactivecontext:" in output
-    assert "user:danglingprompt" in output
+    assert "Dangling messages in active context: user: dangling prompt" in output
 
 
 def test_log_with_empty_history(tmp_path: Path) -> None:

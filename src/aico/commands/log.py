@@ -30,6 +30,7 @@ def log() -> None:
             asst_msg = chat_history[pair.assistant_index]
 
             pair_excluded = pair_index in excluded_set
+            pair_id_display = f"{pair_index}[-]" if pair_excluded else str(pair_index)
             user_row_style = "dim" if pair_excluded else ""
             asst_row_style = "dim" if pair_excluded else ""
 
@@ -40,7 +41,7 @@ def log() -> None:
             asst_snippet = asst_lines[0] if asst_lines else ""
 
             table.add_row(
-                str(pair_index),
+                pair_id_display,
                 "[blue]user[/blue]",
                 user_snippet,
                 style=user_row_style,

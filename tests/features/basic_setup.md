@@ -103,3 +103,58 @@ $ aico status
 ╰──────────────────────────────────────────────────────────────────────────────╯
 $
 ```
+
+## 7. History Management (Undo/Redo)
+`aico` uses a "soft-delete" approach to history. You can exclude messages from the next prompt without losing them from the log.
+
+```console
+$ aico undo
+Marked pair at index 2 as excluded.
+$ aico log
+                        Active Context Log                        
+   ID  Role       Message Snippet                                 
+    0  user       Explain this code                               
+       assistant  This code is a Python script.                   
+    1  user       add a comment                                   
+       assistant  File: hello.txt                                 
+ 2[-]  user       Rename 'do' to 'add_numbers' and use type hints 
+       assistant  File: math_utils.py                             
+$ aico redo
+Re-included pair at index 2 in context.
+$
+```
+
+## 8. Archiving and Resetting (Summarize)
+The `summarize` addon archives the history and resets the active window.
+
+```console
+$ aico summarize #=> --regex .*Archived summary.*
+$ aico status
+╭─────────────────────────────── Session 'main' ───────────────────────────────╮
+│                              openai/test-model                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+         Tokens               Cost Component                                    
+      (approx.)                                                                 
+─────────────── ────────────────── ─────────────────────────────────────────────
+            407           $0.40700 system prompt                                
+            405           $0.40500 alignment prompts (worst-case)               
+                           $0.0000 chat history                                 
+─────────────── ────────────────── ───────────── Context Files (2) ─────────────
+             50           $0.05000 PROJECT_SUMMARY.md                           
+             23           $0.02300 math_utils.py                                
+─────────────── ────────────────── ─────────────────────────────────────────────
+           ~885           $0.88500 Total                                        
+
+╭─────────────────────────────── Context Window ───────────────────────────────╮
+│                     (885 of 1,000 used - 12% remaining)                      │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━          │
+╰──────────────────────────────────────────────────────────────────────────────╯
+$ cat PROJECT_SUMMARY.md
+### Recent Developments
+- Refactored `math_utils.py` to use type hints.
+### Comprehensive Project Summary
+A collection of utilities including math functions.
+$
+```
+```

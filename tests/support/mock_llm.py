@@ -24,9 +24,11 @@ class MockLLMHandler(BaseHTTPRequestHandler):
         last_content = messages[-1].get("content", "") if messages else ""
 
         responses = {
-            "Explain this code": "This code is a Python script.\n",
-            "add a comment": (
-                "File: hello.txt\n<<<<<<< SEARCH\nhello world\n=======\n# a comment\nhello world\n>>>>>>> REPLACE\n"
+            "Output the complete markdown document": (
+                "### Recent Developments\n"
+                "- Refactored `math_utils.py` to use type hints.\n"
+                "### Comprehensive Project Summary\n"
+                "A collection of utilities including math functions.\n"
             ),
             "Rename 'do' to 'add_numbers'": (
                 "File: math_utils.py\n"
@@ -38,6 +40,10 @@ class MockLLMHandler(BaseHTTPRequestHandler):
                 "    return a + b\n"
                 ">>>>>>> REPLACE\n"
             ),
+            "add a comment": (
+                "File: hello.txt\n<<<<<<< SEARCH\nhello world\n=======\n# a comment\nhello world\n>>>>>>> REPLACE\n"
+            ),
+            "Explain this code": "This code is a Python script.\n",
         }
 
         response_text = "Standard mock response."
