@@ -100,7 +100,7 @@ def _resolve_file_path(
     return ResolvedFilePath(path=None, warning=None, fallback_content=None)
 
 
-def _create_aipatch_from_match(match: re.Match[str], llm_file_path: str) -> AIPatch: # ty: ignore[invalid-type-form]
+def _create_aipatch_from_match(match: re.Match[str], llm_file_path: str) -> AIPatch:  # ty: ignore[invalid-type-form]
     """Helper to create an AIPatch from a regex match object."""
     return AIPatch(
         llm_file_path=llm_file_path,
