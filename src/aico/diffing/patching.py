@@ -1,3 +1,6 @@
+from os.path import commonprefix
+
+
 def _try_exact_string_patch(original_content: str, search_block: str, replace_block: str) -> str | None:
     # Handle file creation
     if not search_block and not original_content:
@@ -22,7 +25,7 @@ def _try_exact_string_patch(original_content: str, search_block: str, replace_bl
 
 
 def _get_consistent_indentation(lines: list[str]) -> str:
-    return next((line[: len(line) - len(line.lstrip())] for line in lines if line.strip()), "")
+    return commonprefix([line[: len(line) - len(line.lstrip())] for line in lines if line.strip()])
 
 
 def _try_whitespace_flexible_patch(original_content: str, search_block: str, replace_block: str) -> str | None:

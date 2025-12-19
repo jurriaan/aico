@@ -319,6 +319,87 @@ def test_ambiguous_patch_succeeds_on_first_match(tmp_path: Path) -> None:
     assert diff.count("+changed_line = 2") == 1
 
 
+def test_flexible_patching_preserves_internal_relative_indentation(tmp_path: Path) -> None:
+    """
+    Tests a scenario where the replace block has uneven indentation (e.g. Line 1
+    is indented more than Line 2). The patcher should identify the common
+    minimum indentation as the base.
+    """
+    # GIVEN original content
+    original_contents = {
+        "table.md": (
+            "  Line 1\n"
+            "    Subline 2\n"
+        )
+    }
+
+    # AND an LLM response where the SEARCH block has different indentation
+    # AND the REPLACE block is shifted right but keeps its internal structure
+    # (Line 1 has 10 spaces, Line 2 has 12 spaces -> Common base is 10)
+    llm_response = (
+        "File: table.md\n"
+        "<<<<<<< SEARCH\n"
+        "Line 1\n"
+        "Subline 2\n"
+        "=======\n"
+        "          Line 1 Updated\n"
+        "            Subline 2 Updated\n"
+        ">>>>>>> REPLACE"
+    )
+
+    # WHEN the diff is generated
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
+
+    # THEN the patch should succeed and the original base indentation (2 spaces)
+    # should be used.
+    # Expected result should be:
+    # "  Line 1 Updated\n"
+    # "    Subline 2 Updated\n"
+    assert "patch failed" not in diff
+    assert "+  Line 1 Updated" in diff
+    assert "+    Subline 2 Updated" in diff
+
+
+def test_flexible_patching_reproduction_uneven_indentation(tmp_path: Path) -> None:
+    """
+    Forces the flexible patcher to handle a block where the first line 
+    has a different indentation than the common denominator of the block.
+    """
+    # GIVEN original content
+    original_contents = {
+        "file.py": (
+            "    def func():\n"
+            "        pass\n"
+        )
+    }
+
+    # AND an LLM response with a whitespace mismatch in SEARCH (forcing flexible patch)
+    # AND a REPLACE block where the first line is indented MORE than the second line.
+    llm_response = (
+        "File: file.py\n"
+        "<<<<<<< SEARCH\ndef func():\n    pass\n"
+        "=======\n"
+        "          def renamed():\n"  # 10 spaces
+        "    pass\n"                 # 4 spaces
+        ">>>>>>> REPLACE"
+    )
+
+    # WHEN the diff is generated
+    diff = generate_unified_diff(original_contents, llm_response, tmp_path)
+
+    # THEN the patch should succeed and preserve the relative structure.
+    # The original base was 4 spaces. 
+    # Logic: 
+    # Replace Min Indent = 4 spaces.
+    # Line 1 (10 spaces) -> relative +6. 
+    # Line 1 Result: Original Base (4) + 6 = 10 spaces.
+    # Line 2 (4 spaces) -> relative +0.
+    # Line 2 Result: Original Base (4) + 0 = 4 spaces.
+    assert "patch failed" not in diff
+    assert "+          def renamed():" in diff
+    assert "+    pass" in diff
+
+
 def test_patching_with_blank_lines_in_search_block(tmp_path: Path) -> None:
     # GIVEN a search block containing blank lines
     original_contents = {"file.py": "line one\n\nline three"}
