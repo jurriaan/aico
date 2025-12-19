@@ -25,7 +25,7 @@ set -o pipefail
 
 # --- Configuration ---
 # The model to use for generating the commit message.
-MODEL_NAME="openrouter/anthropic/claude-haiku-4.5"
+MODEL_NAME="openrouter/google/gemini-3-flash-preview"
 
 # A list of authors.
 # If populated, the first entry will be used as the primary commit author.
