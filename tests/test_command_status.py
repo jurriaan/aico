@@ -74,8 +74,9 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
         save_session(session_dir / SESSION_FILE_NAME, session_data)
 
         # Mock token counting to return fixed values:
-        # system prompt (100), alignment 1 (30), alignment 2 (40), chat history (50), context files (20)
-        mocker.patch("aico.llm.tokens.count_tokens_for_messages", side_effect=[100, 30, 40, 50, 20])
+        # system prompt (100), alignment 1 (30), alignment 2 (40), context anchors (10), chat history (50),
+        #   context files (20)
+        mocker.patch("aico.llm.tokens.count_tokens_for_messages", side_effect=[100, 30, 40, 10, 50, 20])
 
         # Mock model info to return cost and window info
         mock_info = ModelInfo(
@@ -98,9 +99,9 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
         assert "Tokens" in output and "(approx.)" in output and "Cost" in output and "Component" in output
 
         # Check component costs and tokens
-        # Tokens: 100(sys) + 40(max of 30,40 for align) + 50(hist) + 20(file) = 210
+        # Tokens: 100(sys) + (40 base + 10 anchors = 50 align) + 50(hist) + 20(file) = 220
         assert "100" in output and "system prompt" in output and "$0.01000" in output
-        assert "40" in output and "alignment prompts" in output and "$0.00400" in output
+        assert "50" in output and "alignment prompts" in output and "$0.00500" in output
         assert "50" in output and "chat history" in output and "$0.00500" in output
         assert "20" in output and "file1.py" in output and "$0.0020" in output
 
@@ -111,7 +112,7 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
         assert "Context Files (1)" in output
 
         # Check total
-        assert "~210" in output and "Total" in output and "$0.0210" in output
+        assert "~220" in output and "Total" in output and "$0.0220" in output
 
         # Check context window
         assert "Context Window" in output
@@ -144,8 +145,8 @@ def test_status_handles_unknown_model(tmp_path: Path, mocker) -> None:
         assert result.exit_code == 0
         output = result.stdout
         assert "10" in output and "system prompt" in output
-        # Total tokens: 10(sys) + 10(align) + 10(history) = 30
-        assert "~30" in output and "Total" in output
+        # Total tokens: 10(sys) + (10 base + 10 anchors = 20 align) + 10(history) = 40
+        assert "~40" in output and "Total" in output
 
         # AND no cost or context window information is displayed
         assert "Cost" in output  # The column header still exists
@@ -193,8 +194,8 @@ def test_status_omits_excluded_messages(tmp_path: Path, mocker) -> None:
 
         # AND the token counter is mocked
         mock_token_counter = mocker.patch("aico.llm.tokens.count_tokens_for_messages")
-        # system, align-convo, align-diff, chat history for active messages
-        mock_token_counter.side_effect = [100, 50, 40, 20]
+        # system, alignment_base1, alignment_base2, alignment_anchors, chat history
+        mock_token_counter.side_effect = [100, 50, 40, 5, 20]
 
         mocker.patch("aico.model_registry.get_model_info", return_value=ModelInfo(max_input_tokens=1000))
 
@@ -210,15 +211,15 @@ def test_status_omits_excluded_messages(tmp_path: Path, mocker) -> None:
         assert "20" in output
 
         # AND the total should reflect only the active messages
-        # The max alignment prompt tokens will be 50. Total = 100(sys) + 50(align) + 20(hist) = 170.
-        assert "~170" in output and "Total" in output
+        # The alignment tokens will be max(50, 40) + 5 = 55. Total = 100(sys) + 55(align) + 20(hist) = 175.
+        assert "~175" in output and "Total" in output
 
         # AND the history summary text correctly reports the exclusion
         assert "Active window: 2 pairs (IDs 0-1), 1 sent (1 excluded" in output
 
         # AND the reconstructed messages passed to the token counter should not contain the excluded message
-        # system, align1, align2, history
-        history_call = mock_token_counter.call_args_list[3]
+        # system, align1, align2, anchors, history
+        history_call = mock_token_counter.call_args_list[4]
         messages_arg = history_call.args[1]
         assert len(messages_arg) == 2
         assert "active message" in messages_arg[0]["content"]

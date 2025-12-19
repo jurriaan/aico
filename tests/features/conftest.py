@@ -240,6 +240,7 @@ def given_mocked_token_counts(mocker: MockerFixture) -> None:
         100,  # system prompt
         40,  # alignment prompt 1
         50,  # alignment prompt 2
+        10,  # context anchors
         75,  # chat history
         200,  # CONVENTIONS.md
     ]

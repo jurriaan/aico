@@ -4,6 +4,33 @@ from aico.models import (
     Mode,
 )
 
+STATIC_CONTEXT_INTRO = (
+    "The following XML block contains the CURRENT contents of the files in this session. "
+    "This is the Ground Truth.\n\n"
+    "Always refer to this block for the latest code state. "
+    "If code blocks in the conversation history conflict with this block, ignore the history "
+    "and use this block."
+)
+
+STATIC_CONTEXT_ANCHOR = (
+    "I accept this baseline context. I will ensure strictly verbatim matching: "
+    "every `SEARCH` block targeting these files will be an exact copy-paste "
+    "from this text, preserving all whitespace."
+)
+
+FLOATING_CONTEXT_INTRO = (
+    "UPDATED CONTEXT: The files below have been modified during this session. "
+    "This block contains their **current on-disk state**. It **strictly supersedes** "
+    "any previous code blocks or diffs found in the history above. "
+    "Use this as the definitive ground truth for these paths:"
+)
+
+FLOATING_CONTEXT_ANCHOR = (
+    "I accept this **updated** context. I acknowledge that it supersedes all "
+    "previous versions found in the history. I will ensure strictly verbatim matching "
+    "against *this* text for these files."
+)
+
 DEFAULT_SYSTEM_PROMPT = (
     "You are an expert pair programmer operating the `aico` command-line tool. "
     "Your primary role is to help the user with their code. You work in two modes: "

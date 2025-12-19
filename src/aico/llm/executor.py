@@ -34,14 +34,21 @@ from aico.models import (
     SessionData,
     TokenUsage,
 )
-from aico.prompts import ALIGNMENT_PROMPTS, DIFF_MODE_INSTRUCTIONS
+from aico.prompts import (
+    ALIGNMENT_PROMPTS,
+    DIFF_MODE_INSTRUCTIONS,
+    FLOATING_CONTEXT_ANCHOR,
+    FLOATING_CONTEXT_INTRO,
+    STATIC_CONTEXT_ANCHOR,
+    STATIC_CONTEXT_INTRO,
+)
 from aico.session import build_active_context
 
 if TYPE_CHECKING:
     pass
 
 
-def _format_file_block(files: MetadataFileContents, intro_text: str) -> list[LLMChatMessage]:
+def _format_file_block(files: MetadataFileContents, intro_text: str, anchor_text: str) -> list[LLMChatMessage]:
     """Helper to generate standard context blocks."""
     if not files:
         return []
@@ -53,7 +60,7 @@ def _format_file_block(files: MetadataFileContents, intro_text: str) -> list[LLM
 
     return [
         {"role": "user", "content": f"{intro_text}\n\n{xml_content}"},
-        {"role": "assistant", "content": "I have read and acknowledged this file state."},
+        {"role": "assistant", "content": anchor_text},
     ]
 
 
@@ -126,26 +133,13 @@ def _build_messages(
     # --- 4. Linear Assembly ---
 
     # A. Static Context (Ground Truth)
-    static_intro = (
-        "The following XML block contains the CURRENT contents of the files in this session. "
-        "This is the Ground Truth.\n\n"
-        "Always refer to this block for the latest code state. "
-        "If code blocks in the conversation history conflict with this block, ignore the history "
-        "and use this block."
-    )
-    messages.extend(_format_file_block(static_files, static_intro))
+    messages.extend(_format_file_block(static_files, STATIC_CONTEXT_INTRO, STATIC_CONTEXT_ANCHOR))
 
     # B. History Part 1 (Before Edits)
     messages.extend(reconstruct_historical_messages(history_to_use[:splice_idx]))
 
     # C. Floating Context (The Update)
-    floating_intro = (
-        "UPDATED CONTEXT: The files below have been modified during this session. "
-        "This block contains their **current on-disk state**. It **strictly supersedes** "
-        "any previous code blocks or diffs found in the history above. "
-        "Use this as the definitive ground truth for these paths:"
-    )
-    messages.extend(_format_file_block(floating_files, floating_intro))
+    messages.extend(_format_file_block(floating_files, FLOATING_CONTEXT_INTRO, FLOATING_CONTEXT_ANCHOR))
 
     # D. History Part 2 (After Edits)
     messages.extend(reconstruct_historical_messages(history_to_use[splice_idx:]))

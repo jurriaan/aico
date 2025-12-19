@@ -4,8 +4,22 @@ from pathlib import Path
 
 from aico.fs import read_file_safe
 from aico.llm.prompt_helpers import reconstruct_historical_messages
-from aico.models import ChatMessageHistoryItem, LLMChatMessage, ModelInfo, SessionData, TokenInfo
-from aico.prompts import ALIGNMENT_PROMPTS, DEFAULT_SYSTEM_PROMPT, DIFF_MODE_INSTRUCTIONS
+from aico.models import (
+    ChatMessageHistoryItem,
+    LLMChatMessage,
+    ModelInfo,
+    SessionData,
+    TokenInfo,
+)
+from aico.prompts import (
+    ALIGNMENT_PROMPTS,
+    DEFAULT_SYSTEM_PROMPT,
+    DIFF_MODE_INSTRUCTIONS,
+    FLOATING_CONTEXT_ANCHOR,
+    FLOATING_CONTEXT_INTRO,
+    STATIC_CONTEXT_ANCHOR,
+    STATIC_CONTEXT_INTRO,
+)
 
 
 def count_tokens_for_messages(model: str, messages: list[LLMChatMessage]) -> int:  # pyright: ignore[reportUnusedParameter]
@@ -43,13 +57,27 @@ def count_system_tokens(model: str) -> int:
 
 
 def count_max_alignment_tokens(model: str) -> int:
-    if not ALIGNMENT_PROMPTS:
-        return 0
-    max_tokens = max(
-        count_tokens_for_messages(model, [LLMChatMessage(role=msg.role, content=msg.content) for msg in prompt_set])
-        for prompt_set in ALIGNMENT_PROMPTS.values()
+    # 1. Base Alignment overhead (Role confirmation prompts)
+    base_max = 0
+    if ALIGNMENT_PROMPTS:
+        base_max = max(
+            count_tokens_for_messages(model, [LLMChatMessage(role=msg.role, content=msg.content) for msg in prompt_set])
+            for prompt_set in ALIGNMENT_PROMPTS.values()
+        )
+
+    # 2. Context Anchor overhead (Static & Floating)
+    # We include both to account for the worst-case scenario where files are split.
+    context_anchors = count_tokens_for_messages(
+        model,
+        [
+            LLMChatMessage(role="user", content=STATIC_CONTEXT_INTRO),
+            LLMChatMessage(role="assistant", content=STATIC_CONTEXT_ANCHOR),
+            LLMChatMessage(role="user", content=FLOATING_CONTEXT_INTRO),
+            LLMChatMessage(role="assistant", content=FLOATING_CONTEXT_ANCHOR),
+        ],
     )
-    return max_tokens
+
+    return base_max + context_anchors
 
 
 def count_active_history_tokens(model: str, active_history: list[ChatMessageHistoryItem]) -> int:
