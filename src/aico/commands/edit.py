@@ -22,15 +22,19 @@ def edit(
     session, pair_indices, resolved_pair_index = load_session_and_resolve_indices(index)
 
     message_type: str
-    target_message_index: int
+    absolute_message_index: int
+    target_message_index_in_cache: int
+
     if prompt:
         message_type = "prompt"
-        target_message_index = pair_indices.user_index
+        absolute_message_index = resolved_pair_index * 2
+        target_message_index_in_cache = pair_indices.user_index
     else:
         message_type = "response"
-        target_message_index = pair_indices.assistant_index
+        absolute_message_index = resolved_pair_index * 2 + 1
+        target_message_index_in_cache = pair_indices.assistant_index
 
-    target_message = session.data.chat_history[target_message_index]
+    target_message = session.data.chat_history[target_message_index_in_cache]
     original_content = target_message.content
 
     new_content: str
@@ -82,6 +86,6 @@ def edit(
         updated_message = replace(updated_message, derived=new_derived_content)
         new_asst_metadata = updated_message
 
-    session.edit_message(target_message_index, new_content, new_asst_metadata)
+    session.edit_message(absolute_message_index, new_content, new_asst_metadata)
 
     print(f"Updated {message_type} for message pair {resolved_pair_index}.")

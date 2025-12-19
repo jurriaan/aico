@@ -264,7 +264,7 @@ class Session:
         self.data = data
 
     @classmethod
-    def load_active(cls) -> "Session":
+    def load_active(cls, history: bool = True) -> "Session":
         session_file = find_session_file()
         if not session_file:
             # We treat this as a user error for most commands
@@ -294,14 +294,17 @@ class Session:
         instance = cls(session_file, SessionData(model="placeholder"))  # Temporary data holder
 
         # Now perform the actual load logic
-        instance._load()
+        instance._load(history=history)
         return instance
 
-    def _load(self) -> None:
+    def _load(self, history: bool = True) -> None:
         store, view = self._load_view_and_store()
 
-        # Load the history window (from history_start_pair onwards)
-        chat_history = reconstruct_chat_history(store, view, include_excluded=True)
+        # Load the history window if requested, otherwise start with empty history
+        chat_history: list[ChatMessageHistoryItem] = []
+        if history:
+            chat_history = reconstruct_chat_history(store, view, include_excluded=True)
+
         offset = view.history_start_pair
 
         self.data = SessionData(
@@ -506,7 +509,7 @@ def resolve_pair_index(index_str: str, num_pairs: int) -> int:
 
 def load_session_and_resolve_indices(index_str: str) -> tuple[Session, MessagePairIndices, int]:
     # 1. Load active session metadata without reconstructing history yet
-    session = Session.load_active()
+    session = Session.load_active(history=False)
 
     # 2. Resolve the user's requested index using metadata
     resolved_index = resolve_pair_index(index_str, session.num_pairs)
@@ -528,7 +531,8 @@ def modify_pair_exclusions(raw_indices: list[str] | None, exclude: bool) -> list
     # 1. Expand ranges
     expanded_indices = expand_index_ranges(raw_indices)
 
-    session = Session.load_active()
+    # We only need the view metadata to resolve indices and update exclusions
+    session = Session.load_active(history=False)
 
     # 2. Resolve total pairs and then all indices first
     num_pairs = session.num_pairs
