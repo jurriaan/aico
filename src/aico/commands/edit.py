@@ -25,13 +25,15 @@ def edit(
     absolute_message_index: int
     target_message_index_in_cache: int
 
+    u_abs, a_abs = session.pair_to_msg_indices(resolved_pair_index)
+
     if prompt:
         message_type = "prompt"
-        absolute_message_index = resolved_pair_index * 2
+        absolute_message_index = u_abs
         target_message_index_in_cache = pair_indices.user_index
     else:
         message_type = "response"
-        absolute_message_index = resolved_pair_index * 2 + 1
+        absolute_message_index = a_abs
         target_message_index_in_cache = pair_indices.assistant_index
 
     target_message = session.data.chat_history[target_message_index_in_cache]

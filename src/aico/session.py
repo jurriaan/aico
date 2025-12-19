@@ -345,6 +345,13 @@ class Session:
     def get_view_path(self, name: str) -> Path:
         return self.sessions_dir / f"{name}.json"
 
+    @staticmethod
+    def pair_to_msg_indices(pair_index: int) -> tuple[int, int]:
+        """Calculates the absolute message indices (user, assistant) for a given pair index."""
+        u_abs = pair_index * 2
+        a_abs = u_abs + 1
+        return u_abs, a_abs
+
     @property
     def num_pairs(self) -> int:
         """Returns the total number of message pairs in the session."""
@@ -360,14 +367,25 @@ class Session:
             return pairs_in_window[rel_index]
         return None
 
-    def fetch_pair(self, resolved_index: int) -> MessagePairIndices:
+    def fetch_pair(self, resolved_pair_index: int) -> MessagePairIndices:
         """Surgically fetches a specific pair into the chat_history cache and returns its relative indices."""
         store, view = self._load_view_and_store()
 
-        u_global_idx = view.message_indices[resolved_index * 2]
-        a_global_idx = view.message_indices[resolved_index * 2 + 1]
+        u_abs, a_abs = self.pair_to_msg_indices(resolved_pair_index)
+
+        if a_abs >= len(view.message_indices):
+            raise InvalidInputError(f"Pair index {resolved_pair_index} is out of bounds for the current history.")
+
+        u_global_idx = view.message_indices[u_abs]
+        a_global_idx = view.message_indices[a_abs]
 
         records = store.read_many([u_global_idx, a_global_idx])
+
+        # Defensive Check: ensure the view consistently points to user/assistant sequence
+        if records[0].role != "user" or records[1].role != "assistant":
+            raise SessionIntegrityError(
+                f"Data integrity error: Pair {resolved_pair_index} in view is misaligned or corrupted."
+            )
 
         from aico.historystore.reconstruct import (
             deserialize_assistant_record,
@@ -379,7 +397,7 @@ class Session:
 
         # Update session data to reflect the fetched pair.
         self.data.chat_history = [user_msg, asst_msg]
-        self.data.offset = resolved_index
+        self.data.offset = resolved_pair_index
 
         return MessagePairIndices(user_index=0, assistant_index=1)
 

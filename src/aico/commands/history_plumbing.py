@@ -31,8 +31,8 @@ def history_splice(
 
     view = load_view(session.view_path)
 
-    # Insert at position (pair index * 2)
-    target_pos = at_index * 2
+    # Insert at position (pair index * 2) using centralized logic
+    target_pos, _ = Session.pair_to_msg_indices(at_index)
 
     # Allow appending at the very end (target_pos == len)
     if target_pos < 0 or target_pos > len(view.message_indices):
