@@ -4,7 +4,6 @@ import shlex
 from pathlib import Path
 
 import pytest
-from pydantic import TypeAdapter
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
@@ -187,7 +186,9 @@ def test_load_pointer_missing_view_exits(tmp_path: Path) -> None:
 
     # Valid pointer JSON pointing to a non-existent view
     pointer = SessionPointer(type="aico_session_pointer_v1", path=".aico/sessions/missing.json")
-    pointer_file.write_bytes(TypeAdapter(SessionPointer).dump_json(pointer))
+    from aico.serialization import to_json
+
+    pointer_file.write_bytes(to_json(pointer))
 
     # When using a shared-history-only command, missing view should cause a clear error and non-zero exit.
     result = runner.invoke(app, ["session-list"], catch_exceptions=False, env={"AICO_SESSION_FILE": str(pointer_file)})

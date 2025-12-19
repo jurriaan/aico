@@ -14,7 +14,6 @@ from click.testing import Result
 from gherkin.errors import CompositeParserException
 from gherkin.parser import Parser
 from gherkin.token_matcher_markdown import GherkinInMarkdownTokenMatcher
-from pydantic import TypeAdapter
 from pytest_bdd import exceptions, gherkin_parser, given, parsers, then, when
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
@@ -31,9 +30,8 @@ from aico.models import (
     SessionData,
     UserChatMessage,
 )
+from aico.serialization import from_json
 from tests.helpers import save_session
-
-SessionDataAdapter = TypeAdapter(SessionData)
 
 
 # This file is used to override the default `get_gherkin_document` function so that
@@ -153,7 +151,7 @@ def _add_pair_to_history(
         _ = append_pair_to_view(store, view, u, a)
         save_view(view_path, view)
     else:  # session_type == "legacy"
-        session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
+        session_data = from_json(SessionData, session_file.read_text())
         session_data.chat_history.extend(
             [
                 UserChatMessage(role="user", content=user_content, mode=Mode.CONVERSATION, timestamp="t1"),
@@ -397,7 +395,7 @@ def _get_current_context_files(project_dir: Path, session_type: str) -> list[str
         view = load_view(view_path)
         return view.context_files
     else:  # session_type == "legacy"
-        session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
+        session_data = from_json(SessionData, session_file.read_text())
         return session_data.context_files
 
 
@@ -432,7 +430,7 @@ def then_history_contains_pairs(project_dir: Path, session_type: str, count: int
         store = HistoryStore(project_dir / ".aico" / "history")
         pairs = find_message_pairs_in_view(store, view)
     else:  # session_type == "legacy"
-        session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
+        session_data = from_json(SessionData, session_file.read_text())
         pairs = find_message_pairs(session_data.chat_history)
 
     assert len(pairs) == count, f"Expected {count} pairs, but found {len(pairs)}"
@@ -482,7 +480,7 @@ def then_response_content_is_updated(project_dir: Path, session_type: str, pair_
         assistant_record = store.read_many([assistant_index])[0]
         assert assistant_record.content == new_content
     else:  # session_type == "legacy"
-        session_data: SessionData = SessionDataAdapter.validate_json(session_file.read_text())
+        session_data = from_json(SessionData, session_file.read_text())
         pairs = find_message_pairs(session_data.chat_history)
         assert len(pairs) > pair_index, f"Not enough pairs in history to check index {pair_index}"
 

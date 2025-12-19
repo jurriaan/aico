@@ -11,6 +11,7 @@ from aico.models import (
     TokenUsage,
     UserChatMessage,
 )
+from aico.serialization import convert
 
 from .history_store import HistoryStore
 from .models import HistoryRecord, SessionView
@@ -33,7 +34,11 @@ def deserialize_assistant_record(
 ) -> AssistantChatMessage:
     token_usage_obj: TokenUsage | None = rec.token_usage
 
-    derived_obj: DerivedContent | None = rec.derived if isinstance(rec.derived, DerivedContent) else None
+    derived_obj: DerivedContent | None = None
+    if rec.derived is not None:
+        # When loaded from JSON by msgspec, derived might be a dict.
+        # Convert it to the Typed/frozen dataclass.
+        derived_obj = rec.derived if isinstance(rec.derived, DerivedContent) else convert(rec.derived, DerivedContent)
 
     return AssistantChatMessage(
         role="assistant",

@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import TypedDict
 
-from pydantic import TypeAdapter, ValidationError
+from aico.serialization import from_json, to_json
 
 
 class TrustConfig(TypedDict):
@@ -27,9 +27,9 @@ def _load_trusted_paths() -> set[str]:
         return set()
 
     try:
-        data: TrustConfig = TypeAdapter(TrustConfig).validate_json(trust_file.read_text(encoding="utf-8"))
+        data = from_json(TrustConfig, trust_file.read_text(encoding="utf-8"))
         return set(data["trusted_projects"])
-    except (ValidationError, OSError, KeyError):
+    except (Exception, OSError, KeyError):
         return set()
 
 
@@ -43,7 +43,7 @@ def _save_trusted_paths(paths: set[str]) -> None:
     # Atomic write to prevent corruption
     from aico.fs import atomic_write_text
 
-    atomic_write_text(trust_file, TypeAdapter(TrustConfig).dump_json(data, indent=2))
+    atomic_write_text(trust_file, to_json(data))
     trust_file.chmod(0o600)
 
 

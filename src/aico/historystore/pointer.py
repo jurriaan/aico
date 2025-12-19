@@ -1,16 +1,15 @@
 from pathlib import Path
 from typing import final
 
-from pydantic import TypeAdapter, ValidationError
-
 from aico.models import SessionPointer
+from aico.serialization import from_json
 
 
 @final
 class InvalidPointerError(Exception):
     """Raised when a pointer file is not a valid shared-history SessionPointer."""
 
-    def __init__(self, pointer_file: Path, details: Exception | None = None) -> None:
+    def __init__(self, pointer_file: Path, details: object | None = None) -> None:
         msg = f"Not a valid shared-history pointer file: {pointer_file}"
         if details is not None:
             msg = f"{msg} ({details})"
@@ -41,15 +40,16 @@ def load_pointer(pointer_file: Path) -> Path:
     try:
         raw_text = pointer_file.read_text(encoding="utf-8")
 
-        pointer = TypeAdapter(SessionPointer).validate_json(raw_text)
+        pointer = from_json(SessionPointer, raw_text)
 
         if pointer["type"] != "aico_session_pointer_v1":
             raise InvalidPointerError(pointer_file)
-    except ValidationError as e:
-        raise InvalidPointerError(pointer_file, e) from e
     except OSError:
         # Propagate IO errors; callers decide how to surface them.
         raise
+    except Exception as e:
+        # Catch msgspec decode/type errors
+        raise InvalidPointerError(pointer_file, e) from e
 
     view_path_abs = (pointer_file.parent / pointer["path"]).resolve()
     if not view_path_abs.is_file():

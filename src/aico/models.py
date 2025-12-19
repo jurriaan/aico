@@ -4,6 +4,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Literal, TypedDict
 
+import msgspec
+
 
 class Mode(str, Enum):
     CONVERSATION = "conversation"
@@ -186,16 +188,14 @@ class ActiveContext(TypedDict):
     active_history: list[ChatMessageHistoryItem]
 
 
-@dataclass(slots=True, frozen=True)
-class AddonInfo:
+class AddonInfo(msgspec.Struct, frozen=True):
     name: str
     path: Path
     help_text: str
     source: Literal["project", "user", "bundled"]
 
 
-@dataclass(slots=True, frozen=True)
-class ModelInfo:
+class ModelInfo(msgspec.Struct, frozen=True):
     max_input_tokens: int | None = None
     input_cost_per_token: float | None = None
     output_cost_per_token: float | None = None

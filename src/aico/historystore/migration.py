@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+import msgspec
 
 from aico.models import (
     DerivedContent,
@@ -18,8 +19,7 @@ from .session_view import save_view
 # --- Legacy Schemas (Migration Source) ---
 
 
-class LegacyUserChatMessage(BaseModel):
-    role: Literal["user"]
+class LegacyUserChatMessage(msgspec.Struct, tag="user", tag_field="role"):
     content: str
     mode: Mode
     timestamp: str
@@ -27,9 +27,12 @@ class LegacyUserChatMessage(BaseModel):
     passthrough: bool = False
     is_excluded: bool = False
 
+    @property
+    def role(self) -> Literal["user"]:
+        return "user"
 
-class LegacyAssistantChatMessage(BaseModel):
-    role: Literal["assistant"]
+
+class LegacyAssistantChatMessage(msgspec.Struct, tag="assistant", tag_field="role"):
     content: str
     mode: Mode
     timestamp: str
@@ -40,14 +43,19 @@ class LegacyAssistantChatMessage(BaseModel):
     cost: float | None = None
     is_excluded: bool = False
 
+    @property
+    def role(self) -> Literal["assistant"]:
+        return "assistant"
+
 
 type LegacyChatMessage = LegacyUserChatMessage | LegacyAssistantChatMessage
 
 
-class LegacySessionSnapshot(BaseModel):
+@dataclass
+class LegacySessionSnapshot:
     model: str
-    context_files: list[str] = Field(default_factory=list)
-    chat_history: list[LegacyChatMessage] = Field(default_factory=list)
+    context_files: list[str] = field(default_factory=list)
+    chat_history: list[LegacyChatMessage] = field(default_factory=list)
     # Old Format Fields
     history_start_index: int | None = None
     total_pairs_in_history: int | None = None

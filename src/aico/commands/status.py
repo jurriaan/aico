@@ -1,13 +1,6 @@
 import json
 from pathlib import Path
 
-from rich.console import Console, Group
-from rich.panel import Panel
-from rich.progress_bar import ProgressBar
-from rich.rule import Rule
-from rich.table import Table
-from rich.text import Text
-
 from aico.historystore.pointer import InvalidPointerError, MissingViewError, load_pointer
 from aico.llm.tokens import (
     compute_component_cost,
@@ -44,37 +37,6 @@ def _format_cost(cost: float | None) -> str:
     return f"${cost:,.5f}"
 
 
-def _get_history_summary_text(session_data: SessionData) -> Text | None:
-    summary = summarize_active_window(session_data)
-    if summary is None:
-        return None
-    if summary.active_pairs == 0 and summary.has_active_dangling:
-        return Text("  └─ Active context contains partial/dangling messages.", style="dim")
-    plural_s = "s" if summary.active_pairs != 1 else ""
-    window_id_str: str = ""
-    if summary.has_any_active_history:
-        window_id_str = (
-            f"ID {summary.active_start_id}"
-            if summary.active_start_id == summary.active_end_id
-            else f"IDs {summary.active_start_id}-{summary.active_end_id}"
-        )
-    else:
-        window_id_str = "No IDs"
-
-    excluded_str = f" ({summary.excluded_in_window} excluded via `aico undo`)" if summary.excluded_in_window else ""
-    return Text.assemble(
-        ("  └─ ", "dim"),
-        (
-            (
-                f"Active window: {summary.active_pairs} pair{plural_s} ({window_id_str}), "
-                f"{summary.pairs_sent} sent{excluded_str}.\n"
-            ),
-            "dim",
-        ),
-        ("     (Use `aico log`, `undo`, and `set-history` to manage)", "dim italic"),
-    )
-
-
 def status(json_output: bool = False) -> None:  # noqa: C901
     session = Session.load_active()
 
@@ -84,6 +46,43 @@ def status(json_output: bool = False) -> None:  # noqa: C901
         }
         print(json.dumps(response))
         return
+
+    from rich.console import Console, Group
+    from rich.panel import Panel
+    from rich.progress_bar import ProgressBar
+    from rich.rule import Rule
+    from rich.table import Table
+    from rich.text import Text
+
+    def _get_history_summary_text(session_data: SessionData) -> Text | None:
+        summary = summarize_active_window(session_data)
+        if summary is None:
+            return None
+        if summary.active_pairs == 0 and summary.has_active_dangling:
+            return Text("  └─ Active context contains partial/dangling messages.", style="dim")
+        plural_s = "s" if summary.active_pairs != 1 else ""
+        window_id_str: str = ""
+        if summary.has_any_active_history:
+            window_id_str = (
+                f"ID {summary.active_start_id}"
+                if summary.active_start_id == summary.active_end_id
+                else f"IDs {summary.active_start_id}-{summary.active_end_id}"
+            )
+        else:
+            window_id_str = "No IDs"
+
+        excluded_str = f" ({summary.excluded_in_window} excluded via `aico undo`)" if summary.excluded_in_window else ""
+        return Text.assemble(
+            ("  └─ ", "dim"),
+            (
+                (
+                    f"Active window: {summary.active_pairs} pair{plural_s} ({window_id_str}), "
+                    f"{summary.pairs_sent} sent{excluded_str}.\n"
+                ),
+                "dim",
+            ),
+            ("     (Use `aico log`, `undo`, and `set-history` to manage)", "dim italic"),
+        )
 
     console = Console()
 

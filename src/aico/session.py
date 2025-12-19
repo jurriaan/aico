@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import typer
-from pydantic import TypeAdapter
 
 from aico.consts import SESSION_FILE_NAME
 from aico.exceptions import (
@@ -69,9 +68,9 @@ def complete_files_in_context(ctx: typer.Context | None, args: list[str], incomp
 
     try:
         view_path = load_pointer(session_file)
-        view_data = TypeAdapter(SessionData).validate_json(view_path.read_text(encoding="utf-8"))
+        view_data = load_view(view_path)
         context_files = view_data.context_files
-    except (InvalidPointerError, MissingViewError, OSError):
+    except (InvalidPointerError, MissingViewError, OSError, Exception):
         return []
 
     return [f for f in context_files if f.startswith(incomplete)]

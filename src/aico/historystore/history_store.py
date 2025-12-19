@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from contextlib import suppress
 from pathlib import Path
 
-from pydantic_core import ValidationError
+from msgspec import ValidationError
 
 from .models import SHARD_SIZE, HistoryRecord, dumps_history_record, load_history_record
 

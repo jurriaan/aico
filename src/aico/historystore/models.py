@@ -1,24 +1,19 @@
+# pyright: standard
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Literal
-
-from pydantic import Field, TypeAdapter, model_validator
-from pydantic.dataclasses import dataclass
-from pydantic_core import ArgsKwargs
+from typing import Literal
 
 from aico.models import (
     AssistantChatMessage,
-    DerivedContent,
     Mode,
     TokenUsage,
     UserChatMessage,
 )
+from aico.serialization import from_json, to_json
 
 SHARD_SIZE = 10_000
-
-
-type HistoryDerived = DerivedContent
 
 
 @dataclass(slots=True, frozen=True)
@@ -34,7 +29,7 @@ class HistoryRecord:
     role: Literal["user", "assistant"]
     content: str
     mode: Mode
-    timestamp: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     passthrough: bool = False
     piped_content: str | None = None
 
@@ -43,24 +38,20 @@ class HistoryRecord:
     token_usage: TokenUsage | None = None
     cost: float | None = None
     duration_ms: int | None = None
-    derived: HistoryDerived | None = None
+    derived: object | None = None  # Use object to allow migration of legacy nested dicts
 
     # Edit lineage (stores global index of predecessor)
     edit_of: int | None = None
 
-    @model_validator(mode="before")
-    @classmethod
-    def _migrate_user_meta(cls, values: dict[Any, Any] | ArgsKwargs):  # pyright: ignore[reportExplicitAny]
-        if isinstance(values, ArgsKwargs):
-            return values
-
-        derived = values.get("derived")
-        if isinstance(derived, dict) and "aico_user_meta" in derived:
-            meta: dict[Any, Any] = derived["aico_user_meta"]  # pyright: ignore[reportExplicitAny, reportUnknownVariableType]
-            values["passthrough"] = meta.get("passthrough", False)  # pyright: ignore[reportUnknownMemberType]
-            values["piped_content"] = meta.get("piped_content")  # pyright: ignore[reportUnknownMemberType]
-            values["derived"] = None
-        return values
+    def __post_init__(self) -> None:
+        # Legacy user meta migration from when passthrough/piped_content were nested in 'derived'
+        match self.role, self.derived:
+            case "user", {"aico_user_meta": dict(meta)}:
+                object.__setattr__(self, "passthrough", meta.get("passthrough", False))
+                object.__setattr__(self, "piped_content", meta.get("piped_content"))
+                object.__setattr__(self, "derived", None)
+            case _:
+                pass
 
     @classmethod
     def from_user_message(cls, msg: UserChatMessage) -> HistoryRecord:
@@ -88,9 +79,6 @@ class HistoryRecord:
         )
 
 
-HistoryRecordTypeAdapter = TypeAdapter(HistoryRecord)
-
-
 @dataclass(slots=True)
 class SessionView:
     """
@@ -102,32 +90,30 @@ class SessionView:
     """
 
     model: str
-    context_files: list[str] = Field(default_factory=list)
-    message_indices: list[int] = Field(default_factory=list)
+    context_files: list[str] = field(default_factory=list)
+    message_indices: list[int] = field(default_factory=list)
     history_start_pair: int = 0
-    excluded_pairs: list[int] = Field(default_factory=list)
-    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
+    excluded_pairs: list[int] = field(default_factory=list)
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
-    @model_validator(mode="after")
-    def _validate_indices(self) -> SessionView:
+    def __post_init__(self) -> None:
         if any(i < 0 for i in self.message_indices):
             raise ValueError("SessionView.message_indices must contain only non-negative integers.")
         if self.history_start_pair < 0:
             raise ValueError("SessionView.history_start_pair must be non-negative.")
         if any(i < 0 for i in self.excluded_pairs):
             raise ValueError("SessionView.excluded_pairs must contain only non-negative integers.")
-        return self
 
 
 def dumps_history_record(record: HistoryRecord) -> str:
     """
     Compact single-line JSON for a HistoryRecord.
     """
-    return HistoryRecordTypeAdapter.dump_json(record, indent=None, exclude_none=True).decode()
+    return to_json(record).decode("utf-8")
 
 
 def load_history_record(line: str | bytes) -> HistoryRecord:
     """
     Parse a JSON line into a HistoryRecord.
     """
-    return HistoryRecordTypeAdapter.validate_json(line)
+    return from_json(HistoryRecord, line)

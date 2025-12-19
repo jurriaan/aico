@@ -6,8 +6,8 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
+    "msgspec>=0.20.0",
     "openai>=2.8.1",
-    "pydantic>=2.12.4",
     "regex>=2025.11.3",
     "rich>=14.2.0",
     "typer>=0.20.0",

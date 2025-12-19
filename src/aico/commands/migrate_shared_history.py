@@ -1,13 +1,14 @@
 import sys
 
 import typer
-from pydantic import TypeAdapter, ValidationError
+from msgspec import DecodeError, ValidationError
 
 from aico.consts import SESSION_FILE_NAME
 from aico.exceptions import ConfigurationError, InvalidInputError, SessionError
 from aico.historystore import switch_active_pointer
 from aico.historystore.migration import LegacySessionSnapshot, from_legacy_session
 from aico.models import SessionPointer
+from aico.serialization import from_json
 from aico.session import find_session_file
 
 
@@ -27,16 +28,16 @@ def migrate_shared_history(
 
     # Already a pointer?
     try:
-        _ = TypeAdapter(SessionPointer).validate_json(raw_text)
+        _ = from_json(SessionPointer, raw_text)
         print("This session is already using the shared-history format. Nothing to migrate.")
         raise typer.Exit(code=0)
-    except ValidationError:
+    except (DecodeError, ValidationError):
         # Not a pointer, which is what we expect. Continue to parse as legacy.
         pass
 
     try:
-        session_data = LegacySessionSnapshot.model_validate_json(raw_text)
-    except ValidationError as e:
+        session_data = from_json(LegacySessionSnapshot, raw_text)
+    except (DecodeError, ValidationError) as e:
         raise SessionError(f"Failed to parse session file as a valid legacy session {session_file}: {e}") from e
 
     # Prepare paths

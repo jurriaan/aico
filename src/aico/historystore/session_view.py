@@ -1,10 +1,9 @@
 from pathlib import Path
 
-from pydantic import TypeAdapter
-
 from aico.fs import atomic_write_text
 from aico.history_utils import find_message_pairs_from_records
 from aico.models import SessionPointer
+from aico.serialization import from_json, to_json
 
 from .history_store import HistoryStore
 from .models import HistoryRecord, SessionView
@@ -15,14 +14,14 @@ def load_view(path: Path) -> SessionView:
     Load a SessionView from disk.
     """
     data = path.read_text(encoding="utf-8")
-    return TypeAdapter(SessionView).validate_json(data)
+    return from_json(SessionView, data)
 
 
 def save_view(path: Path, view: SessionView) -> None:
     """
     Atomically save a SessionView to disk using a compact single-line JSON format.
     """
-    json_text = TypeAdapter(SessionView).dump_json(view, indent=None)
+    json_text = to_json(view)
     atomic_write_text(path, json_text)
 
 
@@ -122,5 +121,5 @@ def switch_active_pointer(pointer_file: Path, new_view_path: Path) -> None:
         rel_path = str(new_view_path.resolve())
 
     data = SessionPointer(type="aico_session_pointer_v1", path=rel_path)
-    json_text = TypeAdapter(SessionPointer).dump_json(data, indent=None)
+    json_text = to_json(data)
     atomic_write_text(pointer_file, json_text)

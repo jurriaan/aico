@@ -9,6 +9,7 @@ from aico.historystore import (
 )
 from aico.historystore.migration import LegacySessionSnapshot, from_legacy_session
 from aico.historystore.models import SessionView as SessionViewModel
+from aico.serialization import convert
 
 
 def _make_legacy_chat_item(
@@ -79,7 +80,7 @@ def test_migration_forward_and_round_trip(tmp_path: Path) -> None:
     sessions_dir = tmp_path / "sessions"
 
     # WHEN migrating forward to sharded store + view
-    session_data = LegacySessionSnapshot.model_validate(legacy)
+    session_data = convert(legacy, LegacySessionSnapshot)
     view = from_legacy_session(
         session_data=session_data,
         history_root=history_root,
@@ -109,7 +110,7 @@ def test_migration_empty_session(tmp_path: Path) -> None:
     sessions_dir = tmp_path / "sessions"
 
     # WHEN migrating forward
-    session_data = LegacySessionSnapshot.model_validate(legacy)
+    session_data = convert(legacy, LegacySessionSnapshot)
     view = from_legacy_session(
         session_data=session_data,
         history_root=history_root,
@@ -140,7 +141,7 @@ def test_migration_history_start_after_last_pair(tmp_path: Path) -> None:
     sessions_dir = tmp_path / "sessions"
 
     # WHEN migrating forward
-    session_data = LegacySessionSnapshot.model_validate(legacy)
+    session_data = convert(legacy, LegacySessionSnapshot)
     view = from_legacy_session(
         session_data=session_data,
         history_root=history_root,
@@ -169,7 +170,7 @@ def test_migration_excludes_only_full_excluded_pairs(tmp_path: Path) -> None:
     sessions_dir = tmp_path / "sessions"
 
     # WHEN migrating forward
-    session_data = LegacySessionSnapshot.model_validate(legacy)
+    session_data = convert(legacy, LegacySessionSnapshot)
     view = from_legacy_session(
         session_data=session_data,
         history_root=history_root,
@@ -210,7 +211,7 @@ def test_migration_intermediate_format(tmp_path: Path) -> None:
     sessions_dir = tmp_path / "sessions"
 
     # WHEN migrating forward
-    session_data = LegacySessionSnapshot.model_validate(legacy)
+    session_data = convert(legacy, LegacySessionSnapshot)
     view = from_legacy_session(
         session_data=session_data,
         history_root=history_root,

@@ -1,8 +1,5 @@
 import json
 
-from pydantic import TypeAdapter
-from rich.console import Console
-
 from aico.console import (
     is_terminal,
     reconstruct_display_content_for_piping,
@@ -12,14 +9,17 @@ from aico.diffing.stream_processor import recompute_derived_content
 from aico.exceptions import AicoError, InvalidInputError
 from aico.historystore import load_view
 from aico.models import AssistantChatMessage, DisplayItem, UserChatMessage
+from aico.serialization import to_dict
 from aico.session import load_session_and_resolve_indices
 
 
 def _render_content(content: str, use_rich_markdown: bool) -> None:
     """Helper to render content to the console."""
     if use_rich_markdown:
-        console = Console()
+        from rich.console import Console
         from rich.markdown import Markdown
+
+        console = Console()
 
         console.print(Markdown(content))
     else:
@@ -57,11 +57,12 @@ def last(
             assistant_id = view.message_indices[asst_msg_idx]
 
         assert isinstance(user_msg, UserChatMessage)
-        user_dict = TypeAdapter(UserChatMessage).dump_python(user_msg, mode="json")  # pyright: ignore[reportAny]
+        assert isinstance(asst_msg, AssistantChatMessage)
+
+        user_dict = to_dict(user_msg)
         user_dict["id"] = user_id
 
-        assert isinstance(asst_msg, AssistantChatMessage)
-        asst_dict = TypeAdapter(AssistantChatMessage).dump_python(asst_msg, mode="json")  # pyright: ignore[reportAny]
+        asst_dict = to_dict(asst_msg)
         asst_dict["id"] = assistant_id
 
         output = {
@@ -115,6 +116,8 @@ def last(
 
     # Unified rendering logic
     if is_terminal():
+        from rich.console import Console
+
         console = Console()
         match display_content:
             case list() as items:

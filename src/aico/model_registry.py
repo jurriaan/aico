@@ -1,13 +1,13 @@
 import os
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Any, TypedDict
+from typing import TypedDict
 
-from pydantic import TypeAdapter, ValidationError, WrapValidator
+import msgspec
 
 from aico.fs import atomic_write_text
 from aico.models import ModelInfo
+from aico.serialization import convert, from_json, to_json
 
 # URL for the litellm model cost map
 LITELLM_MODEL_COST_MAP_URL = (
@@ -80,8 +80,8 @@ def _load_cache(cache_file: Path) -> ModelRegistry | None:
 
     try:
         content = cache_file.read_text(encoding="utf-8")
-        return TypeAdapter(ModelRegistry).validate_json(content)
-    except (ValidationError, OSError):
+        return from_json(ModelRegistry, content)
+    except (msgspec.DecodeError, msgspec.ValidationError, OSError):
         return None
 
 
@@ -90,17 +90,21 @@ def _fetch_and_normalize_litellm() -> dict[str, ModelInfo] | None:
     if not raw_data:
         return None
 
-    def invalid_to_none(v: Any, handler: Callable[[Any], Any]) -> Any:  # pyright: ignore[reportExplicitAny, reportAny]
+    try:
+        raw_dict = from_json(dict[str, object], raw_data)
+    except (msgspec.DecodeError, msgspec.ValidationError):
+        return None
+
+    parsed_models: dict[str, ModelInfo] = {}
+    for k, v in raw_dict.items():
+        if not k or not isinstance(v, dict):
+            continue
         try:
-            return handler(v)  # pyright: ignore[reportAny]
-        except ValidationError:
-            return None
+            # LiteLLM data is noisy, msgspec.convert handles field extraction.
+            parsed_models[k] = convert(v, ModelInfo)  # pyright: ignore[reportUnknownArgumentType]
+        except (msgspec.ValidationError, msgspec.DecodeError, TypeError, ValueError):
+            continue
 
-    type_adapter = TypeAdapter(dict[str, Annotated[ModelInfo | None, WrapValidator(invalid_to_none)]])
-
-    parsed_models: dict[str, ModelInfo] = {
-        k: v for k, v in type_adapter.validate_json(raw_data).items() if v is not None
-    }
     return parsed_models if parsed_models else None
 
 
@@ -110,10 +114,10 @@ def _fetch_and_normalize_openrouter() -> dict[str, ModelInfo] | None:
         return None
 
     try:
-        # Parse with strict schema validation using TypeAdapter[dataclass]
+        # Parse with strict schema validation.
         # This gives us runtime validation of the external API structure.
-        response = TypeAdapter(_OpenRouterResponse).validate_json(raw_data)
-    except ValidationError:
+        response = from_json(_OpenRouterResponse, raw_data)
+    except (msgspec.DecodeError, msgspec.ValidationError):
         return None
 
     parsed_models: dict[str, ModelInfo] = {}
@@ -150,7 +154,7 @@ def _update_registry(cache_file: Path) -> ModelRegistry | None:
     registry = ModelRegistry(last_fetched=datetime.now(UTC).isoformat(), models=models)
 
     try:
-        atomic_write_text(cache_file, TypeAdapter(ModelRegistry).dump_json(registry))
+        atomic_write_text(cache_file, to_json(registry))
         return registry
     except OSError:
         return None
