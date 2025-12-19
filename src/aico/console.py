@@ -2,12 +2,10 @@
 
 import sys
 from collections.abc import Sequence
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from rich.console import Console, Group, RenderableType
-from rich.markdown import Markdown
-from rich.syntax import Syntax
-from rich.text import Text
+if TYPE_CHECKING:
+    from rich.console import Group
 
 from aico.history_utils import find_message_pairs
 from aico.llm.tokens import compute_component_cost
@@ -38,8 +36,12 @@ def is_input_terminal() -> bool:
     return sys.stdin.isatty()
 
 
-def render_display_items_to_rich(items: Sequence[DisplayItem]) -> Group:
+def render_display_items_to_rich(items: Sequence[DisplayItem]) -> "Group":
     """Converts a list of DisplayItems into a Rich Group for rendering."""
+    from rich.console import Group, RenderableType
+    from rich.markdown import Markdown
+    from rich.syntax import Syntax
+    from rich.text import Text
 
     renderables: list[RenderableType] = []
     for item in items:
@@ -126,6 +128,8 @@ def calculate_and_display_cost(
     info_str = f"Tokens: {prompt_tokens_str} sent, {completion_tokens_str} received. {cost_str}"
 
     if is_terminal():
+        from rich.console import Console
+
         console = Console()
         console.print(f"\n[dim]---[/dim]\n[dim]{info_str}[/dim]")
     else:

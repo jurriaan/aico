@@ -35,8 +35,6 @@ def last(
     recompute: bool,
     json_output: bool,
 ) -> None:
-    from rich.markdown import Markdown
-
     session, pair_indices, resolved_pair_index = load_session_and_resolve_indices(index)
 
     if json_output:
@@ -117,6 +115,7 @@ def last(
     # Unified rendering logic
     if is_terminal():
         from rich.console import Console
+        from rich.markdown import Markdown
 
         console = Console()
         match display_content:
