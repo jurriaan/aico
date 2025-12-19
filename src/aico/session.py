@@ -18,7 +18,6 @@ from aico.historystore import (
     append_pair_to_view,
     load_view,
     reconstruct_chat_history,
-    reconstruct_full_chat_history,
     save_view,
 )
 from aico.historystore import (
@@ -265,7 +264,7 @@ class Session:
         self.data = data
 
     @classmethod
-    def load_active(cls, full_history: bool = False) -> "Session":
+    def load_active(cls) -> "Session":
         session_file = find_session_file()
         if not session_file:
             # We treat this as a user error for most commands
@@ -295,18 +294,15 @@ class Session:
         instance = cls(session_file, SessionData(model="placeholder"))  # Temporary data holder
 
         # Now perform the actual load logic
-        instance._load(full_history)
+        instance._load()
         return instance
 
-    def _load(self, full_history: bool) -> None:
+    def _load(self) -> None:
         store, view = self._load_view_and_store()
 
-        if full_history:
-            chat_history = reconstruct_full_chat_history(store, view)
-            offset = 0
-        else:
-            chat_history = reconstruct_chat_history(store, view, include_excluded=True)
-            offset = view.history_start_pair
+        # Load the history window (from history_start_pair onwards)
+        chat_history = reconstruct_chat_history(store, view, include_excluded=True)
+        offset = view.history_start_pair
 
         self.data = SessionData(
             model=view.model,
@@ -345,6 +341,44 @@ class Session:
 
     def get_view_path(self, name: str) -> Path:
         return self.sessions_dir / f"{name}.json"
+
+    @property
+    def num_pairs(self) -> int:
+        """Returns the total number of message pairs in the session."""
+        _, view = self._load_view_and_store()
+        return len(view.message_indices) // 2
+
+    def get_indices_if_loaded(self, resolved_index: int) -> MessagePairIndices | None:
+        """Returns the relative MessagePairIndices if the pair is already in the chat_history cache."""
+        pairs_in_window = find_message_pairs(self.data.chat_history)
+        rel_index = resolved_index - self.data.offset
+
+        if 0 <= rel_index < len(pairs_in_window):
+            return pairs_in_window[rel_index]
+        return None
+
+    def fetch_pair(self, resolved_index: int) -> MessagePairIndices:
+        """Surgically fetches a specific pair into the chat_history cache and returns its relative indices."""
+        store, view = self._load_view_and_store()
+
+        u_global_idx = view.message_indices[resolved_index * 2]
+        a_global_idx = view.message_indices[resolved_index * 2 + 1]
+
+        records = store.read_many([u_global_idx, a_global_idx])
+
+        from aico.historystore.reconstruct import (
+            deserialize_assistant_record,
+            deserialize_user_record,
+        )
+
+        user_msg = deserialize_user_record(records[0])
+        asst_msg = deserialize_assistant_record(records[1], view.model)
+
+        # Update session data to reflect the fetched pair.
+        self.data.chat_history = [user_msg, asst_msg]
+        self.data.offset = resolved_index
+
+        return MessagePairIndices(user_index=0, assistant_index=1)
 
     # Persistence Methods (from SharedHistoryPersistence)
 
@@ -463,10 +497,7 @@ def expand_index_ranges(indices: list[str]) -> list[str]:
     return expanded
 
 
-def resolve_pair_index(session: Session, index_str: str) -> int:
-    pairs = find_message_pairs(session.data.chat_history)
-    num_pairs = len(pairs)
-
+def resolve_pair_index(index_str: str, num_pairs: int) -> int:
     if num_pairs == 0:
         raise InvalidInputError("No message pairs found in history.")
 
@@ -474,11 +505,18 @@ def resolve_pair_index(session: Session, index_str: str) -> int:
 
 
 def load_session_and_resolve_indices(index_str: str) -> tuple[Session, MessagePairIndices, int]:
-    session = Session.load_active(full_history=True)
-    resolved_index = resolve_pair_index(session, index_str)
+    # 1. Load active session metadata without reconstructing history yet
+    session = Session.load_active()
 
-    pairs = find_message_pairs(session.data.chat_history)
-    pair_indices = pairs[resolved_index]
+    # 2. Resolve the user's requested index using metadata
+    resolved_index = resolve_pair_index(index_str, session.num_pairs)
+
+    # 3. Check if the pair is already in the (windowed) chat_history
+    if (pair_indices := session.get_indices_if_loaded(resolved_index)) is not None:
+        return session, pair_indices, resolved_index
+
+    # 4. Surgical Fetch: retrieve specifically the required messages
+    pair_indices = session.fetch_pair(resolved_index)
 
     return session, pair_indices, resolved_index
 
@@ -490,12 +528,14 @@ def modify_pair_exclusions(raw_indices: list[str] | None, exclude: bool) -> list
     # 1. Expand ranges
     expanded_indices = expand_index_ranges(raw_indices)
 
-    session = Session.load_active(full_history=True)
+    session = Session.load_active()
 
-    # 2. Resolve all indices first
+    # 2. Resolve total pairs and then all indices first
+    num_pairs = session.num_pairs
+
     resolved_indices: list[int] = []
     for idx_str in expanded_indices:
-        resolved_indices.append(resolve_pair_index(session, idx_str))
+        resolved_indices.append(resolve_pair_index(idx_str, num_pairs))
 
     # Use set operations for cleaner logic
     targets = set(resolved_indices)

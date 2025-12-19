@@ -1,13 +1,12 @@
-from aico.history_utils import find_message_pairs
 from aico.session import Session, resolve_start_pair_index
 
 
 def set_history(
     pair_index_str: str,
 ) -> None:
-    session = Session.load_active(full_history=True)
+    session = Session.load_active()
 
-    num_pairs = len(find_message_pairs(session.data.chat_history))
+    num_pairs = session.num_pairs
 
     # Handle the 'clear' keyword before numeric resolution
     if pair_index_str.lower() == "clear":

@@ -34,7 +34,7 @@ def load_session_data(session_file: Path) -> SessionData:
     # Instantiate directly to bypass session discovery env vars
     session = Session(session_file, SessionData(model="placeholder"))
     # Load without full history to match default behavior of load()
-    session._load(full_history=False)  # pyright: ignore[reportPrivateUsage]
+    session._load()  # pyright: ignore[reportPrivateUsage]
     return session.data
 
 

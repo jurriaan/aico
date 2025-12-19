@@ -298,7 +298,7 @@ def test_load_from_shared_history_restores_all_fields(tmp_path: Path) -> None:
     from aico.session import Session
 
     session = Session(pointer_file, SessionData(model="placeholder"))
-    session._load(full_history=False)
+    session._load()
     session_data = session.data
 
     # THEN the loaded SessionData contains all the restored fields
