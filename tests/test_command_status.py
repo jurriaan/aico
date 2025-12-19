@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 from aico.consts import SESSION_FILE_NAME
 from aico.main import app
-from aico.models import AssistantChatMessage, ChatMessageHistoryItem, Mode, SessionData, UserChatMessage
+from aico.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
 from tests.helpers import save_session
 
 runner = CliRunner()
@@ -50,23 +50,24 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
         (session_dir / "file1.py").write_text("a" * 10)
+        history_list = [
+            UserChatMessage(
+                content="message 1",
+                mode=Mode.CONVERSATION,
+                timestamp="ts1",
+            ),
+            AssistantChatMessage(
+                content="response 1",
+                mode=Mode.CONVERSATION,
+                timestamp="ts1",
+                model="m",
+                duration_ms=1,
+            ),
+        ]
         session_data = SessionData(
             model="test-model-with-cost",
             context_files=["file1.py"],
-            chat_history=[
-                UserChatMessage(
-                    content="message 1",
-                    mode=Mode.CONVERSATION,
-                    timestamp="ts1",
-                ),
-                AssistantChatMessage(
-                    content="response 1",
-                    mode=Mode.CONVERSATION,
-                    timestamp="ts1",
-                    model="m",
-                    duration_ms=1,
-                ),
-            ],
+            chat_history={i: m for i, m in enumerate(history_list)},
             history_start_pair=0,
         )
         save_session(session_dir / SESSION_FILE_NAME, session_data)
@@ -127,7 +128,7 @@ def test_status_handles_unknown_model(tmp_path: Path, mocker) -> None:
     # GIVEN a session with an unknown model
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
-        session_data = SessionData(model="unknown-model", context_files=[], chat_history=[])
+        session_data = SessionData(model="unknown-model", context_files=[], chat_history={})
         save_session(session_dir / SESSION_FILE_NAME, session_data)
 
         # Mock token counting
@@ -183,7 +184,7 @@ def test_status_omits_excluded_messages(tmp_path: Path, mocker) -> None:
         session_data = SessionData(
             model="test-model",
             context_files=[],
-            chat_history=history,
+            chat_history={i: msg for i, msg in enumerate(history)},
             excluded_pairs=[1],  # Exclude pair 1
         )
         save_session(session_dir / SESSION_FILE_NAME, session_data)
@@ -245,7 +246,7 @@ def test_status_history_summary_logic(tmp_path: Path, mocker) -> None:
         # Active context starts at Pair 1, and pair 2 is excluded
         session_data = SessionData(
             model="test-model",
-            chat_history=history,
+            chat_history={i: msg for i, msg in enumerate(history)},
             context_files=[],
             history_start_pair=1,
             excluded_pairs=[2],
@@ -268,10 +269,10 @@ def test_status_handles_dangling_messages(tmp_path: Path, mocker) -> None:
     # GIVEN a session with a dangling user message
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
-        history: list[ChatMessageHistoryItem] = [
-            UserChatMessage(content="dangling", mode=Mode.CONVERSATION, timestamp="t1")
-        ]
-        session_data = SessionData(model="test-model", chat_history=history, context_files=[])
+        history_list = [UserChatMessage(content="dangling", mode=Mode.CONVERSATION, timestamp="t1")]
+        session_data = SessionData(
+            model="test-model", chat_history={i: m for i, m in enumerate(history_list)}, context_files=[]
+        )
         save_session(session_dir / SESSION_FILE_NAME, session_data)
         mocker.patch("aico.llm.tokens.count_tokens_for_messages", return_value=10)
         mocker.patch("aico.model_registry.get_model_info", return_value=ModelInfo())

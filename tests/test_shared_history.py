@@ -303,7 +303,8 @@ def test_load_from_shared_history_restores_all_fields(tmp_path: Path) -> None:
 
     # THEN the loaded SessionData contains all the restored fields
     assert len(session_data.chat_history) == 2
-    user_msg, asst_msg = session_data.chat_history
+    user_msg = session_data.chat_history[0]
+    asst_msg = session_data.chat_history[1]
 
     assert isinstance(user_msg, UserChatMessage)
     assert user_msg.timestamp == "ts_u"

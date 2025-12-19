@@ -6,6 +6,7 @@ from aico.session import modify_pair_exclusions
 def undo(
     indices: list[str] | None,
 ) -> None:
+    # Use standard resolution logic to perform the metadata update
     actually_changed = modify_pair_exclusions(raw_indices=indices, exclude=True)
 
     if not actually_changed:

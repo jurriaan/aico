@@ -168,7 +168,7 @@ def test_session_fork_preserves_exclusions(tmp_path: Path) -> None:
     ]
     session_data = SessionData(
         model="test",
-        chat_history=history,
+        chat_history={i: m for i, m in enumerate(history)},
         excluded_pairs=[1],
     )
     init_shared_session(tmp_path, session_data)
@@ -219,7 +219,7 @@ def test_session_fork_truncates_exclusions(tmp_path: Path) -> None:
     ]
     session_data = SessionData(
         model="test",
-        chat_history=history,
+        chat_history={i: m for i, m in enumerate(history)},
         excluded_pairs=[0, 2],
     )
     init_shared_session(tmp_path, session_data)

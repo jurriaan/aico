@@ -82,9 +82,10 @@ def from_legacy_session(
     message_indices: list[int] = []
 
     # Helper because the generic `find_message_pairs` expects objects with `.role`
-    # and these Pydantic models have it.
+    # and these Struct models have it.
     from aico.history_utils import find_message_pairs
 
+    # During migration, we iterate the legacy list and append to sharded store
     for msg in session_data.chat_history:
         if isinstance(msg, LegacyUserChatMessage):
             # Convert to runtime model to use existing conversion logic,
@@ -115,8 +116,8 @@ def from_legacy_session(
 
     # Inline mapping logic to avoid dependency on runtime util if it changes,
     # though generic functions in history_utils should be stable.
-    # Using find_message_pairs to get pairs from legacy messages.
-    pairs_idx = find_message_pairs(session_data.chat_history)  # type: ignore
+    # Using find_message_pairs to get pairs from legacy message list.
+    pairs_idx = find_message_pairs(session_data.chat_history)
 
     # 1. Resolve Start Pair (Prefer new format, fallback to old)
     if session_data.history_start_pair is not None:

@@ -211,7 +211,7 @@ def test_last_recompute_for_diff_response(tmp_path: Path, mocker: MockerFixture)
         session_data = SessionData(
             model="test-model",
             context_files=["file.py"],
-            chat_history=[user_message, assistant_message],
+            chat_history={0: user_message, 1: assistant_message},
         )
 
         save_session(Path(td) / SESSION_FILE_NAME, session_data)
@@ -264,7 +264,7 @@ def test_last_can_access_pair_before_active_window(tmp_path: Path) -> None:
             model="test-model",
             context_files=[],
             history_start_pair=1,  # Active window starts at pair 1
-            chat_history=history,
+            chat_history={i: m for i, m in enumerate(history)},
         )
         save_session(Path(td) / SESSION_FILE_NAME, session_data)
 

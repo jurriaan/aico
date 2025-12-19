@@ -38,9 +38,13 @@ def session_for_log_tests(tmp_path: Path) -> Iterator[Path]:
             # Dangling user message (active, after start)
             UserChatMessage(content="dangling prompt", mode=Mode.CONVERSATION, timestamp="t4"),
         ]
-        # Set start index to 2, so the first pair is inactive
+        # Set start index to 1, so the first pair is inactive. Use absolute keyed dict for history.
         session_data = SessionData(
-            model="test-model", chat_history=history, context_files=[], history_start_pair=1, excluded_pairs=[1]
+            model="test-model",
+            chat_history={i: msg for i, msg in enumerate(history)},
+            context_files=[],
+            history_start_pair=1,
+            excluded_pairs=[1],
         )
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, session_data)
@@ -94,9 +98,9 @@ def test_log_with_empty_history(tmp_path: Path) -> None:
 def test_log_with_only_dangling_messages(tmp_path: Path) -> None:
     # GIVEN a session with only a single user message
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
-        history: list[ChatMessageHistoryItem] = [
-            UserChatMessage(content="only a prompt", mode=Mode.CONVERSATION, timestamp="t0"),
-        ]
+        history: dict[int, ChatMessageHistoryItem] = {
+            0: UserChatMessage(content="only a prompt", mode=Mode.CONVERSATION, timestamp="t0"),
+        }
         session_data = SessionData(model="test-model", chat_history=history, context_files=[])
         save_session(Path(td) / SESSION_FILE_NAME, session_data)
 

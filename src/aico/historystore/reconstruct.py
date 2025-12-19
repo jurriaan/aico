@@ -56,24 +56,25 @@ def reconstruct_chat_history(
     view: SessionView,
     start_pair: int | None = None,
     include_excluded: bool = False,
-) -> list[ChatMessageHistoryItem]:
+) -> dict[int, ChatMessageHistoryItem]:
     """
     Reconstructs strongly-typed ChatMessageHistoryItem objects from a view.
+    Returns a dictionary mapping absolute message indices to records.
 
     Optimized to only read the active part of the history from disk.
 
     Args:
         start_pair: The pair index to start from. If None, uses view.history_start_pair (active window).
                     Use 0 for full history.
-        include_excluded: If True, excluded messages are included in the returned list.
+        include_excluded: If True, excluded messages are included in the returned map.
     """
     if not view.message_indices:
-        return []
+        return {}
 
     effective_start_pair = view.history_start_pair if start_pair is None else start_pair
     start_message_pos = effective_start_pair * 2
     if start_message_pos >= len(view.message_indices):
-        return []
+        return {}
 
     indices_to_read = view.message_indices[start_message_pos:]
     records = store.read_many(indices_to_read)
@@ -104,15 +105,16 @@ def reconstruct_chat_history(
             for pos in (u_pos, a_pos)
         }
 
-    chat_history: list[ChatMessageHistoryItem] = []
+    chat_history: dict[int, ChatMessageHistoryItem] = {}
     for pos, rec in enumerate(records):
         if pos in excluded_message_positions:
             continue
 
+        abs_idx = start_message_pos + pos
         if rec.role == "user":
-            chat_history.append(deserialize_user_record(rec))
+            chat_history[abs_idx] = deserialize_user_record(rec)
         else:
-            chat_history.append(deserialize_assistant_record(rec, view.model))
+            chat_history[abs_idx] = deserialize_assistant_record(rec, view.model)
     return chat_history
 
 
@@ -120,7 +122,7 @@ def reconstruct_full_chat_history(
     store: HistoryStore,
     view: SessionView,
     include_excluded: bool = True,
-) -> list[ChatMessageHistoryItem]:
+) -> dict[int, ChatMessageHistoryItem]:
     """
     Reconstructs strongly-typed ChatMessageHistoryItem objects for the full history of a view.
     """

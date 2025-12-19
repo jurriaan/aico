@@ -118,17 +118,18 @@ def resolve_start_pair_index(pair_index_str: str, num_pairs: int) -> int:
 
 def get_active_message_pairs(session_data: SessionData) -> list[tuple[int, MessagePairIndices]]:
     history = session_data.chat_history
-    all_pairs_relative = find_message_pairs(history)
+    # Pair indices returned are absolute because they come from the absolute dict keys
+    all_pairs_absolute = find_message_pairs(history)
 
     start_pair_threshold = session_data.history_start_pair
-    offset = session_data.offset
 
     active_pairs: list[tuple[int, MessagePairIndices]] = []
 
-    for rel_idx, pair in enumerate(all_pairs_relative):
-        abs_idx = rel_idx + offset
-        if abs_idx >= start_pair_threshold:
-            active_pairs.append((abs_idx, pair))
+    for pair in all_pairs_absolute:
+        # Every pair starts at even index absolute_pair_index * 2
+        abs_pair_idx = pair.user_index // 2
+        if abs_pair_idx >= start_pair_threshold:
+            active_pairs.append((abs_pair_idx, pair))
 
     return active_pairs
 
@@ -138,16 +139,16 @@ def active_message_indices(session_data: SessionData, include_dangling: bool = T
     if not history:
         return []
 
+    # Absolute pairs from mapping
     pairs = find_message_pairs(history)
     valid_indices: list[int] = []
     excluded_set = set(session_data.excluded_pairs)
 
     start_pair_threshold = session_data.history_start_pair
-    offset = session_data.offset
 
     # 1. Collect Valid Pairs
-    for rel_pair_idx, p in enumerate(pairs):
-        abs_pair_idx = rel_pair_idx + offset
+    for p in pairs:
+        abs_pair_idx = p.user_index // 2
 
         # Window Filter
         if abs_pair_idx < start_pair_threshold:
@@ -160,18 +161,14 @@ def active_message_indices(session_data: SessionData, include_dangling: bool = T
         valid_indices.extend([p.user_index, p.assistant_index])
 
     if include_dangling:
-        rel_start_pair = start_pair_threshold - offset
-        if rel_start_pair <= 0:
-            start_msg_idx = 0
-        elif rel_start_pair < len(pairs):
-            start_msg_idx = pairs[rel_start_pair].user_index
-        else:
-            start_msg_idx = len(history)
+        # Dangling messages start from the first even index of the start pair
+        start_msg_idx = start_pair_threshold * 2
 
         pair_positions = {pos for p in pairs for pos in (p.user_index, p.assistant_index)}
 
-        for i in range(start_msg_idx, len(history)):
-            if i not in pair_positions:
+        # Iterate all keys in Sparse Map that are within window but not in a pair
+        for i in sorted(history):
+            if i >= start_msg_idx and i not in pair_positions:
                 valid_indices.append(i)
 
     return sorted(valid_indices)
@@ -199,10 +196,10 @@ def summarize_active_window(session_data: SessionData) -> ActiveWindowSummary | 
     active_pairs_with_indices = get_active_message_pairs(session_data)
 
     # Active dangling detection
-    all_pairs_in_history_list = find_message_pairs(history)
-    all_paired_indices = {idx for p in all_pairs_in_history_list for idx in (p.user_index, p.assistant_index)}
+    all_pairs_in_history = find_message_pairs(history)
+    all_paired_indices = {idx for p in all_pairs_in_history for idx in (p.user_index, p.assistant_index)}
     active_indices_set = set(active_message_indices(session_data, include_dangling=True))
-    has_active_dangling = any(i not in all_paired_indices and i in active_indices_set for i in range(len(history)))
+    has_active_dangling = any(i not in all_paired_indices and i in active_indices_set for i in history)
 
     if not active_pairs_with_indices and not has_active_dangling:
         return None
@@ -301,11 +298,9 @@ class Session:
         store, view = self._load_view_and_store()
 
         # Load the history window if requested, otherwise start with empty history
-        chat_history: list[ChatMessageHistoryItem] = []
+        chat_history: dict[int, ChatMessageHistoryItem] = {}
         if history:
             chat_history = reconstruct_chat_history(store, view, include_excluded=True)
-
-        offset = view.history_start_pair
 
         self.data = SessionData(
             model=view.model,
@@ -313,7 +308,6 @@ class Session:
             chat_history=chat_history,
             history_start_pair=view.history_start_pair,
             excluded_pairs=list(view.excluded_pairs),
-            offset=offset,
         )
 
     def _load_view_and_store(self) -> tuple[HistoryStore, SessionView]:
@@ -359,16 +353,15 @@ class Session:
         return len(view.message_indices) // 2
 
     def get_indices_if_loaded(self, resolved_index: int) -> MessagePairIndices | None:
-        """Returns the relative MessagePairIndices if the pair is already in the chat_history cache."""
-        pairs_in_window = find_message_pairs(self.data.chat_history)
-        rel_index = resolved_index - self.data.offset
+        """Returns the absolute MessagePairIndices if the pair is already in the chat_history cache."""
+        u_abs, a_abs = self.pair_to_msg_indices(resolved_index)
 
-        if 0 <= rel_index < len(pairs_in_window):
-            return pairs_in_window[rel_index]
+        if u_abs in self.data.chat_history and a_abs in self.data.chat_history:
+            return MessagePairIndices(user_index=u_abs, assistant_index=a_abs)
         return None
 
     def fetch_pair(self, resolved_pair_index: int) -> MessagePairIndices:
-        """Surgically fetches a specific pair into the chat_history cache and returns its relative indices."""
+        """Surgically fetches a specific pair into the chat_history cache and returns its absolute indices."""
         store, view = self._load_view_and_store()
 
         u_abs, a_abs = self.pair_to_msg_indices(resolved_pair_index)
@@ -395,11 +388,11 @@ class Session:
         user_msg = deserialize_user_record(records[0])
         asst_msg = deserialize_assistant_record(records[1], view.model)
 
-        # Update session data to reflect the fetched pair.
-        self.data.chat_history = [user_msg, asst_msg]
-        self.data.offset = resolved_pair_index
+        # Update sparse map with absolute keys. No state wiping!
+        self.data.chat_history[u_abs] = user_msg
+        self.data.chat_history[a_abs] = asst_msg
 
-        return MessagePairIndices(user_index=0, assistant_index=1)
+        return MessagePairIndices(user_index=u_abs, assistant_index=a_abs)
 
     # Persistence Methods (from SharedHistoryPersistence)
 

@@ -88,7 +88,7 @@ def test_execute_addon_calls_execvpe(tmp_path: Path, mocker: MockerFixture) -> N
 
     # AND a session file
     session_file = tmp_path / SESSION_FILE_NAME
-    save_session(session_file, SessionData(model="test", chat_history=[], context_files=[]))
+    save_session(session_file, SessionData(model="test", chat_history={}, context_files=[]))
     mocker.patch("aico.addons.find_session_file", return_value=session_file)
 
     # AND os.execvpe is mocked
@@ -128,7 +128,7 @@ def test_execute_addon_handles_os_error(tmp_path: Path, mocker: MockerFixture) -
 def test_discover_addons(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN a project addon and a user addon (with one name collision)
     session_file = tmp_path / SESSION_FILE_NAME
-    save_session(session_file, SessionData(model="test", chat_history=[], context_files=[]))
+    save_session(session_file, SessionData(model="test", chat_history={}, context_files=[]))
     mocker.patch("aico.addons.find_session_file", return_value=session_file)
 
     # Trust the project so addons are discovered
@@ -207,7 +207,7 @@ def test_discover_addons(tmp_path: Path, mocker: MockerFixture) -> None:
 def test_discover_addons_untrusted_skips_project(tmp_path: Path, mocker: MockerFixture) -> None:
     # GIVEN project addons exist
     session_file = tmp_path / SESSION_FILE_NAME
-    save_session(session_file, SessionData(model="test", chat_history=[], context_files=[]))
+    save_session(session_file, SessionData(model="test", chat_history={}, context_files=[]))
     mocker.patch("aico.addons.find_session_file", return_value=session_file)
 
     # Mock home to avoid interference

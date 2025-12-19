@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from rich.console import Group
 
-from aico.history_utils import find_message_pairs
 from aico.llm.tokens import compute_component_cost
 from aico.model_registry import get_model_info
 from aico.models import (
@@ -17,6 +16,7 @@ from aico.models import (
     SessionData,
     TokenUsage,
 )
+from aico.session import get_active_message_pairs
 
 
 def format_tokens(tokens: int) -> str:
@@ -104,23 +104,20 @@ def calculate_and_display_cost(
 
     cost_str: str = ""
     if message_cost is not None:
-        # Calculate where the active window starts in the current list
-        pairs = find_message_pairs(session_data.chat_history)
+        # Get absolute indices for all messages currently in the active window
+        # We use get_active_message_pairs instead of active_message_indices
+        # because we want to include the cost of excluded pairs in the session total.
+        active_pairs = get_active_message_pairs(session_data)
 
-        # Which pair in the CURRENT list corresponds to history_start_pair?
-        rel_start_pair = session_data.history_start_pair - session_data.offset
+        window_history_cost = 0.0
+        for _, pair in active_pairs:
+            # pair contains absolute indices
+            match session_data.chat_history[pair.assistant_index]:
+                case AssistantChatMessage(cost=float(cost)):
+                    window_history_cost += cost
+                case _:
+                    pass
 
-        if rel_start_pair <= 0:
-            start_msg_idx = 0
-        elif rel_start_pair < len(pairs):
-            start_msg_idx = pairs[rel_start_pair].user_index
-        else:
-            start_msg_idx = len(session_data.chat_history)
-
-        current_chat_window = session_data.chat_history[start_msg_idx:]
-        window_history_cost = sum(
-            msg.cost for msg in current_chat_window if isinstance(msg, AssistantChatMessage) and msg.cost is not None
-        )
         # The total cost for the current chat window is the historical cost plus the new message cost
         total_window_cost = window_history_cost + message_cost
         cost_str = f"Cost: ${message_cost:.2f}, current chat: ${total_window_cost:.2f}"

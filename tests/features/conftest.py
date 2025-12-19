@@ -118,7 +118,7 @@ def given_initialized_session(project_dir: Path, runner: CliRunner, model_name: 
         assert result.exit_code == 0
     else:  # session_type == "legacy"
         session_file = project_dir / SESSION_FILE_NAME
-        new_session = SessionData(model=model_name)
+        new_session = SessionData(model=model_name, chat_history={})
         save_session(session_file, new_session)
 
     assert (project_dir / SESSION_FILE_NAME).is_file()
@@ -152,17 +152,15 @@ def _add_pair_to_history(
         save_view(view_path, view)
     else:  # session_type == "legacy"
         session_data = from_json(SessionData, session_file.read_text())
-        session_data.chat_history.extend(
-            [
-                UserChatMessage(content=user_content, mode=Mode.CONVERSATION, timestamp="t1"),
-                AssistantChatMessage(
-                    content=assistant_content,
-                    mode=Mode.CONVERSATION,
-                    timestamp="t1",
-                    model=model,
-                    duration_ms=1,
-                ),
-            ]
+        history = session_data.chat_history
+        next_idx = max(history, default=-1) + 1
+        history[next_idx] = UserChatMessage(content=user_content, mode=Mode.CONVERSATION, timestamp="t1")
+        history[next_idx + 1] = AssistantChatMessage(
+            content=assistant_content,
+            mode=Mode.CONVERSATION,
+            timestamp="t1",
+            model=model,
+            duration_ms=1,
         )
         save_session(session_file, session_data)
 

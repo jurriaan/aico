@@ -71,7 +71,8 @@ def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) ->
         # AND the session history is updated correctly
         final_session = load_final_session(Path(td))
         assert len(final_session.chat_history) == 2
-        user_msg, assistant_msg = final_session.chat_history
+        user_msg = final_session.chat_history[0]
+        assistant_msg = final_session.chat_history[1]
         assert user_msg.role == "user"
         assert user_msg.content == prompt_text
         assert user_msg.mode == "conversation"
@@ -108,7 +109,8 @@ def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) ->
         # AND the session history is updated correctly
         final_session = load_final_session(Path(td))
         assert len(final_session.chat_history) == 2
-        user_msg, assistant_msg = final_session.chat_history
+        user_msg = final_session.chat_history[0]
+        assistant_msg = final_session.chat_history[1]
         assert user_msg.role == "user"
         assert user_msg.content == prompt_text
         assert user_msg.mode == "conversation"
@@ -157,7 +159,8 @@ def test_gen_command_generates_diff(tmp_path: Path, mocker: MockerFixture) -> No
 
         # AND the session history is updated correctly
         final_session = load_final_session(Path(td))
-        user_msg, assistant_msg = final_session.chat_history
+        user_msg = final_session.chat_history[0]
+        assistant_msg = final_session.chat_history[1]
         assert user_msg.mode == "diff"
         assert isinstance(assistant_msg, AssistantChatMessage)
         assert assistant_msg.mode == "diff"
@@ -216,7 +219,8 @@ def test_ask_command_with_diff_response_outputs_diff_non_tty(tmp_path: Path, moc
 
         # AND the session file still correctly records that mode was `conversation`
         final_session = load_final_session(Path(td))
-        assert final_session.chat_history[-1].mode == "conversation"
+        history = final_session.chat_history
+        assert history[max(history, default=-1)].mode == "conversation"
 
 
 def test_ask_command_with_diff_response_saves_derived_content(tmp_path: Path, mocker: MockerFixture) -> None:
@@ -239,7 +243,10 @@ def test_ask_command_with_diff_response_saves_derived_content(tmp_path: Path, mo
 
         # AND the session file is updated with BOTH the raw content AND parsed diffs
         final_session = load_final_session(Path(td))
-        user_msg, assistant_msg = final_session.chat_history[-2:]
+        history = final_session.chat_history
+        last_idx = max(history, default=-1)
+        user_msg = history[last_idx - 1]
+        assistant_msg = history[last_idx]
         assert user_msg.content == "make a change"
         assert isinstance(assistant_msg, AssistantChatMessage)
         assert assistant_msg.content == llm_diff_response
@@ -472,7 +479,8 @@ def test_gen_command_with_filesystem_fallback_and_warning(tmp_path: Path, mocker
 
         # AND the session file now includes the fallback files in its original content record
         final_session = load_final_session(Path(td))
-        assistant_msg = final_session.chat_history[-1]
+        history = final_session.chat_history
+        assistant_msg = history[max(history, default=-1)]
         assert isinstance(assistant_msg, AssistantChatMessage)
         assert assistant_msg.derived is not None
         assert assistant_msg.derived.unified_diff is not None
@@ -507,7 +515,8 @@ def test_prompt_passthrough_mode_bypasses_context_and_formatting(tmp_path: Path,
 
         # AND the session history correctly records the passthrough state
         final_session = load_final_session(Path(td))
-        user_msg = final_session.chat_history[-2]
+        history = final_session.chat_history
+        user_msg = history[max(history, default=-1) - 1]
         assert isinstance(user_msg, UserChatMessage)
         assert user_msg.passthrough is True
 
@@ -583,8 +592,9 @@ def test_prompt_no_history_flag_omits_history_from_llm_call(tmp_path: Path, mock
 
         # AND the session file now contains both pairs of messages
         final_session = load_final_session(Path(td))
-        assert len(final_session.chat_history) == 4
-        assert "initial prompt" in final_session.chat_history[0].content
-        assert "initial response" in final_session.chat_history[1].content
-        assert "no-history prompt" in final_session.chat_history[2].content
-        assert "no-history response" in final_session.chat_history[3].content
+        history = final_session.chat_history
+        assert len(history) == 4
+        assert "initial prompt" in history[0].content
+        assert "initial response" in history[1].content
+        assert "no-history prompt" in history[2].content
+        assert "no-history response" in history[3].content

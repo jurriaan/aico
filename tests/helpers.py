@@ -62,12 +62,20 @@ def init_shared_session(project_root: Path, data: SessionData, view_name: str = 
         excluded_pairs=list(data.excluded_pairs),
     )
 
-    # Convert flat list of messages into pairs and append to store/view
-    # We assume the test data is well-formed (User -> Assistant -> User ...)
-    for i in range(0, len(data.chat_history), 2):
-        if i + 1 >= len(data.chat_history):
+    # Convert mapping or list of messages into pairs and append to store/view.
+    history = data.chat_history
+    if isinstance(history, list):
+        history = {idx: msg for idx, msg in enumerate(history)}
+
+    # We assume keys follow (0: user, 1: assistant) or similar even/odd alignment.
+    sorted_keys = sorted(history)
+    for i in sorted_keys:
+        if i % 2 != 0:
+            continue
+
+        if i + 1 not in history:
             # Handle dangling user message
-            u_msg = data.chat_history[i]
+            u_msg = history[i]
             assert isinstance(u_msg, UserChatMessage), f"{i} is not UserChatMessage, but {u_msg}"
             # Create a dummy assistant record to satisfy append_pair requirements for now,
             # or handle dangling insertion if your API supports it.
@@ -87,9 +95,9 @@ def init_shared_session(project_root: Path, data: SessionData, view_name: str = 
             view.message_indices.append(idx)
             break
 
-        u_msg = data.chat_history[i]
+        u_msg = history[i]
         assert isinstance(u_msg, UserChatMessage), f"{i} is not UserChatMessage, but {u_msg}"
-        a_msg = data.chat_history[i + 1]
+        a_msg = history[i + 1]
         assert isinstance(a_msg, AssistantChatMessage), f"{i} is not UserChatMessage, but {u_msg}"
 
         u_rec = HistoryRecord(

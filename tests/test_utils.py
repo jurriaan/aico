@@ -24,7 +24,7 @@ def test_aico_session_file_env_var_works(tmp_path: Path, mocker: MockerFixture) 
     session_dir = tmp_path / "custom" / "location"
     session_dir.mkdir(parents=True)
     session_file = session_dir / SESSION_FILE_NAME
-    save_session(session_file, SessionData(model="test-model", context_files=[], chat_history=[]))
+    save_session(session_file, SessionData(model="test-model", context_files=[], chat_history={}))
 
     # Avoid token counting and model fetch overhead
     mocker.patch("aico.llm.tokens.count_tokens_for_messages", return_value=10)
@@ -76,7 +76,7 @@ def test_aico_session_file_env_var_not_set_uses_upward_search(tmp_path: Path, mo
     # GIVEN a session file in the current directory (normal case)
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_file = Path(td) / SESSION_FILE_NAME
-        save_session(session_file, SessionData(model="upward-search-model", context_files=[], chat_history=[]))
+        save_session(session_file, SessionData(model="upward-search-model", context_files=[], chat_history={}))
 
         # AND dependencies are mocked
         mocker.patch("aico.llm.tokens.count_tokens_for_messages", return_value=10)
@@ -117,10 +117,13 @@ def test_calculate_and_display_cost_logic(mocker: MockerFixture) -> None:
     token_usage = TokenUsage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
     model_name = "test-model"
 
-    # Construct a modern SessionData object that starts at the second pair
+    # Construct a modern SessionData object that starts at the second pair.
+    # chat_history must be a dict with absolute indices.
+    chat_history_dict = {i: msg for i, msg in enumerate(chat_history)}
+
     session_data = SessionData(
         model=model_name,
-        chat_history=list(chat_history),
+        chat_history=chat_history_dict,
         history_start_pair=1,  # Start at pair 1 {u1, a1}
         excluded_pairs=[2],  # Exclude pair 2 {u2, a2}. Cost should still be counted.
     )
@@ -169,9 +172,11 @@ def test_calculate_and_display_cost_shows_cached_tokens(mocker: MockerFixture) -
     model_name = "test-model"
 
     # Construct a modern SessionData object
+    chat_history_dict = {i: msg for i, msg in enumerate(chat_history)}
+
     session_data = SessionData(
         model=model_name,
-        chat_history=list(chat_history),
+        chat_history=chat_history_dict,
         history_start_pair=0,
         excluded_pairs=[],
     )

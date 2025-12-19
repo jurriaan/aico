@@ -35,7 +35,7 @@ def session_with_context_file(tmp_path: Path) -> Path:
     session_data = SessionData(
         model="test-model",
         context_files=["code.py"],
-        chat_history=[],
+        chat_history={},
     )
     save_session(session_file, session_data)
     return session_file
@@ -87,11 +87,13 @@ def test_edit_response_and_invalidate_derived_content(session_with_two_pairs: Pa
     session_file = session_with_two_pairs
     session_data = load_session_data(session_file)
 
-    last_response = session_data.chat_history[-1]
+    history = session_data.chat_history
+    last_idx = max(history, default=-1)
+    last_response = history[last_idx]
     last_response_with_derived = replace(
         last_response, derived=DerivedContent(unified_diff="diff", display_content="display")
     )
-    session_data.chat_history[-1] = last_response_with_derived
+    history[last_idx] = last_response_with_derived
     save_session(session_file, session_data)
 
     # AND a mocked editor that will succeed
@@ -106,7 +108,8 @@ def test_edit_response_and_invalidate_derived_content(session_with_two_pairs: Pa
 
     # AND the response content is updated
     final_session = load_session_data(session_file)
-    final_response = final_session.chat_history[-1]
+    history = final_session.chat_history
+    final_response = history[max(history, default=-1)]
     assert final_response.content == "Updated response content"
 
     # AND the derived content is recomputed but is None because the new content is just conversational
@@ -138,7 +141,8 @@ def test_edit_with_custom_editor(session_with_two_pairs: Path, mocker: MockerFix
 def test_edit_aborts_if_no_changes(session_with_two_pairs: Path, mocker: MockerFixture) -> None:  # noqa F811 module-private
     # GIVEN a mocked editor that makes no changes
     session_file = session_with_two_pairs
-    original_content = load_session_data(session_file).chat_history[-1].content
+    history = load_session_data(session_file).chat_history
+    original_content = history[max(history, default=-1)].content
     mocker.patch("subprocess.run", new=mock_editor(original_content))
 
     # WHEN `aico edit` is run
@@ -199,7 +203,8 @@ def test_edit_negative_index(session_with_two_pairs: Path, mocker: MockerFixture
 
     # AND the last response is updated
     final_session = load_session_data(session_file)
-    assert final_session.chat_history[-1].content == "Updated last response"
+    history = final_session.chat_history
+    assert history[max(history, default=-1)].content == "Updated last response"
 
 
 def test_edit_response_recomputes_derived_content_on_change(
@@ -217,7 +222,7 @@ def test_edit_response_recomputes_derived_content_on_change(
         model="test-model",
         duration_ms=100,
     )
-    session_data.chat_history = [user_msg, assistant_msg]
+    session_data.chat_history = {0: user_msg, 1: assistant_msg}
     save_session(session_file, session_data)
 
     # AND a mocked editor that will provide a valid patch
@@ -235,7 +240,8 @@ def test_edit_response_recomputes_derived_content_on_change(
 
     # AND the response content is updated
     final_session = load_session_data(session_file)
-    final_response = final_session.chat_history[-1]
+    history = final_session.chat_history
+    final_response = history[max(history, default=-1)]
     assert isinstance(final_response, AssistantChatMessage)
     assert final_response.content == new_patch_content
 
@@ -278,7 +284,8 @@ def test_edit_scripted_mode(session_with_two_pairs: Path, mocker: MockerFixture)
 
     # AND the session is updated with the piped content
     final_session = load_session_data(session_file)
-    assert final_session.chat_history[-1].content == "new content from stdin"
+    history = final_session.chat_history
+    assert history[max(history, default=-1)].content == "new content from stdin"
 
 
 def test_edit_scripted_mode_empty_stdin(session_with_two_pairs: Path, mocker: MockerFixture) -> None:
@@ -297,4 +304,5 @@ def test_edit_scripted_mode_empty_stdin(session_with_two_pairs: Path, mocker: Mo
 
     # AND the session remains unchanged
     final_session = load_session_data(session_file)
-    assert final_session.chat_history[-1].content == "assistant response 1"
+    history = final_session.chat_history
+    assert history[max(history, default=-1)].content == "assistant response 1"

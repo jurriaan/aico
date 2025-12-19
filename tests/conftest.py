@@ -34,7 +34,7 @@ def session_with_two_pairs(tmp_path: Path) -> Iterator[Path]:
                     duration_ms=100,
                 )
             )
-        session_data = SessionData(model="test", chat_history=history)
+        session_data = SessionData(model="test", chat_history={i: m for i, m in enumerate(history)})
 
         init_shared_session(Path(td), session_data)
 
@@ -64,7 +64,9 @@ def session_with_excluded_pairs(tmp_path: Path) -> Iterator[Path]:
                     duration_ms=100,
                 )
             )
-        session_data = SessionData(model="test", context_files=[], chat_history=history, excluded_pairs=[0, 1])
+        session_data = SessionData(
+            model="test", context_files=[], chat_history={i: m for i, m in enumerate(history)}, excluded_pairs=[0, 1]
+        )
 
         init_shared_session(Path(td), session_data)
 

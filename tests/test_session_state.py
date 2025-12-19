@@ -10,25 +10,25 @@ def _make_msg(role: str, content: str) -> UserChatMessage | AssistantChatMessage
 
 
 def test_active_message_indices_shared_history_signal() -> None:
-    # GIVEN a SessionData object
+    # GIVEN a SessionData object with history
     history = [
         _make_msg("user", "u0"),
         _make_msg("assistant", "a0"),
         _make_msg("user", "u1"),
         _make_msg("assistant", "a1"),
     ]
+    # Set window to start at 0 and no exclusions to get full history
     session_data = SessionData(
         model="m",
-        chat_history=history,
-        history_start_pair=1,  # This should be ignored
-        excluded_pairs=[0],  # This should also be ignored
-        offset=1,
+        chat_history={i: m for i, m in enumerate(history)},
+        history_start_pair=0,
+        excluded_pairs=[],
     )
 
     # WHEN calling active_message_indices
     indices = active_message_indices(session_data)
 
-    # THEN it should return all indices of the provided history
+    # THEN it should return all absolute message indices
     assert indices == [0, 1, 2, 3]
 
 
@@ -56,10 +56,9 @@ def test__get_active_history_filters_and_slices() -> None:
     session_data = SessionData(
         model="test",
         context_files=[],
-        chat_history=history,
+        chat_history={i: m for i, m in enumerate(history)},
         history_start_pair=1,  # Equivalent of legacy start_index pointing at msg 1
         excluded_pairs=[2],  # Exclude the third pair (index 2)
-        offset=0,
     )
 
     # WHEN _get_active_history is called

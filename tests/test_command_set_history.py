@@ -40,7 +40,11 @@ def test_set_history_with_negative_index_argument(tmp_path: Path) -> None:
                 )
             )
 
-        session_data = SessionData(model="test-model", chat_history=history, context_files=[])
+        session_data = SessionData(
+            model="test-model",
+            chat_history={i: m for i, m in enumerate(history)},
+            context_files=[],
+        )
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, session_data)
 
@@ -73,7 +77,11 @@ def test_set_history_with_positive_pair_index(tmp_path: Path) -> None:
                 )
             )
 
-        session_data = SessionData(model="test-model", chat_history=history, context_files=[])
+        session_data = SessionData(
+            model="test-model",
+            chat_history={i: m for i, m in enumerate(history)},
+            context_files=[],
+        )
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, session_data)
 
@@ -105,7 +113,11 @@ def test_set_history_to_clear_context(tmp_path: Path) -> None:
                 )
             )
 
-        session_data = SessionData(model="test-model", chat_history=history, context_files=[])
+        session_data = SessionData(
+            model="test-model",
+            chat_history={i: m for i, m in enumerate(history)},
+            context_files=[],
+        )
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, session_data)
 
@@ -151,7 +163,12 @@ def test_set_history_fails_with_invalid_index(tmp_path: Path, invalid_input: str
                 )
             )
 
-        session_data = SessionData(model="test-model", chat_history=history, context_files=[], history_start_pair=1)
+        session_data = SessionData(
+            model="test-model",
+            chat_history={i: m for i, m in enumerate(history)},
+            context_files=[],
+            history_start_pair=1,
+        )
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, session_data)
         original_start_pair = session_data.history_start_pair
@@ -200,7 +217,7 @@ def test_set_history_with_zero_sets_index_to_zero(tmp_path: Path) -> None:
         session_data = SessionData(
             model="test-model",
             context_files=[],
-            chat_history=history,
+            chat_history={i: m for i, m in enumerate(history)},
             history_start_pair=2,  # Start at pair 2 to test reset
         )
         session_file = Path(td) / SESSION_FILE_NAME
@@ -237,7 +254,11 @@ def test_set_history_with_clear_keyword(tmp_path: Path) -> None:
                 )
             )
 
-        session_data = SessionData(model="test-model", chat_history=history, context_files=[])
+        session_data = SessionData(
+            model="test-model",
+            chat_history={i: m for i, m in enumerate(history)},
+            context_files=[],
+        )
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, session_data)
 
@@ -269,7 +290,12 @@ def test_set_history_can_move_pointer_backwards(tmp_path: Path) -> None:
                 )
             )
 
-        session_data = SessionData(model="test-model", chat_history=history, context_files=[], history_start_pair=2)
+        session_data = SessionData(
+            model="test-model",
+            chat_history={i: m for i, m in enumerate(history)},
+            context_files=[],
+            history_start_pair=2,
+        )
         session_file = Path(td) / SESSION_FILE_NAME
         save_session(session_file, session_data)
 

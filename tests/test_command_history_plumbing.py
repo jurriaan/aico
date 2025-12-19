@@ -37,7 +37,7 @@ def test_history_splice_inserts_correctly(tmp_path: Path) -> None:
     ]
     session_data = SessionData(
         model="test",
-        chat_history=history,
+        chat_history={i: m for i, m in enumerate(history)},
     )
     init_shared_session(tmp_path, session_data)
 
@@ -78,20 +78,21 @@ def test_history_splice_inserts_correctly(tmp_path: Path) -> None:
 
 def test_history_splice_fails_invalid_index(tmp_path: Path) -> None:
     # GIVEN session with 1 pair
+    history_list = [
+        UserChatMessage(content="u", mode=Mode.CONVERSATION, timestamp="ts"),
+        AssistantChatMessage(
+            content="a",
+            mode=Mode.CONVERSATION,
+            timestamp="ts",
+            model="m",
+            duration_ms=0,
+        ),
+    ]
     init_shared_session(
         tmp_path,
         SessionData(
             model="m",
-            chat_history=[
-                UserChatMessage(content="u", mode=Mode.CONVERSATION, timestamp="ts"),
-                AssistantChatMessage(
-                    content="a",
-                    mode=Mode.CONVERSATION,
-                    timestamp="ts",
-                    model="m",
-                    duration_ms=0,
-                ),
-            ],
+            chat_history={i: m for i, m in enumerate(history_list)},
         ),
     )
 
@@ -109,7 +110,7 @@ def test_history_splice_fails_invalid_index(tmp_path: Path) -> None:
 
 
 def test_history_splice_fails_invalid_ids(tmp_path: Path) -> None:
-    init_shared_session(tmp_path, SessionData(model="m", chat_history=[]))
+    init_shared_session(tmp_path, SessionData(model="m", chat_history={}))
 
     with runner.isolated_filesystem(temp_dir=tmp_path):
         result = runner.invoke(app, ["history-splice", "999", "888", "--at-index", "0"])
@@ -121,7 +122,7 @@ def test_history_splice_fails_invalid_ids(tmp_path: Path) -> None:
 def test_history_splice_validates_user_role(tmp_path: Path) -> None:
     # GIVEN a shared session (empty)
     # We create artificial records to test ID validation
-    init_shared_session(tmp_path, SessionData(model="m", chat_history=[]))
+    init_shared_session(tmp_path, SessionData(model="m", chat_history={}))
 
     project_root = tmp_path
     history_root = project_root / ".aico" / "history"
@@ -146,7 +147,7 @@ def test_history_splice_validates_user_role(tmp_path: Path) -> None:
 
 def test_history_splice_validates_assistant_role(tmp_path: Path) -> None:
     # GIVEN a shared session
-    init_shared_session(tmp_path, SessionData(model="m", chat_history=[]))
+    init_shared_session(tmp_path, SessionData(model="m", chat_history={}))
 
     project_root = tmp_path
     history_root = project_root / ".aico" / "history"
@@ -178,7 +179,7 @@ def test_history_splice_shifts_metadata_pointers(tmp_path: Path) -> None:
         UserChatMessage(content="u2", mode=Mode.CONVERSATION, timestamp="t2"),
         AssistantChatMessage(content="a2", mode=Mode.CONVERSATION, timestamp="t2", model="m", duration_ms=0),
     ]
-    init_shared_session(tmp_path, SessionData(model="test", chat_history=history))
+    init_shared_session(tmp_path, SessionData(model="test", chat_history={i: m for i, m in enumerate(history)}))
 
     # Manually configure indices: start at pair 1, exclude pair 2
     view_path = tmp_path / ".aico" / "sessions" / "main.json"
@@ -213,7 +214,7 @@ def test_history_splice_preserves_pointers_before_splice_index(tmp_path: Path) -
         UserChatMessage(content="u2", mode=Mode.CONVERSATION, timestamp="t2"),
         AssistantChatMessage(content="a2", mode=Mode.CONVERSATION, timestamp="t2", model="m", duration_ms=0),
     ]
-    init_shared_session(tmp_path, SessionData(model="test", chat_history=history))
+    init_shared_session(tmp_path, SessionData(model="test", chat_history={i: m for i, m in enumerate(history)}))
 
     view_path = tmp_path / ".aico" / "sessions" / "main.json"
     view = load_view(view_path)

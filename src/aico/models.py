@@ -104,10 +104,9 @@ class MessagePairIndices(Struct, frozen=True):
 class SessionData(Struct):
     model: str
     context_files: list[str] = field(default_factory=list)
-    chat_history: list[ChatMessageHistoryItem] = field(default_factory=list)
+    chat_history: dict[int, ChatMessageHistoryItem] = field(default_factory=dict)
     history_start_pair: int = 0
     excluded_pairs: list[int] = field(default_factory=list)
-    offset: int = 0
 
 
 class ContextFile(Struct, frozen=True):

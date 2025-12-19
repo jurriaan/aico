@@ -26,6 +26,7 @@ def log() -> None:
         excluded_set = set(session.data.excluded_pairs)
 
         for i, (pair_index, pair) in enumerate(active_pairs_with_indices):
+            # pair.user_index and pair.assistant_index are absolute keys in the map
             user_msg = chat_history[pair.user_index]
             asst_msg = chat_history[pair.assistant_index]
 
@@ -58,7 +59,7 @@ def log() -> None:
     else:
         console.print("No message pairs found in active history.")
 
-    # For dangling messages, we need to know which messages in the current history list are part of any pair.
+    # For dangling messages, we need to know which messages in the current history map are part of any pair.
     # This is safe for both legacy (full history) and shared (sliced history) sessions.
     all_pairs_in_current_history = find_message_pairs(chat_history)
     all_paired_indices = {
@@ -67,7 +68,7 @@ def log() -> None:
 
     # Dangling messages are active if in active_indices_set and not part of a pair
     active_dangling_messages = [
-        msg for i, msg in enumerate(chat_history) if i not in all_paired_indices and i in active_indices_set
+        chat_history[idx] for idx in sorted(chat_history) if idx not in all_paired_indices and idx in active_indices_set
     ]
 
     if active_dangling_messages:
