@@ -261,7 +261,7 @@ def test_prompt_fails_with_no_input(tmp_path: Path, mocker: MockerFixture) -> No
         runner.invoke(app, ["init"])
 
         # AND the interactive prompt is mocked to return an empty string (user pressing Enter)
-        mocker.patch("aico.commands.prompt.Prompt.ask", return_value="")
+        mocker.patch("rich.prompt.Prompt.ask", return_value="")
 
         # WHEN `aico prompt` is run with no argument and no piped input
         result = runner.invoke(app, ["prompt"])

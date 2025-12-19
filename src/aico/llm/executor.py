@@ -1,14 +1,12 @@
 import math
+import sys
 import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import regex
-from rich.console import Console
-from rich.live import Live
-from rich.spinner import Spinner
 
 from aico.console import (
     calculate_and_display_cost,
@@ -43,9 +41,6 @@ from aico.prompts import (
     STATIC_CONTEXT_INTRO,
 )
 from aico.session import build_active_context
-
-if TYPE_CHECKING:
-    pass
 
 
 def _format_file_block(files: MetadataFileContents, intro_text: str, anchor_text: str) -> list[LLMChatMessage]:
@@ -191,7 +186,6 @@ def _handle_unified_streaming(
     full_llm_response_buffer: str = ""
     token_usage: TokenUsage | None = None
     exact_cost: float | None = None
-    live: Live | None = None
 
     # Create configured client and get resolved model/params
     config = provider.configure_request(clean_model_id, extra_params)
@@ -199,14 +193,6 @@ def _handle_unified_streaming(
 
     # OpenAI native usage requirement
     stream_options: ChatCompletionStreamOptionsParam = {"include_usage": True}
-
-    spinner_text = f"Generating response ({actual_model})..."
-    rich_spinner: Spinner = Spinner("dots", spinner_text)
-    if is_terminal():
-        live = Live(console=Console(), auto_refresh=True)
-        live._live_render = AicoLiveRender(live.get_renderable())  # pyright: ignore[reportPrivateUsage]
-        live.start()
-        live.update(rich_spinner, refresh=True)
 
     stream = client.chat.completions.create(
         model=actual_model,
@@ -216,7 +202,20 @@ def _handle_unified_streaming(
         **extra_kwargs,  # pyright: ignore[reportAny]
     )
 
-    if live:
+    if is_terminal():
+        from rich.console import Console
+        from rich.live import Live
+        from rich.spinner import Spinner
+
+        live = Live(console=Console(), auto_refresh=True)
+        live._live_render = AicoLiveRender(live.get_renderable())  # pyright: ignore[reportPrivateUsage]
+        live.start()
+
+        spinner_text = f"Generating response ({actual_model})..."
+        rich_spinner: Spinner = Spinner("dots", spinner_text)
+
+        live.update(rich_spinner, refresh=True)
+
         reasoning_buffer = ""
         for chunk in stream:
             normalized_chunk = provider.process_chunk(chunk)
@@ -263,10 +262,14 @@ def _handle_unified_streaming(
         if warnings_to_display:
             if is_terminal():
                 print()
-            console = Console(stderr=True)
-            console.print("[yellow]Warnings:[/yellow]")
+                prefix = "\033[33m"  # Yellow
+                suffix = "\033[0m"  # Reset
+            else:
+                prefix = suffix = ""
+
+            print(f"{prefix}Warnings:{suffix}", file=sys.stderr)
             for warning in warnings_to_display:
-                console.print(f"[yellow]{warning}[/yellow]")
+                print(f"{prefix}Warning: {warning}{suffix}", file=sys.stderr)
 
     return full_llm_response_buffer, final_display_items, token_usage, exact_cost, unified_diff
 

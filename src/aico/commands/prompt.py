@@ -1,8 +1,6 @@
 import sys
 from datetime import UTC, datetime
 
-from rich.prompt import Prompt
-
 from aico.console import (
     is_input_terminal,
     is_terminal,
@@ -46,6 +44,8 @@ def run_llm_command(
         primary_prompt = cli_prompt_text
     else:
         # No input from CLI or pipe, prompt interactively
+        from rich.prompt import Prompt
+
         primary_prompt = Prompt.ask("Prompt")
         if not primary_prompt.strip():
             raise InvalidInputError("Prompt is required.")
