@@ -47,9 +47,7 @@ def history_splice(
     if view.history_start_pair >= at_index:
         view.history_start_pair += 1
 
-    view.excluded_pairs = [
-        (idx + 1 if idx >= at_index else idx) for idx in view.excluded_pairs
-    ]
+    view.excluded_pairs = [(idx + 1 if idx >= at_index else idx) for idx in view.excluded_pairs]
 
     save_view(session.view_path, view)
     print(f"Splice complete. Inserted pair ({user_id}, {assistant_id}) at index {at_index}.")
