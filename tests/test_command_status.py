@@ -7,6 +7,7 @@ from typer.testing import CliRunner
 
 from aico.consts import SESSION_FILE_NAME
 from aico.main import app
+from aico.model_registry import ModelInfo
 from aico.models import AssistantChatMessage, Mode, SessionData, UserChatMessage
 from tests.helpers import save_session
 
@@ -44,12 +45,13 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
     Tests that the status command shows tokens, costs, and context window
     info when all data is available.
     """
-    from aico.model_registry import ModelInfo
 
     # GIVEN a session with context files and history
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
         (session_dir / "file1.py").write_text("a" * 10)
+        from aico.models import TokenUsage
+
         history_list = [
             UserChatMessage(
                 content="message 1",
@@ -62,6 +64,8 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
                 timestamp="ts1",
                 model="m",
                 duration_ms=1,
+                token_usage=TokenUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+                cost=0.00015,
             ),
         ]
         session_data = SessionData(
@@ -77,13 +81,14 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
         #   context files (20)
         mocker.patch("aico.llm.tokens.count_tokens_for_messages", side_effect=[100, 30, 40, 10, 50, 20])
 
-        # Mock model info to return cost and window info
+        # Mock model info to return cost and window info.
+        # We patch the command's local reference to ensure it uses the mock.
         mock_info = ModelInfo(
             max_input_tokens=8192,
             input_cost_per_token=0.0001,
             output_cost_per_token=0.0001,
         )
-        mocker.patch("aico.model_registry.get_model_info", return_value=mock_info)
+        mocker.patch("aico.commands.status.get_model_info", return_value=mock_info)
 
         # WHEN `aico status` is run
         result = runner.invoke(app, ["status"])
@@ -102,7 +107,7 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
         assert "100" in output and "system prompt" in output and "$0.01000" in output
         assert "50" in output and "alignment prompts" in output and "$0.00500" in output
         assert "50" in output and "chat history" in output and "$0.00500" in output
-        assert "20" in output and "file1.py" in output and "$0.0020" in output
+        assert "20" in output and "file1.py" in output and "$0.00200" in output
 
         # Check history summary
         assert "Active window: 1 pair (ID 0), 1 sent." in output
@@ -110,8 +115,8 @@ def test_status_full_breakdown(tmp_path: Path, mocker) -> None:
         # Check file group header
         assert "Context Files (1)" in output
 
-        # Check total
-        assert "~220" in output and "Total" in output and "$0.0220" in output
+        # Check total (Total tokens: 100 sys + 50 align + 50 hist + 20 file = 220)
+        assert "~220" in output and "Total" in output and "$0.02200" in output
 
         # Check context window
         assert "Context Window" in output
@@ -123,8 +128,6 @@ def test_status_handles_unknown_model(tmp_path: Path, mocker) -> None:
     """
     Tests that the status command handles cases where model info (cost, context) is unavailable.
     """
-    from aico.model_registry import ModelInfo
-
     # GIVEN a session with an unknown model
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
@@ -158,7 +161,6 @@ def test_status_omits_excluded_messages(tmp_path: Path, mocker) -> None:
     Tests that `aico status` correctly excludes messages marked with is_excluded=True
     from its token calculation and updates the summary text.
     """
-    from aico.model_registry import ModelInfo
 
     # GIVEN a session with a mix of active and excluded history
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
@@ -224,8 +226,6 @@ def test_status_omits_excluded_messages(tmp_path: Path, mocker) -> None:
 
 
 def test_status_history_summary_logic(tmp_path: Path, mocker) -> None:
-    from aico.model_registry import ModelInfo
-
     # GIVEN a session with 3 pairs, start index at 2 (msg index), one pair excluded
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
@@ -264,8 +264,6 @@ def test_status_history_summary_logic(tmp_path: Path, mocker) -> None:
 
 
 def test_status_handles_dangling_messages(tmp_path: Path, mocker) -> None:
-    from aico.model_registry import ModelInfo
-
     # GIVEN a session with a dangling user message
     with runner.isolated_filesystem(temp_dir=tmp_path) as td:
         session_dir = Path(td)
