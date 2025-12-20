@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 # Addon: summarize
 #
@@ -9,9 +9,9 @@
 #
 # Uses the existing `summarize` prompts for consistency.
 
-set -euo pipefail
+set -eu
 
-if [[ "${1-}" == "--usage" ]]; then
+if [ "${1-}" = "--usage" ]; then
   echo "Archives active history as dated summary (symlink: PROJECT_SUMMARY.md), resets history, adds to context."
   exit 0
 fi
@@ -19,12 +19,14 @@ fi
 PROJECT_ROOT=$(dirname "$AICO_SESSION_FILE")
 
 if [ -f "PROJECT_SUMMARY.md" ]; then
-    if ! aico status --json | jq -e '.context_files[] | select(. == "PROJECT_SUMMARY.md")' >/dev/null 2>&1; then
+    if aico status --json | jq -e '.context_files[] | select(.=="PROJECT_SUMMARY.md")' >/dev/null 2>&1; then
+        :
+    else
         echo "⚠️  PROJECT_SUMMARY.md exists but is missing from context."
         echo "Summarizing without it may fragment your project history."
-        read -p "Add it to context now? [Y/n] " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
+        printf "Add it to context now? [Y/n] "
+        read -r REPLY
+        if [ "$REPLY" = "Y" ] || [ "$REPLY" = "y" ]; then
             aico add PROJECT_SUMMARY.md
         else
             echo "Proceeding without existing summary..."
@@ -42,16 +44,17 @@ if [ -z "$DUMP_HISTORY" ]; then
 fi
 
 # 2. Generate summary (captures stdout, hides stderr/token info)
-SYSTEM_PROMPT="You are an expert technical writer. Your task is to produce a complete replacement for the \`PROJECT_SUMMARY.md\` file. You must interpret the conversation log provided on stdin and integrate it into the existing \`PROJECT_SUMMARY.md\` (found in the context files). The goal is to produce a full, valid Markdown document that preserves the structure, historical details, and rationale of the original while accurately reflecting the latest state and decisions. Do not shrink the summary; preserve detail."
+SYSTEM_PROMPT='You are an expert technical writer. Your task is to produce a complete replacement for the `PROJECT_SUMMARY.md` file. You must interpret the conversation log provided on stdin and integrate it into the existing `PROJECT_SUMMARY.md` (found in the context files). The goal is to produce a full, valid Markdown document that preserves the structure, historical details, and rationale of the original while accurately reflecting the latest state and decisions. Do not shrink the summary; preserve detail.'
 
-USER_PROMPT="Your goal is to output the full text of the updated \`PROJECT_SUMMARY.md\`. Do not output a diff or instructions to update the file, just the new file content.
+USER_PROMPT='Your goal is to output the full text of the updated `PROJECT_SUMMARY.md`.
+Do not output a diff or instructions to update the file, just the new file content.
 
-1. **Recent Developments**: Start with \`### Recent Developments\`. Summarize the specific progress and decisions from the conversation log on stdin.
-2. **Comprehensive Project Summary**: Follow with \`### Comprehensive Project Summary\`. Create or update this section to act as a full onboarding document.
+1. **Recent Developments**: Start with `### Recent Developments`. Summarize the specific progress and decisions from the conversation log on stdin.
+2. **Comprehensive Project Summary**: Follow with `### Comprehensive Project Summary`. Create or update this section to act as a full onboarding document.
    - **Content Scope**: Include the rationale for key decisions, evolution of key concepts and approaches, development narrative, current state, and final outcomes.
-   - **Preserve & Integrate**: Use the existing \`PROJECT_SUMMARY.md\` as the base. Preserve all valid historical details and context for full continuity. Weave new info into the narrative structure.
+   - **Preserve & Integrate**: Use the existing `PROJECT_SUMMARY.md` as the base. Preserve all valid historical details and context for full continuity. Weave new info into the narrative structure.
 
-Output the complete markdown document."
+Output the complete markdown document.'
 
 echo "Generating summary..."
 echo
@@ -66,11 +69,13 @@ mkdir -p "$SUMMARY_DIR"
 TIMESTAMP=$(date +%Y%m%dT%H%M%S)
 FILE_NAME="${TIMESTAMP}_PROJECT_SUMMARY.md"
 SUMMARY_FILE="$SUMMARY_DIR/${FILE_NAME}"
-aico last>"$SUMMARY_FILE"
+aico last > "$SUMMARY_FILE"
 ln -sf "$SUMMARY_FILE" "$PROJECT_ROOT/PROJECT_SUMMARY.md"
 
 # 5. Add symlink to context if missing (check JSON output)
-if ! aico status --json | jq -e '.context_files[] | select(. == "PROJECT_SUMMARY.md")' >/dev/null 2>&1; then
+if aico status --json | jq -e '.context_files[] | select(.=="PROJECT_SUMMARY.md")' >/dev/null 2>&1; then
+  :
+else
   aico add "$PROJECT_ROOT/PROJECT_SUMMARY.md"
 fi
 

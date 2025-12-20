@@ -47,20 +47,13 @@ fi
 # We include both tracked and untracked (but unignored) files, mirroring fd-like behavior.
 
 # --- Build candidate file list from git and existing context ---
-# We include both tracked and untracked (but unignored) files, mirroring fd-like behavior.
-# Then, we add any files *already in context* that might be ignored or not managed by git.
-
 TRACKED="$(git ls-files)"
 UNTRACKED="$(git ls-files --others --exclude-standard)"
 
 # Discover current context files via status --json command
-# This uses the `aico status --json` command, which provides a stable JSON output.
 CURRENT_CONTEXT_ORIGINAL="$(aico status --json | jq -r '.context_files[]' | sort -u)"
 
 # Combine git-managed files with current context files.
-# 1. printf generates the list (with potentially empty lines if variables are empty)
-# 2. grep . removes empty lines (which awk NF also did, but grep is more concise here)
-# 3. sort -u handles sorting and deduplication (making awk 'NF {seen[$0]++}' unnecessary)
 ALL_CANDIDATES="$(
   printf "%s\n" "$TRACKED" "$UNTRACKED" "$CURRENT_CONTEXT_ORIGINAL" \
   | grep . \
@@ -73,10 +66,8 @@ if [ -z "$ALL_CANDIDATES" ]; then
 fi
 
 # --- Reorder candidates for fzf: context files first, then the rest ---
-# comm requires sorted input. Use temporary files for Dash compatibility.
-# Note: We ensure files are 0-byte if empty to prevent comm errors with single newlines.
-TMP_ALL=$(mktemp)
-TMP_CUR=$(mktemp)
+TMP_ALL=$(mktemp -t aico_manage_all.XXXXXX)
+TMP_CUR=$(mktemp -t aico_manage_cur.XXXXXX)
 [ -n "$ALL_CANDIDATES" ] && printf "%s\n" "$ALL_CANDIDATES" > "$TMP_ALL"
 [ -n "$CURRENT_CONTEXT_ORIGINAL" ] && printf "%s\n" "$CURRENT_CONTEXT_ORIGINAL" > "$TMP_CUR"
 
@@ -93,8 +84,6 @@ rm -f "$TMP_ALL" "$TMP_CUR"
 NUM_IN_CONTEXT=$(printf "%s\n" "$IN_CONTEXT_FILES" | sed '/^$/d' | wc -l)
 
 # --- Interactive selection via fzf ---
-
-# Generate the sequence of select binds manually for POSIX compatibility (no seq)
 SELECT_SEQUENCE=""
 i=$NUM_IN_CONTEXT
 while [ "$i" -gt 0 ]; do
@@ -126,9 +115,8 @@ fi
 NEW_SELECTION="$(printf "%s\n" "$SELECTED_FILES" | sort -u)"
 CURRENT_CONTEXT_SORTED="$(printf "%s\n" "$CURRENT_CONTEXT_ORIGINAL" | sort -u)"
 
-# Use temporary files for comm
-TMP_NEW=$(mktemp)
-TMP_CUR_SORTED=$(mktemp)
+TMP_NEW=$(mktemp -t aico_manage_new.XXXXXX)
+TMP_CUR_SORTED=$(mktemp -t aico_manage_cur_sorted.XXXXXX)
 [ -n "$NEW_SELECTION" ] && printf "%s\n" "$NEW_SELECTION" > "$TMP_NEW"
 [ -n "$CURRENT_CONTEXT_SORTED" ] && printf "%s\n" "$CURRENT_CONTEXT_SORTED" > "$TMP_CUR_SORTED"
 
@@ -146,12 +134,12 @@ CHANGED=0
 
 if [ -n "$TO_ADD" ]; then
   CHANGED=1
-  printf "%s\n" "$TO_ADD" | xargs -t --no-run-if-empty aico add
+  printf "%s\n" "$TO_ADD" | xargs -t aico add
 fi
 
 if [ -n "$TO_DROP" ]; then
   CHANGED=1
-  printf "%s\n" "$TO_DROP" | xargs -t --no-run-if-empty aico drop
+  printf "%s\n" "$TO_DROP" | xargs -t aico drop
 fi
 
 if [ "$CHANGED" -eq 0 ]; then

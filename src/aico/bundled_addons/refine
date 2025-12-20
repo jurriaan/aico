@@ -65,11 +65,10 @@ ORIG_PROMPT_CONTENT=$(echo "$ORIG_RESP_JSON" | jq -r .user.content)
 ABS_INDEX=$(echo "$ORIG_RESP_JSON" | jq -r .pair_index)
 
 # Ephemeral Execution Setup
-# Use date + PID for portability over python3 -c 'import secrets...'
 SESSION_NAME="refine-$(date +%s)-$$"
-PAYLOAD=$(mktemp)
-PROMPT_FILE=$(mktemp)
-SYSTEM_PROMPT_FILE=$(mktemp)
+PAYLOAD=$(mktemp -t aico_refine_payload.XXXXXX)
+PROMPT_FILE=$(mktemp -t aico_refine_prompt.XXXXXX)
+SYSTEM_PROMPT_FILE=$(mktemp -t aico_refine_sysprompt.XXXXXX)
 
 cleanup() {
     rm -f "$PAYLOAD" "$PROMPT_FILE" "$SYSTEM_PROMPT_FILE"
@@ -113,8 +112,7 @@ EOF
 fi
 trap cleanup EXIT
 
-# Construct the "Frankenstein" Prompt safely
-# We use printf to avoid shell variable expansion on the content
+# Construct the "Frankenstein" Prompt
 {
   echo "<refinement_task>"
   echo "    <original_prompt>"
@@ -144,20 +142,13 @@ else
 fi
 
 # 1. Execute inside ephemeral fork
-# Define the inner logic as a literal string to avoid escaping hell.
-# This script will be executed inside the ephemeral session.
 REFINE_LOGIC='
 set -e
 
 # 1. Rewind history
-#    We must use absolute indices for the range (e.g. "5..10") because aico
-#    does not support mixed-sign ranges (e.g. "5..-1").
 aico undo "${REFINE_INDEX}..${REFINE_LAST_INDEX}" >/dev/null
 
 # 2. Generate
-#    Pipes the prompt file to the aico command.
-#    We allow REFINE_MODEL_ARGS to word-split naturally (for optional flags).
-#    We read the system prompt from the temp file to avoid quoting issues in the shell.
 cat "$REFINE_PROMPT_FILE" | aico "$REFINE_CMD" $REFINE_MODEL_ARGS --system-prompt "$(cat "$REFINE_SYSPROMPT_FILE")" -
 
 # 3. Capture result
