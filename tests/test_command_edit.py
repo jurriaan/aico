@@ -91,7 +91,11 @@ def test_edit_response_and_invalidate_derived_content(session_with_two_pairs: Pa
     last_idx = max(history, default=-1)
     last_response = history[last_idx]
     last_response_with_derived = replace(
-        last_response, derived=DerivedContent(unified_diff="diff", display_content="display")
+        last_response,
+        derived=DerivedContent(
+            unified_diff="diff",
+            display_content=[{"type": "text", "content": "display"}],
+        ),
     )
     history[last_idx] = last_response_with_derived
     save_session(session_file, session_data)

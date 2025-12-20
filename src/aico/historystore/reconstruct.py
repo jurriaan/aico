@@ -35,9 +35,19 @@ def deserialize_assistant_record(
 
     derived_obj: DerivedContent | None = None
     if rec.derived is not None:
+        raw_derived = rec.derived
+        # Handle sanitization of legacy string display_content
+        match raw_derived:
+            case {"display_content": str()} as d if isinstance(d, dict):
+                cleaned: dict[str, object] = dict(d)  # pyright: ignore[reportUnknownArgumentType]
+                cleaned["display_content"] = None
+                raw_derived = cleaned
+            case _:
+                pass
+
         # When loaded from JSON by msgspec, derived might be a dict.
         # Convert it to the Typed/frozen dataclass.
-        derived_obj = rec.derived if isinstance(rec.derived, DerivedContent) else convert(rec.derived, DerivedContent)
+        derived_obj = raw_derived if isinstance(raw_derived, DerivedContent) else convert(raw_derived, DerivedContent)
 
     return AssistantChatMessage(
         content=rec.content,

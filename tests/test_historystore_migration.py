@@ -225,3 +225,64 @@ def test_migration_intermediate_format(tmp_path: Path) -> None:
 
     # AND indices are valid
     assert len(view.message_indices) == 4
+
+
+def test_migration_sanitizes_legacy_string_display_content(tmp_path: Path) -> None:
+    # GIVEN a legacy session where an assistant message has a string in display_content
+    legacy: dict[str, object] = {
+        "model": "m",
+        "context_files": [],
+        "chat_history": [
+            _make_legacy_chat_item("user", "u0"),
+            {
+                "role": "assistant",
+                "content": "a0",
+                "mode": "diff",
+                "timestamp": "ts1",
+                "model": "m",
+                "duration_ms": 100,
+                "derived": {
+                    "unified_diff": "some-diff",
+                    "display_content": "Legacy string content that should be sanitized",
+                },
+                "is_excluded": False,
+            },
+        ],
+        "history_start_index": 0,
+    }
+    history_root = tmp_path / "history"
+    sessions_dir = tmp_path / "sessions"
+
+    # WHEN migrating forward
+    from aico.serialization import convert
+
+    session_data = convert(legacy, LegacySessionSnapshot)
+    view = from_legacy_session(
+        session_data=session_data,
+        history_root=history_root,
+        sessions_dir=sessions_dir,
+        name="sanitized",
+    )
+
+    # THEN the record in the store has display_content set to None
+    store = HistoryStore(history_root)
+    assistant_record = store.read_many([view.message_indices[1]])[0]
+
+    assert assistant_record.derived is not None
+
+    # Fix linting by narrowing the type of derived
+    from aico.models import DerivedContent
+    from aico.serialization import convert
+
+    match assistant_record.derived:
+        case dict() as d:
+            assert d.get("display_content") is None
+            assert d.get("unified_diff") == "some-diff"
+        case DerivedContent() as dc:
+            assert dc.display_content is None
+            assert dc.unified_diff == "some-diff"
+        case _:
+            # Fallback for msgspec.Struct that isn't DerivedContent yet
+            dc = convert(assistant_record.derived, DerivedContent)
+            assert dc.display_content is None
+            assert dc.unified_diff == "some-diff"

@@ -7,7 +7,7 @@ import msgspec
 from msgspec import Struct, field
 
 from aico.models import (
-    DerivedContent,
+    DisplayItem,
     Mode,
     TokenUsage,
 )
@@ -17,6 +17,11 @@ from .models import HistoryRecord, SessionView
 from .session_view import save_view
 
 # --- Legacy Schemas (Migration Source) ---
+
+
+class LegacyDerivedContent(Struct):
+    unified_diff: str | None = None
+    display_content: list[DisplayItem] | str | None = None
 
 
 class LegacyUserChatMessage(msgspec.Struct, tag="user", tag_field="role"):
@@ -38,7 +43,7 @@ class LegacyAssistantChatMessage(msgspec.Struct, tag="assistant", tag_field="rol
     timestamp: str
     model: str
     duration_ms: int
-    derived: DerivedContent | None = None
+    derived: LegacyDerivedContent | None = None
     token_usage: TokenUsage | None = None
     cost: float | None = None
     is_excluded: bool = False
@@ -99,6 +104,18 @@ def from_legacy_session(
                 piped_content=msg.piped_content,
             )
         else:
+            derived_clean = None
+            if msg.derived:
+                match msg.derived.display_content:
+                    case str():
+                        derived_clean = {
+                            "unified_diff": msg.derived.unified_diff,
+                            "display_content": None,
+                        }
+                    case _:
+                        # Struct or dict, HistoryRecord will serialize it correctly
+                        derived_clean = msg.derived
+
             record = HistoryRecord(
                 role="assistant",
                 content=msg.content,
@@ -108,7 +125,7 @@ def from_legacy_session(
                 token_usage=msg.token_usage,
                 cost=msg.cost,
                 duration_ms=msg.duration_ms,
-                derived=msg.derived,
+                derived=derived_clean,
             )
 
         idx = store.append(record)

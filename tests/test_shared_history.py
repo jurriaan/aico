@@ -50,16 +50,10 @@ def shared_history_project_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
     store = HistoryStore(history_root)
     # A diff for the first pair that aico can parse
+    diff_text = "--- a/file1.py\n+++ b/file1.py\n@@ -1 +1 @@\n-def func_one(): pass\n+def func_one(a: int): pass\n"
     derived_content = DerivedContent(
-        unified_diff="--- a/file1.py\n+++ b/file1.py\n@@ -1 +1 @@\n-def func_one(): pass"
-        + "\n+def func_one(a: int): pass\n",
-        display_content=[
-            {
-                "type": "diff",
-                "content": "--- a/file1.py\n+++ b/file1.py\n@@ -1 +1 @@\n-def func_one(): pass"
-                + "\n+def func_one(a: int): pass\n",
-            }
-        ],
+        unified_diff=diff_text,
+        display_content=[{"type": "diff", "content": diff_text}],
     )
     u0_idx = store.append(HistoryRecord(role="user", content="prompt 0", mode=Mode.DIFF))
     a0_idx = store.append(
@@ -265,7 +259,7 @@ def test_load_from_shared_history_restores_all_fields(tmp_path: Path) -> None:
     sessions_dir = project_dir / ".aico" / "sessions"
     store = HistoryStore(history_root)
 
-    asst_derived = DerivedContent(unified_diff="diff", display_content="display")
+    asst_derived = DerivedContent(unified_diff="diff", display_content=[{"type": "text", "content": "display"}])
     asst_tokens = TokenUsage(prompt_tokens=1, completion_tokens=2, total_tokens=3)
 
     u_idx = store.append(

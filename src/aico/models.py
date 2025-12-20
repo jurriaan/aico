@@ -53,7 +53,7 @@ class DisplayItem(TypedDict):
 
 class DerivedContent(Struct, frozen=True):
     unified_diff: str | None = None
-    display_content: list[DisplayItem] | str | None = None
+    display_content: list[DisplayItem] | None = None
 
 
 class TokenInfo(Struct):

@@ -55,7 +55,7 @@ def render_display_items_to_rich(items: Sequence[DisplayItem]) -> "Group":
 
 
 def reconstruct_display_content_for_piping(
-    display_content: list[DisplayItem] | str | None,
+    display_content: list[DisplayItem] | None,
     mode: Mode | Literal["diff", "conversation", "raw"],
     unified_diff: str | None,
 ) -> str:
@@ -72,9 +72,7 @@ def reconstruct_display_content_for_piping(
         return unified_diff
 
     if display_content:
-        if isinstance(display_content, list):
-            return "".join(item["content"] for item in display_content)
-        return display_content
+        return "".join(item["content"] for item in display_content)
 
     return ""
 

@@ -93,7 +93,7 @@ def last(
         return
 
     unified_diff: str | None = None
-    display_content: str | list[DisplayItem] | None = None
+    display_content: list[DisplayItem]
     derived_obj = None
 
     if recompute:
@@ -107,15 +107,16 @@ def last(
 
     if derived_obj:
         unified_diff = derived_obj.unified_diff
-        display_content = derived_obj.display_content or target_msg.content
+
+        replacement_content: list[DisplayItem] = [{"type": "markdown", "content": target_msg.content}]
+        display_content = derived_obj.display_content or replacement_content
     else:
         unified_diff = None
-        display_content = target_msg.content
+        display_content = [{"type": "markdown", "content": target_msg.content}]
 
     # Unified rendering logic
     if is_terminal():
         from rich.console import Console
-        from rich.markdown import Markdown
 
         console = Console()
         match display_content:
@@ -123,11 +124,6 @@ def last(
                 renderable_group = render_display_items_to_rich(items)
                 if renderable_group.renderables:
                     console.print(renderable_group)
-
-            case str() as content_string:
-                # Backward compatibility path: treat the old string as a single Markdown block
-                if content_string:
-                    console.print(Markdown(content_string))
     else:
         output_content = reconstruct_display_content_for_piping(display_content, target_msg.mode, unified_diff)
         print(output_content, end="")
