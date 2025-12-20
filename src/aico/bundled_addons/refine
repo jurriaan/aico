@@ -1,14 +1,14 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
 # --- Usage ---
-if [[ "$1" == "--usage" ]]; then
+if [ "$1" = "--usage" ]; then
   echo "Regenerates a past response (default: last) based on new instructions."
   exit 0
 fi
 
 # Ensure jq is installed
-if ! command -v jq &> /dev/null; then
+if ! command -v jq > /dev/null 2>&1; then
     echo "Error: 'jq' is required for this addon."
     exit 1
 fi
@@ -17,30 +17,32 @@ fi
 INDEX="-1"
 
 # If the first arg is a number, treat it as the index
-if [[ "$1" =~ ^-?[0-9]+$ ]]; then
-    INDEX="$1"
-    shift
-fi
+case "$1" in
+    ''|*[!0-9-]*) ;;
+    *) INDEX="$1"; shift ;;
+esac
 
 MODEL_FLAG=""
-INSTRUCTION_PARTS=()
+INSTRUCTION=""
 
-while [[ $# -gt 0 ]]; do
+while [ $# -gt 0 ]; do
     key="$1"
     case $key in
         --model)
         MODEL_FLAG="--model $2"
-        shift # past argument
-        shift # past value
+        shift
+        shift
         ;;
         *)
-        INSTRUCTION_PARTS+=("$1")
-        shift # past argument
+        if [ -z "$INSTRUCTION" ]; then
+            INSTRUCTION="$1"
+        else
+            INSTRUCTION="$INSTRUCTION $1"
+        fi
+        shift
         ;;
     esac
 done
-
-INSTRUCTION="${INSTRUCTION_PARTS[*]}"
 
 # Validate that we have an instruction
 if [ -z "$INSTRUCTION" ]; then
@@ -62,9 +64,21 @@ ORIG_CONTENT=$(echo "$ORIG_RESP_JSON" | jq -r .assistant.content)
 ORIG_PROMPT_CONTENT=$(echo "$ORIG_RESP_JSON" | jq -r .user.content)
 ABS_INDEX=$(echo "$ORIG_RESP_JSON" | jq -r .pair_index)
 
-# Define System Prompt based on mode
-if [ "$ORIG_MODE" == "diff" ]; then
-    export SYSTEM_PROMPT="You are a Code Refinement Engine.
+# Ephemeral Execution Setup
+# Use date + PID for portability over python3 -c 'import secrets...'
+SESSION_NAME="refine-$(date +%s)-$$"
+PAYLOAD=$(mktemp)
+PROMPT_FILE=$(mktemp)
+SYSTEM_PROMPT_FILE=$(mktemp)
+
+cleanup() {
+    rm -f "$PAYLOAD" "$PROMPT_FILE" "$SYSTEM_PROMPT_FILE"
+}
+
+# Define System Prompt based on mode and write to temp file
+if [ "$ORIG_MODE" = "diff" ]; then
+    cat <<EOF > "$SYSTEM_PROMPT_FILE"
+You are a Code Refinement Engine.
 Your goal is to regenerate a code patch based on new instructions.
 
 **INPUT DATA:**
@@ -76,9 +90,11 @@ Your goal is to regenerate a code patch based on new instructions.
 1. You must output **ONLY** the valid \`SEARCH/REPLACE\` blocks.
 2. Do **NOT** include conversational filler (e.g., 'Here is the fixed code').
 3. The <critique> **OVERRIDES** any conflicting instructions in the <original_prompt>.
-4. Your output will be spliced directly into the history as if it were your first and only response."
+4. Your output will be spliced directly into the history as if it were your first and only response.
+EOF
 else
-    export SYSTEM_PROMPT="You are a Content Refinement Engine.
+    cat <<EOF > "$SYSTEM_PROMPT_FILE"
+You are a Content Refinement Engine.
 Your goal is to rewrite a previous response to satisfy a critique.
 
 **INPUT DATA:**
@@ -92,17 +108,9 @@ Your goal is to rewrite a previous response to satisfy a critique.
 3. Do **NOT** explain what you changed. Just output the result.
 4. The <critique> **OVERRIDES** any conflicting instructions in the <original_prompt>.
    - Example: If original prompt was 'Draft a minimal deployment plan' and critique is 'Include rollback steps', you MUST output the full plan **with** rollback steps included.
-5. Your output will be spliced directly into the history as if it were your first and only response."
+5. Your output will be spliced directly into the history as if it were your first and only response.
+EOF
 fi
-
-# Ephemeral Execution Setup
-SESSION_NAME="refine-$(python3 -c 'import secrets; print(secrets.token_hex(4))')"
-export PAYLOAD=$(mktemp)
-export PROMPT_FILE=$(mktemp)
-
-cleanup() {
-    rm -f "$PAYLOAD" "$PROMPT_FILE"
-}
 trap cleanup EXIT
 
 # Construct the "Frankenstein" Prompt safely
@@ -129,7 +137,7 @@ trap cleanup EXIT
 
 echo "Refining response at index $ABS_INDEX (Mode: $ORIG_MODE)..."
 
-if [ "$ORIG_MODE" == "diff" ]; then
+if [ "$ORIG_MODE" = "diff" ]; then
     CMD="generate-patch"
 else
     CMD="ask"
@@ -149,7 +157,8 @@ aico undo "${REFINE_INDEX}..${REFINE_LAST_INDEX}" >/dev/null
 # 2. Generate
 #    Pipes the prompt file to the aico command.
 #    We allow REFINE_MODEL_ARGS to word-split naturally (for optional flags).
-cat "$REFINE_PROMPT_FILE" | aico "$REFINE_CMD" $REFINE_MODEL_ARGS --system-prompt "$REFINE_SYSTEM_PROMPT" -
+#    We read the system prompt from the temp file to avoid quoting issues in the shell.
+cat "$REFINE_PROMPT_FILE" | aico "$REFINE_CMD" $REFINE_MODEL_ARGS --system-prompt "$(cat "$REFINE_SYSPROMPT_FILE")" -
 
 # 3. Capture result
 aico last --json > "$REFINE_PAYLOAD"
@@ -164,18 +173,18 @@ export REFINE_LAST_INDEX="$LAST_INDEX"
 export REFINE_CMD="$CMD"
 export REFINE_MODEL_ARGS="$MODEL_FLAG"
 export REFINE_PROMPT_FILE="$PROMPT_FILE"
-export REFINE_SYSTEM_PROMPT="$SYSTEM_PROMPT"
+export REFINE_SYSPROMPT_FILE="$SYSTEM_PROMPT_FILE"
 export REFINE_PAYLOAD="$PAYLOAD"
 
 # Execute in ephemeral fork
-aico session-fork --ephemeral "$SESSION_NAME" -- bash -c "$REFINE_LOGIC"
+aico session-fork --ephemeral "$SESSION_NAME" -- sh -c "$REFINE_LOGIC"
 
 # 2. Apply to Main Session
 if [ -s "$PAYLOAD" ]; then
     NEW_ASST_ID=$(cat "$PAYLOAD" | jq -r .assistant.id)
     ORIG_USER_ID=$(echo "$ORIG_RESP_JSON" | jq -r .user.id)
 
-    if [ "$NEW_ASST_ID" == "null" ] || [ "$ORIG_USER_ID" == "null" ]; then
+    if [ "$NEW_ASST_ID" = "null" ] || [ "$ORIG_USER_ID" = "null" ]; then
        echo "Error: IDs could not be resolved. Cannot use surgical history splice."
        exit 1
     fi

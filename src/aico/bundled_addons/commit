@@ -33,15 +33,13 @@ MODEL_NAME="openrouter/google/gemini-3-flash-preview"
 # If empty, the default Git author will be used.
 #
 # Example:
-# AUTHORS=(
-#   "Jane Doe <jane.doe@example.com>"
-#   "Sam Smith <sam.smith@example.com>"
-# )
-AUTHORS=()
+# AUTHORS="Jane Doe <jane.doe@example.com>
+# Sam Smith <sam.smith@example.com>"
+AUTHORS=""
 # --- End Configuration ---
 
 # Check if --usage flag is passed and show help text
-if [[ "$1" == "--usage" ]]; then
+if [ "$1" = "--usage" ]; then
   echo "Generates a Conventional Commit message for staged changes." 
   exit 0
 fi
@@ -125,27 +123,27 @@ EOF
 AI_COMMIT_MSG=$(echo "$PROMPT" | aico prompt --passthrough --no-history --system-prompt "$SYSTEM_PROMPT" --model "$MODEL_NAME" 2>/dev/null)
 
 # 5. Assemble the final commit message and execute git commit
-COMMIT_ARGS=("-v" "--file" "-" "--edit")
-if [ ${#AUTHORS[@]} -gt 0 ]; then
-  COMMIT_ARGS+=("--author=${AUTHORS[0]}")
+# Use positional parameters to build arguments safely without eval
+set -- -v --file - --edit
+if [ -n "$AUTHORS" ]; then
+  PRIMARY_AUTHOR=$(echo "$AUTHORS" | head -n 1)
+  set -- "$@" "--author=$PRIMARY_AUTHOR"
 fi
 
 # 6. Clean up the history before committing
-# The `aico prompt` call added two messages to the history (prompt + response).
-# We undo this immediately to keep the session history clean, regardless of
-# whether the user proceeds with the commit.
-aico undo &>/dev/null
+aico undo >/dev/null 2>&1
 
 {
   echo "$AI_COMMIT_MSG"
 
-  if [ ${#AUTHORS[@]} -gt 1 ]; then
+  NUM_AUTHORS=$(echo "$AUTHORS" | grep -c . || true)
+  if [ "$NUM_AUTHORS" -gt 1 ]; then
     echo "" # Blank line before trailers
     # Loop over co-authors (all except the first one)
-    for i in "${!AUTHORS[@]}"; do
-      if [ $i -ne 0 ]; then
-        echo "Co-authored-by: ${AUTHORS[$i]}"
+    echo "$AUTHORS" | sed 1d | while IFS= read -r author; do
+      if [ -n "$author" ]; then
+        echo "Co-authored-by: $author"
       fi
     done
   fi
-} | git commit "${COMMIT_ARGS[@]}"
+} | git commit "$@"

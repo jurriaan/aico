@@ -2,6 +2,9 @@
 
 set -e
 
+# Ensure consistent sorting for comm
+export LC_ALL=C
+
 # --- Usage / Help ---
 if [ "$1" = "--usage" ]; then
     echo "Interactively manage the Aico context using git ls-files and fzf (add/drop files with optional bat preview)."
@@ -43,9 +46,6 @@ fi
 # --- Build candidate file list from git ---
 # We include both tracked and untracked (but unignored) files, mirroring fd-like behavior.
 
-TRACKED="$(git ls-files)"
-UNTRACKED="$(git ls-files --others --exclude-standard)"
-
 # --- Build candidate file list from git and existing context ---
 # We include both tracked and untracked (but unignored) files, mirroring fd-like behavior.
 # Then, we add any files *already in context* that might be ignored or not managed by git.
@@ -73,36 +73,46 @@ if [ -z "$ALL_CANDIDATES" ]; then
 fi
 
 # --- Reorder candidates for fzf: context files first, then the rest ---
-# comm requires sorted input.
+# comm requires sorted input. Use temporary files for Dash compatibility.
+# Note: We ensure files are 0-byte if empty to prevent comm errors with single newlines.
+TMP_ALL=$(mktemp)
+TMP_CUR=$(mktemp)
+[ -n "$ALL_CANDIDATES" ] && printf "%s\n" "$ALL_CANDIDATES" > "$TMP_ALL"
+[ -n "$CURRENT_CONTEXT_ORIGINAL" ] && printf "%s\n" "$CURRENT_CONTEXT_ORIGINAL" > "$TMP_CUR"
+
 # 1. Files in both ALL_CANDIDATES and CURRENT_CONTEXT_ORIGINAL (already in context)
-IN_CONTEXT_FILES="$(comm -12 <(printf "%s\n" "$ALL_CANDIDATES") <(printf "%s\n" "$CURRENT_CONTEXT_ORIGINAL"))"
+IN_CONTEXT_FILES="$(comm -12 "$TMP_ALL" "$TMP_CUR" | grep . || true)"
 
 # 2. Files in ALL_CANDIDATES but NOT in CURRENT_CONTEXT_ORIGINAL (not in context yet)
-NOT_IN_CONTEXT_FILES="$(comm -23 <(printf "%s\n" "$ALL_CANDIDATES") <(printf "%s\n" "$CURRENT_CONTEXT_ORIGINAL"))"
+NOT_IN_CONTEXT_FILES="$(comm -23 "$TMP_ALL" "$TMP_CUR" | grep . || true)"
+
+# Cleanup temps
+rm -f "$TMP_ALL" "$TMP_CUR"
 
 # Calculate the number of files in context to pre-select them
 NUM_IN_CONTEXT=$(printf "%s\n" "$IN_CONTEXT_FILES" | sed '/^$/d' | wc -l)
 
 # --- Interactive selection via fzf ---
 
-# FZF options
-# - Context files are listed first.
-# - alt-c: clear all selections
-# - alt-o: quickly reselect only the original context files (first NUM_IN_CONTEXT entries).
-FZF_OPTS=(
-  --sync
-  --multi
-  --preview "$PREVIEW_CMD"
-  --header "== In Context (pre-selected) ==  |  [alt-c] clear all  [alt-o] only context"
-)
+# Generate the sequence of select binds manually for POSIX compatibility (no seq)
+SELECT_SEQUENCE=""
+i=$NUM_IN_CONTEXT
+while [ "$i" -gt 0 ]; do
+    SELECT_SEQUENCE="$SELECT_SEQUENCE $i"
+    i=$((i - 1))
+done
+
+# FZF options (using positional parameters for POSIX robustness)
+set -- --sync --multi --preview "$PREVIEW_CMD" \
+  --header '== In Context (pre-selected) ==  |  [alt-c] clear all  [alt-o] only context' \
+  --bind 'alt-c:clear-multi' \
+  --bind "load:transform:printf '+clear-multi'; printf '+pos(%d)+select' $SELECT_SEQUENCE" \
+  --bind 'alt-o:clear-query+search()+bg-transform(printf "trigger(load)")'
 
 SELECTED_FILES="$(
   (printf "%s\n" "$IN_CONTEXT_FILES"; printf "%s\n" "$NOT_IN_CONTEXT_FILES") \
-    | fzf \
-        "${FZF_OPTS[@]}" \
-        --bind "alt-c:clear-multi" \
-        --bind "load:transform:printf '+clear-multi';printf '+pos(%d)+select' $(seq "$NUM_IN_CONTEXT" -1 1 | tr '\n' ' ')" \
-        --bind "alt-o:clear-query+search()+bg-transform(printf 'trigger(load)')" 
+    | grep . \
+    | fzf "$@"
 )"
 
 if [ -z "$SELECTED_FILES" ]; then
@@ -116,14 +126,19 @@ fi
 NEW_SELECTION="$(printf "%s\n" "$SELECTED_FILES" | sort -u)"
 CURRENT_CONTEXT_SORTED="$(printf "%s\n" "$CURRENT_CONTEXT_ORIGINAL" | sort -u)"
 
+# Use temporary files for comm
+TMP_NEW=$(mktemp)
+TMP_CUR_SORTED=$(mktemp)
+[ -n "$NEW_SELECTION" ] && printf "%s\n" "$NEW_SELECTION" > "$TMP_NEW"
+[ -n "$CURRENT_CONTEXT_SORTED" ] && printf "%s\n" "$CURRENT_CONTEXT_SORTED" > "$TMP_CUR_SORTED"
+
 # Files to add: in NEW_SELECTION but not in CURRENT_CONTEXT
-TO_ADD="$(comm -23 <(printf "%s\n" "$NEW_SELECTION") <(printf "%s\n" "$CURRENT_CONTEXT_SORTED"))"
+TO_ADD="$(comm -23 "$TMP_NEW" "$TMP_CUR_SORTED" | grep . || true)"
 
 # Files to drop: in CURRENT_CONTEXT but not in NEW_SELECTION
-TO_DROP="$(
-  comm -13 <(printf "%s\n" "$NEW_SELECTION") <(printf "%s\n" "$CURRENT_CONTEXT_SORTED") \
-    | grep .
-)"
+TO_DROP="$(comm -13 "$TMP_NEW" "$TMP_CUR_SORTED" | grep . || true)"
+
+rm -f "$TMP_NEW" "$TMP_CUR_SORTED"
 
 # --- Apply add/drop operations via aico ---
 
