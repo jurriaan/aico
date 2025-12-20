@@ -12,7 +12,7 @@ TEST_WORKSPACE=$(mktemp -d)
 
 # Capture paths before moving to temporary workspace
 PROJECT_ROOT=$(cd "$(dirname "$0")/.." && pwd)
-FEATURES_DIR="$PROJECT_ROOT/tests/features"
+FEATURES_DIR="$PROJECT_ROOT/docs"
 
 # Start Mock LLM Server
 python3 "$PROJECT_ROOT/tests/support/mock_llm.py" &

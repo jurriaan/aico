@@ -39,7 +39,7 @@ class MockLLMHandler(BaseHTTPRequestHandler):
             responses = {
                 "Output the complete markdown document": (
                     "### Recent Developments\n"
-                    "- Refactored `math_utils.py` to use type hints.\n"
+                    "- Refactored `math.py` to use type hints.\n"
                     "### Comprehensive Project Summary\n"
                     "A collection of utilities including math functions.\n"
                 ),
@@ -55,6 +55,15 @@ class MockLLMHandler(BaseHTTPRequestHandler):
                 ),
                 "add a comment": (
                     "File: hello.txt\n<<<<<<< SEARCH\nhello world\n=======\n# a comment\nhello world\n>>>>>>> REPLACE\n"
+                ),
+                "Rename 'add' to 'sum_values' and add type hints": (
+                    "File: math.py\n"
+                    "<<<<<<< SEARCH\n"
+                    "def add(a, b): return a + b\n"
+                    "=======\n"
+                    "def sum_values(a: int, b: int) -> int:\n"
+                    "    return a + b\n"
+                    ">>>>>>> REPLACE\n"
                 ),
                 "Explain this code": "This code is a Python script.\n",
                 "Propose Solution A": "Implementing Solution A using a loop.\n",

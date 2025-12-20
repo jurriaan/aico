@@ -1,6 +1,8 @@
-# Feature: Refining Responses (Addon)
+# Addon: Refine
 
-The `refine` addon allows you to rewrite a specific conversational turn or code generation step without resetting the entire session. It works by forking the session, rewinding to the target point, generating a new response based on your critique, and surgically splicing it back into the main history.
+The `refine` addon allows you to rewrite a specific conversational turn without resetting the entire session. It works by forking the session, rewinding to the target point, generating a new response based on your critique, and surgically splicing it back into the main history.
+
+> **Note**: This addon requires `jq` to be installed on your system.
 
 ## 1. Setup
 

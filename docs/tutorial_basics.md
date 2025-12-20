@@ -1,70 +1,70 @@
-# Feature: Basic Workflow
+# Getting Started
+
+This tutorial walks you through the core workflow of `aico`: planning, implementing, and refining code.
 
 ## 1. Initialization
-First, initialize an aico session to define the model and project root.
+
+Start by initializing a session in your project root. We specify the model we want to use.
 
 ```console
 $ aico init --model "openai/test-model" #=> --regex Initialized session file: .*\.ai_session\.json
 ```
 
-## 2. Planning and Discussion
-Use `ask` for high-level discussion or to explain existing code.
+## 2. Planning
+
+Let's start by adding a file to the context and explaining it.
 
 ```console
+$ echo "def add(a, b): return a + b" > math.py
+$ aico add math.py
+Added file to context: math.py
 $ aico ask "Explain this code"
 This code is a Python script.
 Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.02
 $
 ```
 
-## 3. Context Management
-Add relevant files to the context. This sets the "Ground Truth" for the AI.
+## 3. Code Generation
+
+Now, let's modify the code. We use `gen` to request changes. `aico` outputs a standard Unified Diff.
 
 ```console
-$ echo "hello world" > hello.txt
-$ aico add hello.txt
-Added file to context: hello.txt
-$
-```
-
-## 4. Execution and Patching
-Use `gen` to produce structural changes. The resulting diff can be piped to `patch`.
-
-```console
-$ aico gen "add a comment"
---- a/hello.txt
-+++ b/hello.txt
+$ aico gen "Rename 'add' to 'sum_values' and add type hints"
+--- a/math.py
++++ b/math.py
 @@ -1 +1,2 @@
-+# a comment
- hello world
+-def add(a, b): return a + b
++def sum_values(a: int, b: int) -> int:
++    return a + b
 Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.04
-$ aico last | patch -p1
-patching file hello.txt
-$ cat hello.txt
-# a comment
-hello world
 $
 ```
 
-## 5. Manual Corrections
-Sometimes the AI nearly gets it right. You can fix the history using `aico edit` so the AI "learns" from the correction.
+## 4. Manual Corrections (The Learning Loop)
+
+Sometimes the AI makes a small mistake, or you simply change your mind. Instead of just fixing the file, you should fix the **history**. This ensures the AI "remembers" your correction for future turns.
+
+We use `aico edit` to modify the last AI response.
+
+*(Note: In this example, we use `sed` to simulate an editor. In reality, `aico edit` opens your default `$EDITOR`.)*
 
 ```console
-$ echo "def do(a, b):" > math_utils.py
-$ echo "    return a + b" >> math_utils.py
-$ aico add math_utils.py
-Added file to context: math_utils.py
-$ aico gen "Rename 'do' to 'add_numbers' and use type hints" #=> --regex .*def add_nums.*
-$ env EDITOR="sed -i s/add_nums/add_numbers/" aico edit
-Updated response for message pair 2.
-$ aico last | patch -p1
-patching file math_utils.py
-$ grep "def add_numbers" math_utils.py
-def add_numbers(a: int, b: int) -> int:
+$ env EDITOR="sed -i s/sum_values/calc_sum/" aico edit
+Updated response for message pair 1.
 $
 ```
 
-## 6. Transparency and Status
+Now we apply the corrected patch.
+
+```console
+$ aico last | patch -p1
+patching file math.py
+$ grep "def calc_sum" math.py
+def calc_sum(a: int, b: int) -> int:
+$
+```
+
+## 5. Transparency and Status
 Verify context files and token usage with the `status` command.
 
 ```console
@@ -73,12 +73,10 @@ $ aico log
  ID  Role       Message Snippet                                 
   0  user       Explain this code                               
      assistant  This code is a Python script.                   
-  1  user       add a comment                                   
-     assistant  File: hello.txt                                 
-  2  user       Rename 'do' to 'add_numbers' and use type hints 
-     assistant  File: math_utils.py                             
-$ aico drop hello.txt
-Dropped file from context: hello.txt
+  1  user       Rename 'add' to 'sum_values' and add type hints 
+     assistant  File: math.py                                   
+$ aico drop math.py
+Dropped file from context: math.py
 $ aico status
 ╭─────────────────────────────── Session 'main' ───────────────────────────────╮
 │                              openai/test-model                               │
@@ -89,42 +87,38 @@ $ aico status
 ───────── ─────────── ──────────────────────────────────────────────────────────
       407    $0.40700 system prompt                                             
       405    $0.40500 alignment prompts (worst-case)                            
-       86    $0.08600 chat history                                              
-                        └─ Active window: 3 pairs (IDs 0-2), 3 sent.            
+       57    $0.05700 chat history                                              
+                        └─ Active window: 2 pairs (IDs 0-1), 2 sent.            
                            (Use `aico log`, `undo`, and `set-history` to manage)
-───────── ─────────── ─────────────────── Context Files (1) ────────────────────
-       23    $0.02300 math_utils.py                                             
 ───────── ─────────── ──────────────────────────────────────────────────────────
-     ~921    $0.92100 Total                                                     
+     ~869    $0.86900 Total                                                     
 
 ╭─────────────────────────────── Context Window ───────────────────────────────╮
-│                      (921 of 1,000 used - 8% remaining)                      │
-│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╸       │
+│                     (869 of 1,000 used - 13% remaining)                      │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 $
 ```
 
-## 7. History Management (Undo/Redo)
+## 6. History Management (Undo/Redo)
 `aico` uses a "soft-delete" approach to history. You can exclude messages from the next prompt without losing them from the log.
 
 ```console
 $ aico undo
-Marked pair at index 2 as excluded.
+Marked pair at index 1 as excluded.
 $ aico log
                         Active Context Log                        
    ID  Role       Message Snippet                                 
     0  user       Explain this code                               
        assistant  This code is a Python script.                   
-    1  user       add a comment                                   
-       assistant  File: hello.txt                                 
- 2[-]  user       Rename 'do' to 'add_numbers' and use type hints 
-       assistant  File: math_utils.py                             
+ 1[-]  user       Rename 'add' to 'sum_values' and add type hints 
+       assistant  File: math.py                                   
 $ aico redo
-Re-included pair at index 2 in context.
+Re-included pair at index 1 in context.
 $
 ```
 
-## 8. Archiving and Resetting (Summarize)
+## 7. Archiving and Resetting (Summarize)
 The `summarize` addon archives the history and resets the active window.
 
 ```console
@@ -140,19 +134,18 @@ $ aico status
             407           $0.40700 system prompt                                
             405           $0.40500 alignment prompts (worst-case)               
                            $0.0000 chat history                                 
-─────────────── ────────────────── ───────────── Context Files (2) ─────────────
-             50           $0.05000 PROJECT_SUMMARY.md                           
-             23           $0.02300 math_utils.py                                
+─────────────── ────────────────── ───────────── Context Files (1) ─────────────
+             48           $0.04800 PROJECT_SUMMARY.md                           
 ─────────────── ────────────────── ─────────────────────────────────────────────
-           ~885           $0.88500 Total                                        
+           ~860           $0.86000 Total                                        
 
 ╭─────────────────────────────── Context Window ───────────────────────────────╮
-│                     (885 of 1,000 used - 12% remaining)                      │
-│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━          │
+│                     (860 of 1,000 used - 14% remaining)                      │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 $ cat PROJECT_SUMMARY.md
 ### Recent Developments
-- Refactored `math_utils.py` to use type hints.
+- Refactored `math.py` to use type hints.
 ### Comprehensive Project Summary
 A collection of utilities including math functions.
 $

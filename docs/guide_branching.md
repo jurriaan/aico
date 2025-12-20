@@ -1,10 +1,10 @@
-# Feature: Session Branching
+# Guide: Session Branching
 
 `aico` supports Git-like branching for conversations. This allows you to fork a session to experiment with a solution. If it fails, you can switch back to the main branch and try a different approach, keeping your history clean.
 
-## 1. Setup and Base Context
+## 1. Setup
 
-Initialize the session and establish the shared context.
+Initialize the session.
 
 ```console
 $ aico init --model "openai/test-model" #=> --regex Initialized session file: .*\.ai_session\.json
@@ -14,9 +14,9 @@ Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.02
 $
 ```
 
-## 2. Forking for Experimentation (Solution A)
+## 2. Forking a Session
 
-We decide to try "Solution A". We fork the session so we don't pollute the `main` history.
+We want to experiment with "Solution A". We fork the session so we don't pollute the `main` history.
 
 ```console
 $ aico session-fork solution-a
@@ -27,19 +27,17 @@ Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.04
 $
 ```
 
-Verify we are on the new branch and the history is active.
+Verify we are on the new branch.
 
 ```console
 $ aico session-list
 Available sessions:
   - main
   - solution-a (active)
-$ aico last
-Implementing Solution A using a loop.
 $
 ```
 
-## 3. Switching Back
+## 3. Switching Branches
 
 "Solution A" didn't work out. We switch back to `main`.
 
@@ -70,18 +68,3 @@ Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.04
 $
 ```
 
-## 5. Verification of Isolation
-
-We now have three sessions. `main` is clean, `solution-a` has the loop approach, and `solution-b` has the recursive approach.
-
-```console
-$ aico session-switch solution-a
-Switched active session to: solution-a
-$ aico last
-Implementing Solution A using a loop.
-$ aico session-switch solution-b
-Switched active session to: solution-b
-$ aico last
-Implementing Solution B using recursion.
-$
-```
