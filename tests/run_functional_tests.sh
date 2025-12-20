@@ -87,11 +87,16 @@ unset PAGER
 # Check if the directory exists and contains markdown files before running clitest
 if [ -d "$FEATURES_DIR" ]; then
   for f in "$FEATURES_DIR"/*.md; do
-    echo "Testing file $f"
+    FNAME=$(basename "$f")
+    echo
+    echo "================================================================================"
+    echo -e "\033[1;34mTesting Feature:\033[0m \033[1m$FNAME\033[0m"
+    echo "================================================================================"
     # Isolate each feature file by cleaning up session state before each run
     rm -rf .ai_session.json .aico
     clitest "$f"
   done
+  echo
 else
   echo "Error: Features directory not found at $FEATURES_DIR"
   exit 1

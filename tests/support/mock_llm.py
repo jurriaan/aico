@@ -5,6 +5,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
 class MockLLMHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        # Suppress standard logging to keep clitest output clean
+        pass
+
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
@@ -15,6 +19,9 @@ class MockLLMHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
             return
+
+        # Print a muted indicator that a call was intercepted
+        print("  \033[2m[LLM Call]\033[0m", flush=True)
 
         content_length = int(self.headers["Content-Length"])
         body = json.loads(self.rfile.read(content_length))
