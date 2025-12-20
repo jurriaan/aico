@@ -120,18 +120,9 @@ CURRENT_CONTEXT_SORTED="$(printf "%s\n" "$CURRENT_CONTEXT_ORIGINAL" | sort -u)"
 TO_ADD="$(comm -23 <(printf "%s\n" "$NEW_SELECTION") <(printf "%s\n" "$CURRENT_CONTEXT_SORTED"))"
 
 # Files to drop: in CURRENT_CONTEXT but not in NEW_SELECTION
-# NOTE: We keep files that are missing on disk "sticky" in context to avoid accidental drops
-# when switching branches or working with temporary files.
 TO_DROP="$(
   comm -13 <(printf "%s\n" "$NEW_SELECTION") <(printf "%s\n" "$CURRENT_CONTEXT_SORTED") \
-    | while IFS= read -r path; do
-        if [ -z "$path" ]; then
-          continue
-        fi
-        if [ -f "$path" ]; then
-          printf "%s\n" "$path"
-        fi
-      done
+    | grep .
 )"
 
 # --- Apply add/drop operations via aico ---
