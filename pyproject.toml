@@ -1,9 +1,24 @@
 [project]
 name = "aico"
 version = "0.1.0"
-description = "A command-line tool for scripting AI-driven code edits."
-readme = "README.md"
+description = "A CLI utility that gives you precise, scriptable control over LLMs to generate code as unified diffs and manage conversation history."
+keywords = ["ai", "llm", "cli", "diff", "patch", "scripting"]
+readme = { file = "README.md", content-type = "text/markdown" }
+authors = [{name = "Jurriaan Pruis"}]
+license = {text = "MIT"}
 requires-python = ">=3.13"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: Linguistic",
+    "Topic :: Utilities",
+]
 dependencies = [
     "httpx>=0.28.1",
     "msgspec>=0.20.0",
@@ -15,6 +30,10 @@ dependencies = [
 
 [project.scripts]
 aico = "aico.main:app"
+
+[project.urls]
+Repository = "https://github.com/jurriaan/aico"
+Issues = "https://github.com/jurriaan/aico/issues"
 
 [build-system]
 requires = ["uv_build>=0.9.16,<0.10.0"]
