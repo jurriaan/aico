@@ -57,6 +57,8 @@ class MockLLMHandler(BaseHTTPRequestHandler):
                     "File: hello.txt\n<<<<<<< SEARCH\nhello world\n=======\n# a comment\nhello world\n>>>>>>> REPLACE\n"
                 ),
                 "Explain this code": "This code is a Python script.\n",
+                "Propose Solution A": "Implementing Solution A using a loop.\n",
+                "Propose Solution B": "Implementing Solution B using recursion.\n",
             }
 
             response_text = "Standard mock response."
