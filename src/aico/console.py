@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from rich.console import Group
 
-from aico.llm.tokens import compute_component_cost
-from aico.model_registry import get_model_info
 from aico.models import (
     AssistantChatMessage,
     DisplayItem,
@@ -77,21 +75,12 @@ def reconstruct_display_content_for_piping(
     return ""
 
 
-def calculate_and_display_cost(
+def display_cost_summary(
     token_usage: TokenUsage,
-    model_name: str,
+    cost: float | None,
     session_data: SessionData,
-    exact_cost: float | None = None,
-) -> float | None:
-    """Calculates the message cost and displays token/cost information."""
-    model = get_model_info(model_name)
-
-    # Prefer usage.cost (OpenRouter injection) or exact_cost passed in
-    message_cost = token_usage.cost if token_usage.cost is not None else exact_cost
-    if message_cost is None:
-        # Fallback to estimating cost if available (stub for now until cleanup)
-        message_cost = compute_component_cost(model, token_usage.prompt_tokens, token_usage.completion_tokens)
-
+) -> None:
+    """Displays token/cost information to stderr (or formatted TTY)."""
     prompt_tokens_str = format_tokens(token_usage.prompt_tokens)
     if token_usage.cached_tokens:
         prompt_tokens_str += f" ({format_tokens(token_usage.cached_tokens)} cached)"
@@ -101,24 +90,20 @@ def calculate_and_display_cost(
         completion_tokens_str += f" ({format_tokens(token_usage.reasoning_tokens)} reasoning)"
 
     cost_str: str = ""
-    if message_cost is not None:
-        # Get absolute indices for all messages currently in the active window
-        # We use get_active_message_pairs instead of active_message_indices
-        # because we want to include the cost of excluded pairs in the session total.
+    if cost is not None:
+        # Calculate window history cost using absolute indices
         active_pairs = get_active_message_pairs(session_data)
 
         window_history_cost = 0.0
         for _, pair in active_pairs:
-            # pair contains absolute indices
             match session_data.chat_history[pair.assistant_index]:
-                case AssistantChatMessage(cost=float(cost)):
-                    window_history_cost += cost
+                case AssistantChatMessage(cost=float(historical_cost)):
+                    window_history_cost += historical_cost
                 case _:
                     pass
 
-        # The total cost for the current chat window is the historical cost plus the new message cost
-        total_window_cost = window_history_cost + message_cost
-        cost_str = f"Cost: ${message_cost:.2f}, current chat: ${total_window_cost:.2f}"
+        total_window_cost = window_history_cost + cost
+        cost_str = f"Cost: ${cost:.2f}, current chat: ${total_window_cost:.2f}"
 
     info_str = f"Tokens: {prompt_tokens_str} sent, {completion_tokens_str} received. {cost_str}"
 
@@ -129,5 +114,3 @@ def calculate_and_display_cost(
         console.print(f"\n[dim]---[/dim]\n[dim]{info_str}[/dim]")
     else:
         print(info_str, file=sys.stderr)
-
-    return message_cost

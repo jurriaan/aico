@@ -12,8 +12,8 @@ Use `ask` for high-level discussion or to explain existing code.
 
 ```console
 $ aico ask "Explain this code"
-Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.02
 This code is a Python script.
+Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.02
 $
 ```
 
@@ -32,12 +32,12 @@ Use `gen` to produce structural changes. The resulting diff can be piped to `pat
 
 ```console
 $ aico gen "add a comment"
-Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.04
 --- a/hello.txt
 +++ b/hello.txt
 @@ -1 +1,2 @@
 +# a comment
  hello world
+Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.04
 $ aico last | patch -p1
 patching file hello.txt
 $ cat hello.txt

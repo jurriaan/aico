@@ -7,7 +7,7 @@ from pathlib import Path
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
-from aico.console import calculate_and_display_cost
+from aico.console import display_cost_summary
 from aico.consts import SESSION_FILE_NAME
 from aico.llm.tokens import count_tokens_for_messages
 from aico.main import app
@@ -92,19 +92,11 @@ def test_aico_session_file_env_var_not_set_uses_upward_search(tmp_path: Path, mo
 
 
 def test_calculate_and_display_cost_logic(mocker: MockerFixture) -> None:
-    from aico.model_registry import ModelInfo
     from aico.models import UserChatMessage
 
     # GIVEN
     mocker.patch("aico.console.is_terminal", return_value=False)
     mock_print = mocker.patch("builtins.print")
-
-    # Mock ModelInfo to return costs that result in 0.50 total
-    # 100 prompt * 0.002 = 0.20
-    # 50 completion * 0.006 = 0.30
-    # Total = 0.50
-    mock_model_info = ModelInfo(input_cost_per_token=0.002, output_cost_per_token=0.006)
-    mocker.patch("aico.console.get_model_info", return_value=mock_model_info)
 
     chat_history: Sequence[ChatMessageHistoryItem] = [
         UserChatMessage(content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
@@ -128,13 +120,10 @@ def test_calculate_and_display_cost_logic(mocker: MockerFixture) -> None:
         excluded_pairs=[2],  # Exclude pair 2 {u2, a2}. Cost should still be counted.
     )
 
-    # WHEN calculate_and_display_cost is called with the new signature
-    message_cost = calculate_and_display_cost(token_usage, model_name, session_data)
+    # WHEN display_cost_summary is called with the new signature
+    display_cost_summary(token_usage, 0.50, session_data)
 
-    # THEN the returned cost for the new message is correct
-    assert message_cost == 0.50
-
-    # AND the printed output string to stderr is correctly formatted
+    # THEN the printed output string to stderr is correctly formatted
     # Historical window cost = 1.0 (a1) + 2.0 (a2) = 3.0
     # Total current chat cost = 3.0 (history) + 0.5 (new message) = 3.50
     expected_info_str = "Tokens: 100 sent, 50 received. Cost: $0.50, current chat: $3.50"
@@ -157,12 +146,7 @@ def test_calculate_and_display_cost_shows_cached_tokens(mocker: MockerFixture) -
     mocker.patch("aico.console.is_terminal", return_value=False)
     mock_print = mocker.patch("builtins.print")
 
-    from aico.model_registry import ModelInfo
     from aico.models import UserChatMessage
-
-    # Mock ModelInfo to return zero costs
-    mock_model_info = ModelInfo(input_cost_per_token=0.0, output_cost_per_token=0.0)
-    mocker.patch("aico.console.get_model_info", return_value=mock_model_info)
 
     chat_history: Sequence[ChatMessageHistoryItem] = [
         UserChatMessage(content="u0", mode=Mode.CONVERSATION, timestamp="t0"),
@@ -181,12 +165,9 @@ def test_calculate_and_display_cost_shows_cached_tokens(mocker: MockerFixture) -
         excluded_pairs=[],
     )
 
-    # WHEN calculate_and_display_cost is called with cached tokens
-    message_cost = calculate_and_display_cost(token_usage, model_name, session_data)
+    # WHEN display_cost_summary is called with cached tokens
+    display_cost_summary(token_usage, 0.0, session_data)
 
-    # THEN the returned cost for the new message is correct
-    assert message_cost == 0.0
-
-    # AND the printed output string to stderr contains the cached token info
+    # THEN the printed output string to stderr contains the cached token info
     expected_info_str = "Tokens: 2.0k (1.0k cached) sent, 100 received. Cost: $0.00, current chat: $0.00"
     mock_print.assert_called_with(expected_info_str, file=sys.stderr)

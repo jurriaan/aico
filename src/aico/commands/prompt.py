@@ -2,6 +2,7 @@ import sys
 from datetime import UTC, datetime
 
 from aico.console import (
+    display_cost_summary,
     is_input_terminal,
     is_terminal,
     reconstruct_display_content_for_piping,
@@ -106,3 +107,8 @@ def run_llm_command(
                 interaction_result.display_items, mode, interaction_result.unified_diff
             )
             print(output_content, end="")
+        # Flush stdout before printing diagnostics to stderr
+        _ = sys.stdout.flush()
+
+    if interaction_result.token_usage:
+        display_cost_summary(interaction_result.token_usage, interaction_result.cost, session.data)

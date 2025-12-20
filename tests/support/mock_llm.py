@@ -31,24 +31,24 @@ class MockLLMHandler(BaseHTTPRequestHandler):
         else:
             responses = {
                 "Output the complete markdown document": (
-                "### Recent Developments\n"
-                "- Refactored `math_utils.py` to use type hints.\n"
-                "### Comprehensive Project Summary\n"
-                "A collection of utilities including math functions.\n"
-            ),
-            "Rename 'do' to 'add_numbers'": (
-                "File: math_utils.py\n"
-                "<<<<<<< SEARCH\n"
-                "def do(a, b):\n"
-                "    return a + b\n"
-                "=======\n"
-                "def add_nums(a: int, b: int) -> int:\n"
-                "    return a + b\n"
-                ">>>>>>> REPLACE\n"
-            ),
-            "add a comment": (
-                "File: hello.txt\n<<<<<<< SEARCH\nhello world\n=======\n# a comment\nhello world\n>>>>>>> REPLACE\n"
-            ),
+                    "### Recent Developments\n"
+                    "- Refactored `math_utils.py` to use type hints.\n"
+                    "### Comprehensive Project Summary\n"
+                    "A collection of utilities including math functions.\n"
+                ),
+                "Rename 'do' to 'add_numbers'": (
+                    "File: math_utils.py\n"
+                    "<<<<<<< SEARCH\n"
+                    "def do(a, b):\n"
+                    "    return a + b\n"
+                    "=======\n"
+                    "def add_nums(a: int, b: int) -> int:\n"
+                    "    return a + b\n"
+                    ">>>>>>> REPLACE\n"
+                ),
+                "add a comment": (
+                    "File: hello.txt\n<<<<<<< SEARCH\nhello world\n=======\n# a comment\nhello world\n>>>>>>> REPLACE\n"
+                ),
                 "Explain this code": "This code is a Python script.\n",
             }
 

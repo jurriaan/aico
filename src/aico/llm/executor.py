@@ -9,7 +9,6 @@ from typing import cast
 import regex
 
 from aico.console import (
-    calculate_and_display_cost,
     is_terminal,
     render_display_items_to_rich,
 )
@@ -21,6 +20,8 @@ from aico.live_render import AicoLiveRender
 from aico.llm.prompt_helpers import reconstruct_historical_messages
 from aico.llm.providers.base import LLMProvider
 from aico.llm.router import get_provider_for_model
+from aico.llm.tokens import compute_component_cost
+from aico.model_registry import get_model_info
 from aico.models import (
     ChatMessageHistoryItem,
     DisplayItem,
@@ -319,7 +320,11 @@ def execute_interaction(
 
     message_cost: float | None = None
     if token_usage:
-        message_cost = calculate_and_display_cost(token_usage, model_name, session_data, exact_cost=exact_cost)
+        # Prioritize exact cost from provider (e.g. OpenRouter), fallback to local estimation
+        message_cost = exact_cost if exact_cost is not None else token_usage.cost
+        if message_cost is None:
+            model_info = get_model_info(model_name)
+            message_cost = compute_component_cost(model_info, token_usage.prompt_tokens, token_usage.completion_tokens)
 
     return InteractionResult(
         content=llm_response_content,

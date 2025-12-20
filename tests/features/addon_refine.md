@@ -16,8 +16,8 @@ First, we generate a response that we intend to refine later. We'll use a specif
 
 ```console
 $ aico ask "Explain this code"
-Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.02
 This code is a Python script.
+Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.02
 $
 ```
 
@@ -39,8 +39,8 @@ Now, we use `aico refine` to change the output. We instruct the AI to be more sp
 ```console
 $ aico refine "Refine this to say it is a Rust script"
 Refining response at index 0 (Mode: conversation)...
-Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.04
 This is a Rust script.
+Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.04
 Refinement complete (Original pair hidden, new pair spliced).
 $
 ```
