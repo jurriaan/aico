@@ -23,8 +23,14 @@ class MockLLMHandler(BaseHTTPRequestHandler):
         messages = body.get("messages", [])
         last_content = messages[-1].get("content", "") if messages else ""
 
-        responses = {
-            "Output the complete markdown document": (
+        if "<critique>" in last_content:
+            if "Rust script" in last_content:
+                response_text = "This is a Rust script.\n"
+            else:
+                response_text = "Refined response based on critique.\n"
+        else:
+            responses = {
+                "Output the complete markdown document": (
                 "### Recent Developments\n"
                 "- Refactored `math_utils.py` to use type hints.\n"
                 "### Comprehensive Project Summary\n"
@@ -43,14 +49,14 @@ class MockLLMHandler(BaseHTTPRequestHandler):
             "add a comment": (
                 "File: hello.txt\n<<<<<<< SEARCH\nhello world\n=======\n# a comment\nhello world\n>>>>>>> REPLACE\n"
             ),
-            "Explain this code": "This code is a Python script.\n",
-        }
+                "Explain this code": "This code is a Python script.\n",
+            }
 
-        response_text = "Standard mock response."
-        for trigger, text in responses.items():
-            if trigger in last_content:
-                response_text = text
-                break
+            response_text = "Standard mock response."
+            for trigger, text in responses.items():
+                if trigger in last_content:
+                    response_text = text
+                    break
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
