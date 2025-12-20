@@ -41,4 +41,4 @@ def init(
     save_view(view_path, view)
     switch_active_pointer(session_file, view_path)
 
-    print(f"Initialized session file: {session_file}")
+    print(f"Initialized session file: {session_file.name}")

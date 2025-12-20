@@ -7,7 +7,8 @@
 Initialize the session.
 
 ```console
-$ aico init --model "openai/test-model" #=> --regex Initialized session file: .*\.ai_session\.json
+$ aico init --model "openai/test-model"
+Initialized session file: .ai_session.json
 $ aico ask "Explain this code"
 This code is a Python script.
 Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.02

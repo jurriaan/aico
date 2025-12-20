@@ -7,7 +7,9 @@ This tutorial walks you through the core workflow of `aico`: planning, implement
 Start by initializing a session in your project root. We specify the model we want to use.
 
 ```console
-$ aico init --model "openai/test-model" #=> --regex Initialized session file: .*\.ai_session\.json
+$ aico init --model "openai/test-model"
+Initialized session file: .ai_session.json
+$
 ```
 
 ## 2. Planning

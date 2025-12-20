@@ -22,7 +22,7 @@ def test_init_creates_session_file_in_empty_dir(tmp_path: Path) -> None:
         assert result.exit_code == 0
         pointer_file = Path(td) / SESSION_FILE_NAME
         assert pointer_file.is_file()
-        assert f"Initialized session file: {pointer_file}" in result.stdout
+        assert f"Initialized session file: {pointer_file.name}" in result.stdout
 
         # AND the pointer file has the correct format and points to a view
         pointer_data = json.loads(pointer_file.read_text())

@@ -9,7 +9,9 @@ The `refine` addon allows you to rewrite a specific conversational turn without 
 Initialize the session and context.
 
 ```console
-$ aico init --model "openai/test-model" #=> --regex Initialized session file: .*\.ai_session\.json
+$ aico init --model "openai/test-model"
+Initialized session file: .ai_session.json
+$
 ```
 
 ## 2. Create the "Mistake"
