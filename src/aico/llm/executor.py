@@ -1,12 +1,11 @@
 import math
+import re
 import sys
 import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
-
-import regex
 
 from aico.console import (
     is_terminal,
@@ -157,10 +156,10 @@ def _build_messages(
 def extract_reasoning_header(reasoning_buffer: str) -> str | None:
     """Extracts the last Markdown header (#) or bold (**text**) from the reasoning buffer for spinner."""
     matches = list(
-        regex.finditer(
+        re.finditer(
             r"(?:^#{1,6}\s+(?P<header>.+)$)|(?:^\*\*\s*(?P<bold>.+?)\s*\*\*)",
             reasoning_buffer,
-            regex.MULTILINE,
+            re.MULTILINE,
         )
     )
     if matches:

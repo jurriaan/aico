@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 
 import typer
@@ -488,9 +489,8 @@ def expand_index_ranges(indices: list[str]) -> list[str]:
         return ["-1"]
 
     expanded: list[str] = []
-    import regex
 
-    range_pattern = regex.compile(r"^(-?\d+)\.\.(-?\d+)$")
+    range_pattern = re.compile(r"^(-?\d+)\.\.(-?\d+)$")
 
     for item in indices:
         match = range_pattern.match(item)

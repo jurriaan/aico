@@ -1,7 +1,6 @@
+import re
 from collections.abc import Iterator
 from pathlib import Path
-
-import regex as re
 
 from aico.diffing.diff_utils import generate_diff_with_no_newline_handling
 from aico.diffing.patching import create_patched_content
@@ -31,22 +30,22 @@ from aico.models import (
 # - `\s*$`: Allows for trailing whitespace on the final `>>>>>>> REPLACE` line.
 # - `re.DOTALL`: Allows `.` to match newlines, so the content blocks can be multiline.
 # - `re.MULTILINE`: Allows `^` and `$` to match the start/end of lines, not just the string.
-_FILE_HEADER_REGEX = re.compile(r"(^\p{H}*File: .*?\n)", re.MULTILINE | re.UNICODE)
+_FILE_HEADER_REGEX = re.compile(r"(^[ \t]*File: .*?\n)", re.MULTILINE)
 
-_INCOMPLETE_BLOCK_REGEX = re.compile(r"^\p{H}*<<<<<<< SEARCH", re.MULTILINE | re.UNICODE)
+_INCOMPLETE_BLOCK_REGEX = re.compile(r"^[ \t]*<<<<<<< SEARCH", re.MULTILINE)
 
 
 # This regex is the core of the parser for individual SEARCH/REPLACE blocks.
 # It no longer includes the "File:" header.
 _FILE_BLOCK_REGEX = re.compile(
     r"(?P<block>"
-    + r"^(?P<indent>\p{H}*)<<<<<<< SEARCH\p{H}*\n"
+    + r"^(?P<indent>[ \t]*)<<<<<<< SEARCH[ \t]*\n"
     + r"(?P<search_content>.*?)"
     + r"^(?P=indent)=======\n"
     + r"(?P<replace_content>.*?)"
-    + r"^(?P=indent)>>>>>>> REPLACE\p{H}*$"
+    + r"^(?P=indent)>>>>>>> REPLACE[ \t]*$"
     + r")",
-    re.MULTILINE | re.DOTALL | re.UNICODE,
+    re.MULTILINE | re.DOTALL,
 )
 
 

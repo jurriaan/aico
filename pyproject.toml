@@ -23,7 +23,6 @@ dependencies = [
     "httpx>=0.28.1",
     "msgspec>=0.20.0",
     "openai>=2.8.1",
-    "regex>=2025.11.3",
     "rich>=14.2.0",
     "typer>=0.20.0",
 ]
