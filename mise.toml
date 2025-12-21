@@ -1,0 +1,5 @@
+[tools]
+uv = "latest"
+"http:clitest" = { version = "0.5.0", url = "https://raw.githubusercontent.com/aureliojargas/clitest/8bdaae2f56e524f8824307d5c443e6353fe0dbd9/clitest" }
+jq = "latest"
+bat = "latest"
