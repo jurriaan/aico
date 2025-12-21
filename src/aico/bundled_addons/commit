@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 # This script is an example of an `aico` addon. Here's how it works:
 #
@@ -21,7 +21,6 @@
 #    history. This ensures the history remains clean, even if the commit is aborted.
 
 set -e
-set -o pipefail
 
 # --- Configuration ---
 # The model to use for generating the commit message.

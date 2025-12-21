@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
 # Ensure we have clitest
@@ -66,11 +66,11 @@ export PATH="$TEST_WORKSPACE/bin:$PATH"
 # Run clitest against feature files in the project root
 
 RETRY_COUNT=0
-MAX_RETRIES=50
+MAX_RETRIES=10
 while ! curl -s http://localhost:5005/v1 >/dev/null 2>&1; do
-  sleep 0.1
+  sleep 1
   RETRY_COUNT=$((RETRY_COUNT + 1))
-  if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
+  if [ "$RETRY_COUNT" -gt "$MAX_RETRIES" ]; then
     echo "Error: Mock LLM server failed to start"
     exit 1
   fi
@@ -86,7 +86,7 @@ if [ -d "$FEATURES_DIR" ]; then
     FNAME=$(basename "$f")
     echo
     echo "================================================================================"
-    echo -e "\033[1;34mTesting Feature:\033[0m \033[1m$FNAME\033[0m"
+    printf "\033[1;34mTesting Feature:\033[0m \033[1m%s\033[0m\n" "$FNAME"
     echo "================================================================================"
     # Isolate each feature file by cleaning up session state before each run
     rm -rf .ai_session.json .aico

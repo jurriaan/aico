@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # This shim is used by functional tests to isolate the execution environment
 # and provide a controlled PTY for interactive commands like 'aico edit'.
 
@@ -9,7 +9,7 @@ PYTHONPATH="$(dirname "$(dirname "$(dirname "$REAL_AICO_ENTRY")")")/src:$PYTHONP
 export PYTHONPATH
 
 # Ensure dependencies are available
-source "$(dirname "$(dirname "$(dirname "$REAL_AICO_ENTRY")")")/.venv/bin/activate"
+. "$(dirname "$(dirname "$(dirname "$REAL_AICO_ENTRY")")")/.venv/bin/activate"
 
 if [ "$1" = "edit" ]; then
   # Force TTY for 'edit' to test interactive logic via a PTY spawn

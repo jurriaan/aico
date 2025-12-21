@@ -1,24 +1,31 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
 cd "$(dirname "$0")/.."
 
 fix_mode=false
-files_to_process_args=()
 
+# Use positional parameters to build the file list without arrays
+# First pass: identify --fix
 for arg in "$@"; do
-  if [[ "$arg" == "--fix" ]]; then
+  if [ "$arg" = "--fix" ]; then
     fix_mode=true
-  else
-    files_to_process_args+=("$arg")
   fi
 done
 
-if [ "$fix_mode" = true ]; then
-  uv run ruff check --fix-only "${files_to_process_args[@]}" >/dev/null 2>&1
-  uv run ruff format "${files_to_process_args[@]}" >/dev/null 2>&1
+# Second pass: remove --fix from the argument list
+set --
+for arg in "$@"; do
+  if [ "$arg" != "--fix" ]; then
+    set -- "$@" "$arg"
+  fi
+done
+
+if [ "$fix_mode" = "true" ]; then
+  uv run ruff check --fix-only "$@" >/dev/null 2>&1
+  uv run ruff format "$@" >/dev/null 2>&1
 fi
 
-uv run basedpyright "${files_to_process_args[@]}"
-uv run ruff check "${files_to_process_args[@]}"
-uv run ty check "${files_to_process_args[@]}"
+uv run basedpyright "$@"
+uv run ruff check "$@"
+uv run ty check "$@"

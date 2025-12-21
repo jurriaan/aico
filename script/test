@@ -1,17 +1,20 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
 cd "$(dirname "$0")/.."
 
 export LITELLM_LOCAL_MODEL_COST_MAP=True
 
-if [[ "$1" == co* ]]; then
+case "$1" in
+  co*)
     echo "Running tests for coverage (pytest --cov=app)..."
     uv run pytest --cov=app
-else
+    ;;
+  *)
     echo "Running tests (pytest)..."
     uv run pytest "$@" -vv
-fi
+    ;;
+esac
 
 echo ""
 echo "Running functional tests (clitest)..."
