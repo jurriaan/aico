@@ -17,9 +17,9 @@ case "$1" in
 esac
 
 echo ""
-echo "Running functional tests (clitest)..."
+echo "Verifying documentation (clitest)..."
 if command -v clitest >/dev/null 2>&1; then
-    tests/run_functional_tests.sh
+    tests/run_doc_tests.sh
 else
     echo "Warning: clitest not found, skipping functional tests."
 fi

@@ -86,7 +86,7 @@ if [ -d "$FEATURES_DIR" ]; then
     FNAME=$(basename "$f")
     echo
     echo "================================================================================"
-    printf "\033[1;34mTesting Feature:\033[0m \033[1m%s\033[0m\n" "$FNAME"
+    printf "\033[1;34mVerifying Documentation:\033[0m \033[1m%s\033[0m\n" "$FNAME"
     echo "================================================================================"
     # Isolate each feature file by cleaning up session state before each run
     rm -rf .ai_session.json .aico
