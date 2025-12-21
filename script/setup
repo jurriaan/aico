@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+cd "$(dirname "$0")/.."
+
+if ! hash mise 2>/dev/null; then
+  if hash pacman 2>/dev/null; then
+    sudo pacman -S --noconfirm mise
+  elif hash brew 2>/dev/null; then
+    brew install mise
+  else
+    echo "mise not found. Please install it: https://mise.jdx.dev/getting-started.html"
+    echo "Alternatively, run: curl https://mise.run | sh"
+    exit 1
+  fi
+fi
+
+mise install
