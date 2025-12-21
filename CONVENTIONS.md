@@ -19,9 +19,7 @@ The fundamental design of `aico` is that of a predictable, composable Unix tool.
   - When `stdout` is piped or redirected (i.e., not a TTY), its output MUST be clean, machine-readable data (e.g., a unified diff).
   - All human-centric output (progress indicators, diagnostics, warnings, cost info) MUST be directed to `stderr` to avoid corrupting the data stream.
   - When `stdout` is connected to a TTY, its output can be enhanced for human readability (e.g., with Rich Markdown).
-- **Transparent State:** All session state is human-readable and lives in your repository. `aico` supports two formats:
-  - A legacy, single-file `.ai_session.json` that contains the entire session.
-  - A shared-history format backed by `historystore`, which uses a tiny pointer file (`.ai_session.json`) referencing a lightweight session view (`.aico/sessions/*.json`) and a sharded, append-only history log (`.aico/history/`). There is no hidden state in either format.
+- **Transparent State:** All session state is human-readable and lives in your repository. `aico` uses a shared-history format backed by `historystore`, which uses a tiny pointer file (`.ai_session.json`) referencing a lightweight session view (`.aico/sessions/*.json`) and a sharded, append-only history log (`.aico/history/`). There is no hidden state in this format.
 - **Developer in Control:** The workflow is designed for a "Plan and Execute" model, where the developer uses `aico` to augment their own process, not replace it.
 - **Targeted Generation:** Generated diffs SHOULD be small and targeted, addressing a single concern. This aligns with the "Plan and Execute" workflow where each step is a discrete change.
 - **Generate Only When Instructed:** You MUST NOT generate code (e.g., `SEARCH/REPLACE` blocks) during a conversational `ask` command. Code generation is reserved for the `gen` command.

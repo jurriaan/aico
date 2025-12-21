@@ -9,8 +9,8 @@ These records explain the motivation and consequences of key architectural decis
 ### ADR-001: The Diff & Patch Engine Design
 
 -   **Context:** The `diffing.py` engine is the most complex component in the application. It has undergone several refactors.
--   **Decision:** We chose to implement a "scan-and-yield" parser using `regex.finditer()` instead of a simpler `string.split()` approach.
--   **Rationale:** An early version based on splitting the LLM response by `File:` headers was fundamentally flawed: it consumed and discarded the newlines and any conversational text between `SEARCH/REPLACE` blocks. This resulted in lost context and corrupted display output. The `finditer` approach iterates through matches *without* discarding the text between them, ensuring every character of the LLM's raw response is preserved and processed correctly. This design is more complex but is far more robust against malformed LLM outputs and correctly preserves all conversational nuance.
+-   **Decision:** We chose to implement a "scan-and-yield" parser using `re.finditer()` instead of a simpler `string.split()` approach.
+-   **Rationale:** An early version based on splitting the LLM response by `File:` headers was fundamentally flawed: it consumed and discarded the newlines and any conversational text between `SEARCH/REPLACE` blocks. This resulted in lost context and corrupted display output. The `finditer` approach iterates through matches *without* discarding the text between them, ensuring every character of the LLM's raw response is preserved and processed correctly. This design is more complex but is far more robust against malformed LLM outputs and correctly preserves all conversational nuance. We use the standard library `re` module for maximum portability and zero startup overhead.
 
 ### ADR-002: The `passthrough` Feature for Advanced Scripting
 

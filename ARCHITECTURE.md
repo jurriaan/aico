@@ -22,13 +22,12 @@ The application is composed of several distinct components, each with a clear ro
 
 ### State Persistence Layer
 
--   **Role:** This layer abstracts the loading and saving of session state. It provides a consistent interface for all commands, regardless of the underlying storage format. It supports both the legacy single-file `.ai_session.json` and the next-generation `historystore` architecture (sharded history + lightweight session pointers).
--   **Implementation:** The core logic is centralized in `src/aico/session.py`.
-    -   A `SessionPersistence` protocol defines the `load()` and `save()` interface.
-    -   A factory function, `get_persistence()`, inspects `.ai_session.json` to determine the storage format and returns the correct persistence backend.
-    -   `LegacyJsonPersistence` handles the traditional single-file JSON format.
-    -   `SharedHistoryPersistence` supports the new `historystore` format. Its `load()` reconstructs a legacy-compatible `SessionData` from a session view and sharded records (pre-sliced to the active window for fast status/log/token counting). Its `save()` supports write operations (append, single-edit, exclusions, history start, context/model updates) by default.
-    -   For commands that need global pair IDs (e.g., `last`, `edit`, `undo`, `redo`, `set-history`), `SharedHistoryPersistence.load_full_history()` reconstructs the full history, ensuring indices are always resolved against the complete conversation.
+-   **Role:** This layer manages the loading, saving, and surgical modification of session state. It provides a consistent interface for all commands to interact with the conversation history and metadata.
+-   **Implementation:** The core logic is centralized in the `Session` class in `src/aico/session.py`. It exclusively supports the `historystore` architecture:
+    -   **Pointer:** The `.ai_session.json` file in the project root acts as a pointer to the active session view.
+    -   **View:** Lightweight JSON files in `.aico/sessions/` store session-specific metadata (model, context files, excluded pairs) and a list of global message IDs.
+    -   **Store:** An append-only, sharded log in `.aico/history/` contains the immutable message content.
+    -   The `Session` class provides high-level methods for appending message pairs, surgically fetching specific messages by index, and updating view-level metadata like exclusions or context boundaries.
 
 ### Command & Interaction Layer
 
