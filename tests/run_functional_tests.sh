@@ -76,10 +76,6 @@ while ! curl -s http://localhost:5005/v1 >/dev/null 2>&1; do
   fi
 done
 
-# Ensure the test workspace is trusted for addon execution
-mkdir -p "$XDG_CONFIG_HOME/aico"
-echo "$TEST_WORKSPACE" >>"$XDG_CONFIG_HOME/aico/trusted_paths"
-
 # Explicitly unset inherited environment variables that could bias tests
 unset AICO_SESSION_FILE
 unset PAGER

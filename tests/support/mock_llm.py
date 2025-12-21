@@ -68,6 +68,7 @@ class MockLLMHandler(BaseHTTPRequestHandler):
                 "Explain this code": "This code is a Python script.\n",
                 "Propose Solution A": "Implementing Solution A using a loop.\n",
                 "Propose Solution B": "Implementing Solution B using recursion.\n",
+                "Say hello to World": "Hello, World! I am an addon.\n",
             }
 
             response_text = "Standard mock response."

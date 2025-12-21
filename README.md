@@ -135,7 +135,7 @@ Use the [`summarize`](#standard-addons) addon to archive your current history an
 aico summarize
 ```
 
-For more detailed usage examples and scenarios, see [USAGE.feature.md](USAGE.feature.md).
+For more detailed usage examples and tutorials, see the [docs/](docs/) directory.
 
 ## Commands Overview
 
