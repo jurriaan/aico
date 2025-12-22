@@ -142,8 +142,10 @@ For more detailed usage examples and tutorials, see the [docs/](docs/) directory
 - `aico init`: Creates a `.ai_session.json` pointer and initializes the session directory.
 - `aico add <files...>`: Adds one or more files to the session context.
 - `aico drop <files...>`: Removes one or more files from the context.
+- `aico manage-context`: Interactive context management using `git ls-files` and `fzf`. (addon)
 - `aico ask "<instruction>"`: Have a conversation with the AI for planning and discussion.
 - `aico gen | generate-patch "<instruction>"`: Generate code modifications as a unified diff.
+- `aico refine [index] "<instruction>"`: Regenerate a previous response based on a specific critique. (addon)
 - `aico prompt "<instruction>"`: A power-user command for sending unformatted prompts. Primarily intended for scripting or addons. Prefer `ask` or `gen` for general use.
 - `aico dump-history`: Exports the active chat history to `stdout` in a machine-readable format. Useful for scripting and addons.
 - `aico last [index]`: Shows the response from the message pair at the given index (e.g., `0` for the first pair, `-1` for the last). Defaults to `-1`.
@@ -156,22 +158,16 @@ For more detailed usage examples and tutorials, see the [docs/](docs/) directory
 - `aico status`: Shows a comprehensive summary of the session status, including token usage, estimated cost, and chat history configuration.
 - `aico log`: Show a compact `git log`-style view of the active conversation context.
 - `aico set-history <index>`: Set which message pair the active history starts from. For example, `aico set-history 0` makes the full history active.
+- `aico commit`: Generates a Conventional Commit message for staged changes. (addon)
+- `aico summarize`: Archives history and resets the active window via `PROJECT_SUMMARY.md`. (addon)
 - `aico session-list`: List available session branches.
 - `aico session-switch <name>`: Switch the active branch.
 - `aico session-fork <name>`: Create a new branch from the current one.
 - `aico session-new <name>`: Create a new, empty session branch.
 
-## Addons: Extending `aico`
+## Addons: Extending aico
 
-`aico` comes with a set of standard addons enabled by default, but also allows you to create custom commands using a simple script-based system.
-
-### Standard Addons
-
-These commands are built-in but implemented as addons, meaning you can inspect or override them if needed.
-
-- [`aico commit`](.aico/addons/commit): Generates a Conventional Commit message for staged changes, using both your `git diff` and the `aico` conversation log for context.
-- [`aico summarize`](.aico/addons/summarize): Archives history as timestamped `.aico/summaries/YYYYMMDDTHHMMSS_PROJECT_SUMMARY.md`, symlinks `PROJECT_SUMMARY.md` at root, resets active history, adds to context.
-- [`aico manage-context`](.aico/addons/manage-context): Lets you interactively manage the session context using `git ls-files` and `fzf`, preselecting files already in context so you can quickly add or drop files without remembering exact paths.
+`aico` is extended via **Addon Scripts**. There is no complex plugin API—subcommands are simply executable files that interact with `aico` via environment variables and standard I/O. Commands marked `(addon)` in the overview above are bundled with `aico` but operate as independent scripts.
 
 ### Customizing and Overriding
 
@@ -187,9 +183,10 @@ An addon is simply an executable script placed in one of the addon directories.
 
 1.  **Create a script** (e.g., `my-command`):
     ```bash
-    #!/bin/bash
-    # Use AICO_SESSION_FILE to read the current session state
-    echo "Current session: $AICO_SESSION_FILE"
+    #!/bin/sh
+    # aico injects the AICO_SESSION_FILE path
+    echo "Processing session: $(basename "$AICO_SESSION_FILE")"
+    aico ask "Analyze the current context and provide a summary."
     ```
 2.  **Make it executable**: `chmod +x my-command`
 3.  **Add help text**: The script must print a single line of help text when run with `--usage`.
