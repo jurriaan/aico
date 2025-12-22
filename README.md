@@ -169,35 +169,7 @@ For more detailed usage examples and tutorials, see the [docs/](docs/) directory
 
 `aico` is extended via **Addon Scripts**. There is no complex plugin API—subcommands are simply executable files that interact with `aico` via environment variables and standard I/O. Commands marked `(addon)` in the overview above are bundled with `aico` but operate as independent scripts.
 
-### Customizing and Overriding
-
-`aico` looks for addons in the following order. The first one found wins, allowing you to override standard addons with your own versions.
-
-1.  **Project-specific:** `./.aico/addons/` (Highest priority)
-2.  **User-specific:** `~/.config/aico/addons/`
-3.  **Bundled:** Built-in defaults (Lowest priority)
-
-### Creating Your Own Addon
-
-An addon is simply an executable script placed in one of the addon directories.
-
-1.  **Create a script** (e.g., `my-command`):
-    ```bash
-    #!/bin/sh
-    # aico injects the AICO_SESSION_FILE path
-    echo "Processing session: $(basename "$AICO_SESSION_FILE")"
-    aico ask "Analyze the current context and provide a summary."
-    ```
-2.  **Make it executable**: `chmod +x my-command`
-3.  **Add help text**: The script must print a single line of help text when run with `--usage`.
-    ```bash
-    if [ "$1" == "--usage" ]; then
-      echo "My custom command description"
-      exit 0
-    fi
-    ```
-
-For complex addons, you can write them in Python and leverage `aico`'s internal libraries (the `PYTHONPATH` is automatically propagated). But note that the internal API is not stable at the moment.
+For a detailed walkthrough on creating, trusting, and overriding addons, see the [Guide: Creating Custom Addons](docs/guide_creating_addons.md).
 
 ## Contributing
 

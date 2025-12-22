@@ -2,6 +2,24 @@
 
 `aico` is designed to be extended via scripts. You don't need to learn a complex plugin API; if you can write an executable script (Shell, Python, Ruby, etc.), you can extend the tool.
 
+## How it works
+
+Any executable file in a recognized addon directory becomes a subcommand. `aico` looks for scripts in this order (first one found wins):
+
+1.  **Project-level:** `./.aico/addons/`
+2.  **User-level:** `~/.config/aico/addons/`
+3.  **Bundled:** Built-in default scripts.
+
+The tool communicates with your script via environment variables:
+- `AICO_SESSION_FILE`: The full path to the active `.ai_session.json`.
+- `PYTHONPATH`: Automatically set so you can `import aico` if writing in Python. (Note: The internal Python API is currently considered unstable).
+
+### Design Patterns for Addons
+
+For complex scripting, we recommend two main patterns:
+1. **Delegation**: Most addons should delegate the heavy lifting to `aico`'s built-in commands like `ask`, `gen`, or `dump-history`.
+2. **Passthrough for Fine Control**: Advanced scripts (like the bundled `commit` addon) use `aico prompt --passthrough`. This bypasses `aico`'s default prompt engineering (no system instruction or XML tags), providing a "raw pipe" to the LLM.
+
 In this guide, we will create a simple command called `greet` that wraps a prompt.
 
 ## 1. Setup
