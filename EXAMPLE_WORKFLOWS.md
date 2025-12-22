@@ -93,9 +93,9 @@ We have a failing test (the spec) and a plan. It's time to implement.
    ```
 
 1. **Fix the History, Not the File:**
-   Before applying the code, check the diff (`aico last`). If `aico` hallucinated a variable name or violated a convention, **do not fix it in your editor yet.** Fix it in the chat history using `aico edit`.
+   Before applying the code, check the diff (`aico last`). If the model hallucinated a variable name or violated a convention, **do not fix it in your editor yet.** Fix it in the chat history using `aico edit`.
 
-   *Why?* If you fix it silently in the code, `aico` still "remembers" generating the wrong name and might make the same mistake in the next turn. By editing the history, you correct the model's memory, ensuring it learns for the rest of the session.
+   *Why?* If you fix it silently in the code, the model still "remembers" generating the wrong name and might make the same mistake in the next turn. By editing the history, you correct the model's memory, ensuring it learns for the rest of the session.
 
 1. **Apply the Code:**
 
@@ -123,7 +123,7 @@ We have a failing test (the spec) and a plan. It's time to implement.
 
 ## Why this works
 
-- **Focused Context:** Manually `add`ing and `drop`ping files ensures the AI focuses only on relevant code, keeping token costs low and reasoning sharp.
+- **Focused Context:** Manually `add`ing and `drop`ping files ensures the LLM focuses only on relevant code, keeping token costs low and reasoning sharp.
 
 - **Correcting the Brain:** By using `aico edit` to fix mistakes in the history rather than the file, we prevent the model from spiraling into bad patterns.
 

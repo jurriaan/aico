@@ -1,8 +1,8 @@
 # aico
 
-`aico` gives you precise, scriptable control over Large Language Models, right from your terminal. It provides a **structured interface to the LLM**, treating it as a command-line utility, not an opaque agent.
+`aico` provides scriptable control over Large Language Models from the terminal. It is a **structured interface to the LLM**, treating it as a command-line utility rather than an agent.
 
-You explicitly manage the context by `add`ing and `drop`ping files, control the conversation history, and receive output as standard text or unified diffs, perfect for piping into `patch`, `delta`, or your own scripts. Built on the philosophy that the developer is always in command, `aico` is designed to be a transparent and composable part of your existing toolchain.
+Manage context by `add`ing and `drop`ping files, control history, and receive output as standard text or unified diffs, ready for piping into `patch`, `delta`, or scripts. Built on the philosophy that the developer is in command, `aico` is a transparent and composable part of the toolchain.
 
 ## Installation
 
@@ -41,7 +41,7 @@ aico init --model "openrouter/google/gemini-3-pro-preview"
 
 - **It's a Tool, Not an Agent.** It is a command-line utility that transforms text. It takes files and instructions as input and produces diffs or raw text as output. Its behavior is designed to be as predictable as `grep` or `sed`.
 
-- **Built for Composition.** One of the primary outputs of `aico` is a clean, standard unified diff printed to `stdout`. This allows it to be piped directly into other powerful command-line tools you already use.
+- **Built for Composition.** `aico` outputs standard unified diffs to `stdout`. These pipe into other command-line tools.
 
   ```bash
   # Generate a diff and pipe it directly to patch to apply it
@@ -67,13 +67,13 @@ aico init --model "openrouter/google/gemini-3-pro-preview"
 
 ## Branching and Sessions
 
-Because `aico` uses a pointer-based architecture, it supports branching workflows by default. All commands, including mutating ones (e.g., `ask`, `gen`, `edit`, `undo/redo`, `set-history`, and context/model updates), work seamlessly across branches. You can fork conversations to try different solutions without duplicating the entire history data.
+`aico` uses a pointer-based architecture to support branching workflows. Commands, including mutating ones (e.g., `ask`, `gen`, `edit`, `undo/redo`, `set-history`, and context/model updates), work across branches. Fork conversations to try solutions without duplicating history data. Switch branches to manage tasks or experiments.
 
 ## Basic Workflow: Plan and Execute
 
-*Note: for a more comprehensive guide on how to use `aico` in a production setting, see [the example workflows](EXAMPLE_WORKFLOWS.md) document.*
+*Note: For a guide on `aico` in production, see [the example workflows](EXAMPLE_WORKFLOWS.md) document.*
 
-An effective way to use `aico` is to first collaborate with the AI on a plan, and then ask it to execute each step of that plan.
+One way to use `aico` is to first prompt the model for a plan, then request execution for each step.
 
 These are common steps in such a workflow:
 
@@ -95,21 +95,21 @@ These are common steps in such a workflow:
    aico status
    ```
 
-4. **Plan the work. Start a conversation with the AI to create a plan.**
+4. **Plan the work. Prompt the model for a plan.**
 
    ```bash
    aico ask "Propose a multi-increment, test-driven plan to refactor the 'hello' function in main.py. It should accept a 'name' argument and print a greeting."
    ```
 
-   The AI will respond with a numbered plan. This starts a conversation that becomes part of the session history.
+   The model streams a numbered plan. This begins a history of messages.
 
-5. **Execute one step. Ask the AI to write the code for the first increment.**
+5. **Execute one step. Request code for the first increment.**
 
    ```bash
    aico gen "Implement Increment 1 of the plan."
    ```
 
-   `aico` will stream a response, ending with a proposed diff.
+   `aico` streams the response, including the diff.
 
 6. **Review, Apply, and Correct.**
 

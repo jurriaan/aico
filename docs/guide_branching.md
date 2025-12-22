@@ -2,6 +2,8 @@
 
 `aico` supports Git-like branching for conversations. This allows you to fork a session to experiment with a solution. If it fails, you can switch back to the main branch and try a different approach, keeping your history clean.
 
+> **Architecture Note:** Because `aico` uses a pointer-based storage system, branching is **zero-copy**. It simply creates a new lightweight view referencing the existing history log.
+
 ## 1. Setup
 
 Initialize the session.

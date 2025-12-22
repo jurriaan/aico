@@ -1,12 +1,13 @@
-# Coding Conventions for AI Assistant
+# Coding Conventions for LLM
 
-**You MUST read and strictly adhere to ALL conventions in this document for EVERY code generation or modification task performed for this project.**
+**Read and adhere to all conventions in this document for every code generation or modification task performed for this project.**
 Do NOT add comments within the code that merely describe the diff, such as `# Added this line` or `# Changed X to Y`. Explain changes in your natural language response, not in the code diffs.
+
 ## Interaction Model: Clarify, Don't Assume
 
-Adhere strictly to the user's request. Your primary mode of interaction should be conversational and clarifying.
+Adhere to the user's request. Maintain a conversational and clarifying interaction loop.
 
--   **Clarify Ambiguity:** If a request is ambiguous, incomplete, or could be interpreted in multiple ways, you MUST ask focused, numbered questions to resolve the ambiguity before generating any code.
+-   **Clarify Ambiguity:** If a request is ambiguous, incomplete, or open to multiple interpretations, ask focused, numbered questions to resolve the ambiguity before generating code.
 -   **Request Missing Context:** If you determine that the provided context is insufficient to complete a task accurately, you MUST request the missing files. Your request for files must include:
     1.  A concise justification for why the files are needed.
     2.  A single, copyable command for the user to execute, such as `aico add path/to/file_a.py`.
@@ -22,7 +23,7 @@ The fundamental design of `aico` is that of a predictable, composable Unix tool.
 - **Transparent State:** All session state is human-readable and lives in your repository. `aico` uses a shared-history format backed by `historystore`, which uses a tiny pointer file (`.ai_session.json`) referencing a lightweight session view (`.aico/sessions/*.json`) and a sharded, append-only history log (`.aico/history/`). There is no hidden state in this format.
 - **Developer in Control:** The workflow is designed for a "Plan and Execute" model, where the developer uses `aico` to augment their own process, not replace it.
 - **Targeted Generation:** Generated diffs SHOULD be small and targeted, addressing a single concern. This aligns with the "Plan and Execute" workflow where each step is a discrete change.
-- **Generate Only When Instructed:** You MUST NOT generate code (e.g., `SEARCH/REPLACE` blocks) during a conversational `ask` command. Code generation is reserved for the `gen` command.
+- **Generate Only When Instructed:** Do not generate code (e.g., `SEARCH/REPLACE` blocks) during a conversational `ask` command. Code generation is reserved for the `gen` command.
 
 ## Architectural Principles
 
@@ -34,8 +35,8 @@ When writing code, you MUST follow these project-specific principles:
 - **Orthogonal Commands and Flags:** Prefer creating new, specific commands over adding flags that fundamentally change the behavior of an existing command (e.g., `aico gen` is better than `aico prompt --mode=diff`). Similarly, flags should be orthogonal, controlling a single, well-defined aspect of a command's behavior (e.g., `--recompute` has a single, clear purpose).
 - **Principle of Centralized Logic:** Core logic shared between multiple commands (like invoking the LLM, managing session state, or processing output) should be centralized in helper functions or dedicated modules. This avoids code duplication and ensures a consistent user experience across different commands (e.g., `gen` and `last` should display diffs consistently).
 - **Principle of Streaming Abstractions:** For operations that involve parsing complex, multi-part data streams (especially from LLMs), prefer creating a generator-based streaming parser. This pattern isolates the complex parsing logic and provides a clean, iterable interface for consumers, simplifying the command-level code.
-- **Atomic Operations:** Critical file operations, especially session writing, must be atomic to prevent data corruption. Use a temporary file + rename pattern.
-- **Simplicity and Readability:** Keep the code as simple as possible. Use self-explanatory identifier names over comments. Do not add docstrings to simple methods/functions.
+- **Atomic Operations:** Critical file operations, especially session writing, are atomic. Use a temporary file + rename pattern.
+- **Simplicity and Readability:** Keep the code simple. Use self-explanatory identifier names over comments. Do not add docstrings to simple methods/functions.
 
 ### Modern Python and Type Safety
 

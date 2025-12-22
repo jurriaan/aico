@@ -38,7 +38,7 @@ $
 
 ## 3. Refine the Response
 
-Now, we use `aico refine` to change the output. We instruct the AI to be more specific.
+Now, we use `aico refine` to change the output. We instruct the model to be more specific.
 
 ```console
 $ aico refine "Refine this to say it is a Rust script"

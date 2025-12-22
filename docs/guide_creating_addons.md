@@ -1,8 +1,8 @@
 # Guide: Creating Custom Addons
 
-`aico` is designed to be extended. You don't need to learn a complex plugin API; if you can write a shell script (or Python, or Ruby), you can write an addon.
+`aico` is designed to be extended via scripts. You don't need to learn a complex plugin API; if you can write an executable script (Shell, Python, Ruby, etc.), you can extend the tool.
 
-In this guide, we will create a simple command called `greet` that wraps an AI prompt.
+In this guide, we will create a simple command called `greet` that wraps a prompt.
 
 ## 1. Setup
 
@@ -23,7 +23,7 @@ We will create a script named `greet`. It uses the `$AICO_SESSION_FILE` environm
 ```console
 $ mkdir -p .aico/addons
 $ echo '#!/bin/sh' > .aico/addons/greet
-$ echo 'if [ "$1" = "--usage" ]; then echo "Greets the user via the AI."; exit 0; fi' >> .aico/addons/greet
+$ echo 'if [ "$1" = "--usage" ]; then echo "Greets the user via the LLM."; exit 0; fi' >> .aico/addons/greet
 $ echo 'echo "Running addon for session: $(basename "$AICO_SESSION_FILE")"' >> .aico/addons/greet
 $ echo 'aico ask "Say hello to ${1:-User}"' >> .aico/addons/greet
 $ chmod +x .aico/addons/greet
@@ -49,6 +49,6 @@ Running addon for session: .ai_session.json
 Hello, World! I am an addon.
 Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.02
 $ aico --help | grep greet | sed 's/[│]//g; s/^ *//; s/ *$//; s/  */ /g'
-greet Greets the user via the AI.
+greet Greets the user via the LLM.
 $
 ```

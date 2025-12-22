@@ -1,6 +1,6 @@
 # `aico` Architecture
 
-This document provides a high-level overview of the `aico` codebase architecture. It is intended to give developers a mental map of the system's components and their responsibilities. For guidelines on *how* to write code for this project, please refer to `CONVENTIONS.md`.
+This document provides a high-level overview of the `aico` codebase architecture. It provides a mental map of the system's components. For guidelines on *how* to write code for this project, refer to `CONVENTIONS.md`.
 
 ## Architectural Vision
 
@@ -36,16 +36,16 @@ The application is composed of several distinct components, each with a clear ro
 
 ### Core Business Logic (The "Engines")
 
-These are specialized components that handle the most complex processing tasks.
+These components handle processing tasks.
 
--   **LLM Interaction Engine:** This is the single entry point for all communication with the Large Language Model. It builds the full prompt (including system instructions, file context, and chat history) and orchestrates the request-response cycle. It relies on the **Provider Router** to instantiate the correct API client and processes the streaming response for real-time user feedback.
+-   **LLM Interaction Engine:** The entry point for all communication with the Large Language Model. It builds the prompt (including system instructions, file context, and history) and orchestrates the request-response cycle. It relies on the **Provider Router** to instantiate the API client and processes the streaming response for real-time feedback.
     -   **Implementation:** This logic is located in `src/aico/llm/executor.py`.
 
 -   **Provider Router & Model Info:** This layer abstracts the differences between API providers.
     -   **Router:** Determines whether to route requests to OpenAI direct or OpenRouter based on the model string prefix (`openai/` vs `openrouter/`) and configures the HTTP client accordingly. Located in `src/aico/llm/router.py`.
     -   **Model Metadata Service:** Fetches and caches model capabilities (context window size) and pricing data to `~/.cache/aico/`. This allows `aico status` to provide cost estimates without blocking on network calls or requiring a heavy dependency. Located in `src/aico/model_registry.py`.
 
--   **Diff & Patch Engine:** This engine processes the raw text from the LLM to find and parse structured `SEARCH/REPLACE` blocks. It can apply these blocks to in-memory file content to generate both machine-readable unified diffs (for piping) and human-readable, rich-formatted output (for terminal display).
+-   **Diff & Patch Engine:** Processes raw text from the LLM to find and parse structured `SEARCH/REPLACE` blocks. It applies these blocks to in-memory file content to generate machine-readable unified diffs (for piping) and formatted output (for terminal display).
     -   **Implementation:** This is a dedicated, specialized component located in `src/aico/diffing/stream_processor.py`.
 
 ### Extensibility Hooks (Addons)
@@ -55,14 +55,14 @@ These are specialized components that handle the most complex processing tasks.
 
 ## Data & Control Flow: Lifecycle of a Command
 
-The components work together in a predictable sequence. The lifecycle of a typical `aico gen` command illustrates this flow:
+The components work together in a predictable sequence. The lifecycle of an `aico gen` command illustrates this flow:
 
-1.  **Invocation:** The user's command is received by the **Entrypoint**, which routes it to the correct function in the **Command Layer**.
-2.  **State Loading:** The command uses the **State Persistence Layer** to find and load the `.ai_session.json` file into memory as a structured `msgspec.Struct` object. Most commands load only the active window; history-indexing commands that accept pair IDs use the full-history path to resolve indices globally.
+1.  **Invocation:** The command is received by the **Entrypoint**, which routes it to the function in the **Command Layer**.
+2.  **State Loading:** The command uses the **State Persistence Layer** to load the `.ai_session.json` file into memory as a structured `msgspec.Struct` object. Commands load the active window; history-indexing commands that accept pair IDs use the full-history path to resolve indices globally.
 3.  **Context Building:** The command reads the files specified in the session state from disk.
 4.  **Prompt Construction:** The **LLM Interaction Engine** assembles the final prompt, combining system instructions, file contents, active chat history, and the new user instruction into a single request.
-5.  **LLM Streaming & Parsing:** The **Provider Router** initializes the API client, and the request is sent. As the response streams back:
+5.  **LLM Streaming & Parsing:** The **Provider Router** initializes the API client. As the response streams back:
     -   The **Diff & Patch Engine** live-parses the stream for `SEARCH/REPLACE` blocks.
-    -   A live renderer displays conversational text and formatted diffs to the user in real-time.
+    -   A live renderer displays conversational text and formatted diffs in real-time.
 6.  **State Saving:** After the full response is received, the user's prompt and the assistant's complete response are appended to the chat history. The **State Persistence Layer** then saves the updated session object back to disk atomically.
 7.  **Final Output:** If the command is being piped (non-TTY), the **Diff & Patch Engine** generates a final, clean unified diff from the full response. The **Command Layer** then prints this diff to `stdout`. All diagnostic information has already been sent to `stderr`.

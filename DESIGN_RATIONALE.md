@@ -14,9 +14,9 @@ These records explain the motivation and consequences of key architectural decis
 
 ### ADR-002: The `passthrough` Feature for Advanced Scripting
 
--   **Context:** We needed a way for advanced scripting workflows (like the `commit` addon) to leverage the LLM without `aico`'s built-in prompt engineering.
+-   **Context:** Advanced scripting workflows (like the `commit` addon) need to leverage the LLM without built-in prompt engineering.
 -   **Decision:** We introduced a `--passthrough` flag available on core commands (`ask`, `gen`, `prompt`).
--   **Rationale:** The `--passthrough` flag is more than just a "no-context" switch. When enabled, it bypasses *all* of `aico`'s prompt engineering: it does not inject file context, it does not add `<prompt>` or `<stdin_content>` XML-like tags, and it does not use the alignment prompts. It creates a clean, direct "pipe" to the LLM, sending the user's input verbatim. This gives addon authors and scripters full control over the prompt when `aico`'s default formatting is not desired.
+-   **Rationale:** The `--passthrough` flag is more than a "no-context" switch. When enabled, it bypasses `aico`'s prompt engineering: it does not inject file context, it does not add `<prompt>` or `<stdin_content>` tags, and it does not use alignment prompts. It creates a direct "pipe" to the LLM, sending the user's input verbatim. This gives addon authors and scripters control over the prompt.
 
 ### ADR-003: The `last --recompute` Feature for Context Correction
 
@@ -76,8 +76,8 @@ These records explain the motivation and consequences of key architectural decis
 
 ### ADR-010: "Ground Truth" Context Anchoring
 
--   **Context:** As conversation history grows, LLMs often "forget" the current state of files or hallucinate that they have applied patches that were merely discussed.
--   **Decision:** We inject the file context wrapped in XML tags (`<context>`) followed immediately by a **forced assistant response** (pre-filled message) stating: *"I have read the current file state. I will use this block as the ground truth..."*
+-   **Context:** As history grows, LLMs can "forget" the state of files or hallucinate that they have applied patches that were merely discussed.
+-   **Decision:** We inject the file context wrapped in XML tags (`<context>`) followed by a **forced assistant response** (pre-filled message) stating: *"I have read the current file state. I will use this block as the ground truth..."*
 -   **Rationale:**
     -   **Combatting Hallucination:** By forcing the model to "acknowledge" the read, we significantly reduce the likelihood of it relying on outdated code snippets found earlier in the chat history.
     -   **Turn Alignment:** Inserting a fake assistant response maintains the strict User/Assistant turn structure required by the API while effectively making the file context "stick" more strongly than a system prompt alone.
@@ -100,7 +100,7 @@ We explicitly migrated away from `litellm` to the standard `openai` Python libra
 
 Our approach to external API failures (e.g., LLM rate limits, invalid keys) is to treat them as fatal. `aico` will attempt one well-defined action; if it fails, it reports the error and exits.
 
--   **Rationale:** This aligns with the "tool, not an agent" philosophy. The tool should be predictable. By exiting on failure, it returns control to the user, who can then decide whether to retry, change API keys, or take other action. We do not implement complex retry logic internally, as this would make the tool's behavior less transparent.
+- **Rationale:** This aligns with the "tool, not an agent" philosophy. The tool is predictable. By exiting on failure, it reports the error and stops. We do not implement retry logic internally to maintain transparency.
 
 ### Future Vision and The "Anti-Roadmap"
 

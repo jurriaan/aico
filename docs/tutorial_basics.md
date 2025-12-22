@@ -1,6 +1,6 @@
 # Getting Started
 
-This tutorial walks you through the core workflow of `aico`: planning, implementing, and refining code.
+This tutorial walks you through the core workflow of `aico`: planning, implementing, and refining code with an LLM.
 
 ## 1. Initialization
 
@@ -12,9 +12,9 @@ Initialized session file: .ai_session.json
 $
 ```
 
-## 2. Planning
+## 2. Context & Understanding
 
-Let's start by adding a file to the context and explaining it.
+Start by defining the context boundary. We add a file and verify the model understands it.
 
 ```console
 $ echo "def add(a, b): return a + b" > math.py
@@ -26,9 +26,9 @@ Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.02
 $
 ```
 
-## 3. Code Generation
+## 3. Directed Execution (Generating Diff)
 
-Now, let's modify the code. We use `gen` to request changes. `aico` outputs a standard Unified Diff.
+Now, we direct the model to modify the source. We use `gen` to produce a standard Unified Diff.
 
 ```console
 $ aico gen "Rename 'add' to 'sum_values' and add type hints"
@@ -44,9 +44,9 @@ $
 
 ## 4. Manual Corrections (The Learning Loop)
 
-Sometimes the AI makes a small mistake, or you simply change your mind. Instead of just fixing the file, you should fix the **history**. This ensures the AI "remembers" your correction for future turns.
+Sometimes the model makes a small mistake, or you simply change your mind. Instead of just fixing the file, you should fix the **history**. This ensures the model "remembers" your correction for future turns.
 
-We use `aico edit` to modify the last AI response.
+We use `aico edit` to modify the last LLM response.
 
 *(Note: In this example, we use `sed` to simulate an editor. In reality, `aico edit` opens your default `$EDITOR`.)*
 
