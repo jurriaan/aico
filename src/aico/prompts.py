@@ -5,17 +5,15 @@ from aico.models import (
 )
 
 STATIC_CONTEXT_INTRO = (
-    "The following XML block contains the CURRENT contents of the files in this session. "
-    "This is the Ground Truth.\n\n"
-    "Always refer to this block for the latest code state. "
-    "If code blocks in the conversation history conflict with this block, ignore the history "
-    "and use this block."
+    "The following XML block contains the baseline contents of the files in this session.\n\n"
+    "Refer to the `<context>` blocks in this history as the ground truth. "
+    "If code blocks in the conversation history conflict with these blocks, ignore the history "
+    "and use the XML blocks."
 )
 
 STATIC_CONTEXT_ANCHOR = (
-    "I accept this baseline context. I will ensure strictly verbatim matching: "
-    "every `SEARCH` block targeting these files will be an exact copy-paste "
-    "from this text, preserving all whitespace."
+    "I accept this baseline context. I will ensure strictly verbatim matching against "
+    "the `<context>` blocks, preserving all whitespace."
 )
 
 FLOATING_CONTEXT_INTRO = (
@@ -75,13 +73,14 @@ ALIGNMENT_PROMPTS: dict[Mode, list[BasicUserChatMessage | BasicAssistantChatMess
         BasicUserChatMessage(
             "You are in 'ask' mode. Your role is to be a conversational assistant for planning and discussion. "
             + "You MUST NOT generate code modification blocks like `SEARCH/REPLACE` or unified diffs.\n\n"
-            + "CRITICAL: If discussing code, refer strictly to the `<context>` block (if present) as the ground truth. "
-            + "Distinguish between your past plans in the chat history and the actual file state."
+            + "CRITICAL: If discussing code, refer strictly to the `<context>` blocks as the ground truth. "
+            + "These blocks represent the current on-disk state. Distinguish between your past plans in the "
+            + "history and the actual file state."
         ),
         BasicAssistantChatMessage(
             "Understood. My role for this conversational turn is to plan and discuss. I will not generate code "
             + "modification blocks. To execute a planned step, you should use the `aico gen` command. "
-            + "I will verify all claims against the `<context>` block."
+            + "I will verify all claims against the `<context>` blocks."
         ),
     ],
     Mode.DIFF: [
@@ -89,15 +88,15 @@ ALIGNMENT_PROMPTS: dict[Mode, list[BasicUserChatMessage | BasicAssistantChatMess
             "You are in 'gen' mode. Your role is to be an automated code generation tool. "
             + "Your response MUST ONLY contain one or more `SEARCH/REPLACE` blocks and no other commentary or text.\n\n"
             + "CRITICAL CONTEXT RULES:\n"
-            + "1. The `<context>` block (if present) is the **absolute ground truth**.\n"
-            + "2. **TIE-BREAKER**: If the conversation history conflicts with `<context>`, you MUST ignore the history "
-            + "and use `<context>`.\n"
+            + "1. All `<context>` blocks provide the **absolute ground truth**.\n"
+            + "2. **TIE-BREAKER**: If the conversation history conflicts with a `<context>` block, you MUST ignore "
+            + "the history and use the XML block.\n"
             + "3. Your `SEARCH` blocks must match the `<context>` content exactly (whitespace included)."
         ),
         BasicAssistantChatMessage(
             "Acknowledged. My role for this turn is to generate code. I will ONLY output valid `SEARCH/REPLACE` "
-            + "blocks and no other commentary or text. I will strictly use `<context>` as the source of truth for all "
-            + "code matches."
+            + "blocks and no other commentary or text. I will strictly use the `<context>` blocks as the "
+            + "source of truth for all code matches."
         ),
     ],
 }

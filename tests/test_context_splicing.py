@@ -1,3 +1,5 @@
+# pyright: standard
+
 import os
 from datetime import UTC, datetime
 from pathlib import Path
@@ -49,7 +51,7 @@ def test_static_context_baseline(tmp_path: Path, mocker: MockerFixture) -> None:
         assert runner.invoke(app, ["ask", "prompt"]).exit_code == 0
 
         messages = mock_completion.call_args.kwargs["messages"]
-        static_block = find_msg(messages, "Ground Truth")
+        static_block = find_msg(messages, "baseline contents")
         assert static_block is not None
         assert "baseline content" in static_block["content"]
         assert find_msg(messages, "UPDATED CONTEXT") is None
@@ -130,7 +132,7 @@ def test_shifting_horizon(tmp_path: Path, mocker: MockerFixture) -> None:
         messages = mock_completion.call_args_list[1].kwargs["messages"]
 
         # File (3000) is now older than window start (4000).
-        msg_static = find_msg(messages, "Ground Truth")
+        msg_static = find_msg(messages, "baseline contents")
         assert msg_static is not None
         assert "v2" in msg_static["content"]
         assert find_msg(messages, "UPDATED CONTEXT") is None
@@ -202,6 +204,6 @@ def test_fresh_session_baseline(tmp_path: Path, mocker: MockerFixture) -> None:
 
         # Verify: All files move to Static because history_to_use is empty when calculating horizon
         messages = mock_completion.call_args.kwargs["messages"]
-        msg_static = find_msg(messages, "Ground Truth")
-        assert "fresh content" in msg_static["content"]
+        msg_static = find_msg(messages, "baseline contents")
+        assert msg_static and "fresh content" in msg_static["content"]
         assert find_msg(messages, "UPDATED CONTEXT") is None

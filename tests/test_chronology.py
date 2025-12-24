@@ -53,7 +53,7 @@ def test_interleaved_chronology() -> None:
     assert messages[0]["role"] == "system"
 
     # 2. Static Context (File A only)
-    assert "Ground Truth" in messages[1]["content"]
+    assert "baseline contents" in messages[1]["content"]
     assert "file_a.py" in messages[1]["content"]
     assert "file_b.py" not in messages[1]["content"]
 
@@ -94,5 +94,5 @@ def test_fresh_session_behavior() -> None:
 
     # Should have System -> Static (2) -> Alignment (2) -> Prompt (1)
     assert len(messages) == 6
-    assert "Ground Truth" in messages[1]["content"]
+    assert "baseline contents" in messages[1]["content"]
     assert "UPDATED CONTEXT" not in messages[1]["content"]

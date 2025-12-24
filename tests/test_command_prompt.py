@@ -54,12 +54,11 @@ def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) ->
         mock_completion.assert_called_once()
         messages = mock_completion.call_args.kwargs["messages"]
         assert len(messages) == 6
-        assert "Ground Truth" in messages[1]["content"]
+        assert "baseline contents" in messages[1]["content"]
         assert (
             messages[2]["content"]
-            == "I accept this baseline context. I will ensure strictly verbatim matching: "
-            + "every `SEARCH` block targeting these files will be an exact copy-paste from this text, "
-            + "preserving all whitespace."
+            == "I accept this baseline context. I will ensure strictly verbatim matching against "
+            + "the `<context>` blocks, preserving all whitespace."
         )
         assert "conversational assistant" in messages[3]["content"]
         assert '<file path="code.py">' in messages[1]["content"]
@@ -92,12 +91,11 @@ def test_ask_command_injects_alignment(tmp_path: Path, mocker: MockerFixture) ->
         mock_completion.assert_called_once()
         messages = mock_completion.call_args.kwargs["messages"]
         assert len(messages) == 6
-        assert "Ground Truth" in messages[1]["content"]
+        assert "baseline contents" in messages[1]["content"]
         assert (
             messages[2]["content"]
-            == "I accept this baseline context. I will ensure strictly verbatim matching: "
-            + "every `SEARCH` block targeting these files will be an exact copy-paste from this text, "
-            + "preserving all whitespace."
+            == "I accept this baseline context. I will ensure strictly verbatim matching against "
+            + "the `<context>` blocks, preserving all whitespace."
         )
         assert "conversational assistant" in messages[3]["content"]
         assert '<file path="code.py">' in messages[1]["content"]
