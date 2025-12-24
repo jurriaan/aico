@@ -38,8 +38,13 @@ The application is composed of several distinct components, each with a clear ro
 
 These components handle processing tasks.
 
--   **LLM Interaction Engine:** The entry point for all communication with the Large Language Model. It builds the prompt (including system instructions, file context, and history) and orchestrates the request-response cycle. It relies on the **Provider Router** to instantiate the API client and processes the streaming response for real-time feedback.
+-   **LLM Interaction Engine:** The entry point for all LLM communication. It assembles the prompt using a **Two-Tiered Chronological Context** strategy to minimize hallucinations and maintain a strict "Ground Truth" for source code.
     -   **Implementation:** This logic is located in `src/aico/llm/executor.py`.
+    -   **Context Splicing:** Instead of appending context at the end of the prompt, `aico` categorizes files based on their modification time relative to the **start of the active conversation window** (the timestamp of the first message included in the current prompt):
+        1.  **Static Block (Baseline):** Files unmodified since the start of the current chat window are placed at the very beginning of the prompt to establish the baseline "Ground Truth."
+        2.  **Floating Block (Update):** Files modified during the session are bundled into a single update block.
+        3.  **Chronological Injection:** The Floating block is "spliced" into the chat history at the specific point in time the manual changes occurred (`max(mtime)` of the changed files). This allows the model to "see" the code evolve in order.
+    -   **Ground Truth Anchoring:** Every context block is followed by a forced assistant response (an "Anchor") where the model explicitly acknowledges the provided XML as the absolute source of truth.
 
 -   **Provider Router & Model Info:** This layer abstracts the differences between API providers.
     -   **Router:** Determines whether to route requests to OpenAI direct or OpenRouter based on the model string prefix (`openai/` vs `openrouter/`) and configures the HTTP client accordingly. Located in `src/aico/llm/router.py`.
