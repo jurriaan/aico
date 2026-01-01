@@ -149,7 +149,7 @@ set -e
 aico undo "${REFINE_INDEX}..${REFINE_LAST_INDEX}" >/dev/null
 
 # 2. Generate
-cat "$REFINE_PROMPT_FILE" | aico "$REFINE_CMD" $REFINE_MODEL_ARGS --system-prompt "$(cat "$REFINE_SYSPROMPT_FILE")" -
+cat "$REFINE_PROMPT_FILE" | aico "$REFINE_CMD" $REFINE_MODEL_ARGS --system-prompt "$(cat "$REFINE_SYSPROMPT_FILE")"
 
 # 3. Capture result
 aico last --json > "$REFINE_PAYLOAD"
