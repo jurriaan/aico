@@ -8,9 +8,9 @@ These records explain the motivation and consequences of key architectural decis
 
 ### ADR-001: The Diff & Patch Engine Design
 
--   **Context:** The `diffing.py` engine is the most complex component in the application. It has undergone several refactors.
--   **Decision:** We chose to implement a "scan-and-yield" parser using `re.finditer()` instead of a simpler `string.split()` approach.
--   **Rationale:** An early version based on splitting the LLM response by `File:` headers was fundamentally flawed: it consumed and discarded the newlines and any conversational text between `SEARCH/REPLACE` blocks. This resulted in lost context and corrupted display output. The `finditer` approach iterates through matches *without* discarding the text between them, ensuring every character of the LLM's raw response is preserved and processed correctly. This design is more complex but is far more robust against malformed LLM outputs and correctly preserves all conversational nuance. We use the standard library `re` module for maximum portability and zero startup overhead.
+-   **Context:** The diffing engine (`src/diffing/parser.rs`) is the most complex component in the application. It has undergone several refactors.
+-   **Decision:** We chose to implement a stateful "scan-and-yield" parser (`StreamParser`) using the `regex` crate instead of a simple string splitting approach.
+-   **Rationale:** An early version based on splitting the LLM response by `File:` headers was fundamentally flawed: it consumed and discarded the newlines and any conversational text between `SEARCH/REPLACE` blocks. This resulted in lost context and corrupted display output. The `StreamParser` approach iterates through matches incrementally *without* discarding the text between them, ensuring every character of the LLM's raw response is preserved and processed correctly. This design is more complex but is far more robust against malformed LLM outputs and correctly preserves all conversational nuance. We use the `regex` crate for robustness and performance.
 
 ### ADR-002: The `passthrough` Feature for Advanced Scripting
 
@@ -28,12 +28,12 @@ These records explain the motivation and consequences of key architectural decis
 
 -   **Context:** A series of rendering bugs revealed systemic issues. The live renderer showed garbled output for failed patches, and the `aico last` command showed the same garbled output for historical failed patches because the structural information from parsing was being lost during session saving.
 -   **Decision:** We made two related architectural changes:
-    1.  The `process_llm_response_stream` generator in `src/aico/diffing/stream_processor.py` was made the **single source of truth** for all LLM output parsing (live rendering, final output, `last --recompute`).
-    2.  The result of this parsing is stored in the session history not as a pre-rendered string, but as a structured list of display items (`list[DisplayItem]`).
+    1.  The `StreamParser` in `src/diffing/parser.rs` was made the **single source of truth** for all LLM output parsing (live rendering, final output, `last --recompute`).
+    2.  The result of this parsing is stored in the session history not as a pre-rendered string, but as a structured list of display items (`Vec<DisplayItem>`).
 -   **Rationale:**
-    -   **Unified Parsing:** The initial bugs stemmed from having duplicated and slightly different parsing logic in multiple places. By centralizing all parsing into one stateful generator, we guarantee that the live view, the piped output, and the historical view (`aico last`) are all derived from the exact same logic, eliminating an entire class of rendering inconsistencies.
-    -   **Structured Persistence:** The `aico last` bug was caused by "stringly-typed" persistence—flattening structured data (like conversational text, diffs, and warnings) into a single string for storage, thereby losing the information needed for correct rendering later. Storing the output as a `list[{"type": ..., "content": ...}]` preserves this structure.
-    -   **Backward Compatibility:** The session model for the persistence field (`derived.display_content`) uses the type `list[DisplayItem] | str | None`. This allows the `last` command to correctly render new, structured history while seamlessly falling back to the old rendering behavior for session files created before this change, ensuring a smooth and non-breaking upgrade for users.
+    -   **Unified Parsing:** The initial bugs stemmed from having duplicated and slightly different parsing logic in multiple places. By centralizing all parsing into one stateful struct, we guarantee that the live view, the piped output, and the historical view (`aico last`) are all derived from the exact same logic, eliminating an entire class of rendering inconsistencies.
+    -   **Structured Persistence:** The `aico last` bug was caused by "stringly-typed" persistence—flattening structured data (like conversational text, diffs, and warnings) into a single string for storage, thereby losing the information needed for correct rendering later. Storing the output as a serialized list of structs (`DisplayItem`) preserves this structure.
+    -   **Backward Compatibility:** The session model (`DerivedContent`) uses `Option<Vec<DisplayItem>>`. This allows the `last` command to correctly render new, structured history while seamlessly falling back to text-only rendering for legacy sessions, ensuring a smooth upgrade path.
 
 ### ADR-005: Flat, Verb-Driven CLI Structure
 
@@ -50,7 +50,7 @@ These records explain the motivation and consequences of key architectural decis
 ### ADR-007: Offline-First Model Metadata
 
 -   **Context:** To provide cost estimates and context window warnings (`aico status`), the tool needs up-to-date model pricing data.
--   **Decision:** We implemented a lazy-loading, file-based cache in `~/.cache/aico/` that fetches pricing data from OpenRouter/LiteLLM APIs periodically (TTL 14 days).
+-   **Decision:** We implemented a lazy-loading, file-based cache in `~/.cache/aico/` that fetches pricing data from OpenRouter/LiteLLM APIs periodically (TTL 14 days) using `src/model_registry.rs`.
 -   **Rationale:** This ensures `aico` remains fast and usable offline. We avoid blocking the CLI startup on network calls. If the cache is missing or the network is down, the tool degrades gracefully (showing no cost info) rather than crashing or hanging.
 
 ### ADR-008: The Shared-History Architecture (Pointer-View-Store)
@@ -68,7 +68,7 @@ These records explain the motivation and consequences of key architectural decis
 ### ADR-009: Process-Based Addon System
 
 -   **Context:** Users need to extend `aico` with custom workflows (e.g., generating commits, summarizing history), but we wanted to avoid the complexity and fragility of a plugin API that runs arbitrary user code inside the main process.
--   **Decision:** We implemented addons as **executable scripts** (subprocesses) rather than internal Python plugins. We use `os.execvpe` to hand over control to the addon.
+-   **Decision:** We implemented addons as **executable scripts** (subprocesses) rather than internal plugins. We use `std::process::Command` (and `exec` on Unix systems) to hand over control to the addon.
 -   **Rationale:**
     -   **Isolation:** Addons cannot crash the main `aico` process or corrupt its memory.
     -   **Language Agnostic:** Users can write addons in Bash, Python, Ruby, or Rust; `aico` simply executes them.
@@ -84,17 +84,6 @@ These records explain the motivation and consequences of key architectural decis
     -   **Caching:** The structured prompt topology (System → Context/Anchor → History → Alignment → Final) enables effective prompt caching in supported models/providers by isolating stable context prefixes.
 
 ## Project Philosophy & Vision
-
-### Dependency Rationale: Moving to Standard `openai` SDK
-
-We explicitly migrated away from `litellm` to the standard `openai` Python library.
-
--   **Context:** Initially, we used `litellm` for its multi-provider abstraction and built-in cost tracking. However, we found its dependency footprint too heavy and its type hinting insufficient for our strict standards.
--   **Decision:** We now use the official `openai` library combined with a custom, lightweight **Provider Router**.
--   **Rationale:**
-    -   **Stability & Standards:** The `openai` library is the industry standard. It offers superior type safety (essential for our `basedpyright` workflow), stable API contracts, and minimal overhead.
-    -   **Explicit Control:** By implementing our own thin router (`src/aico/llm/router.py`), we have precise control over how requests are directed (e.g., to OpenRouter or direct to OpenAI) without opaque middleware.
-    -   **Lightweight Metadata:** Instead of relying on a heavy library for model costs, we implemented a targeted metadata service (`src/aico/model_registry.py`) that caches only the data we need (context windows and pricing) from upstream sources.
 
 ### Error Handling Philosophy: Fail Fast
 

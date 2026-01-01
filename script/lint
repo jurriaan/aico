@@ -1,31 +1,16 @@
 #!/bin/sh
 set -e
-
 cd "$(dirname "$0")/.."
 
-fix_mode=false
-
-# Use positional parameters to build the file list without arrays
-# First pass: identify --fix
-for arg in "$@"; do
-  if [ "$arg" = "--fix" ]; then
-    fix_mode=true
-  fi
-done
-
-# Second pass: remove --fix from the argument list
-set --
-for arg in "$@"; do
-  if [ "$arg" != "--fix" ]; then
-    set -- "$@" "$arg"
-  fi
-done
-
-if [ "$fix_mode" = "true" ]; then
-  uv run ruff check --fix-only "$@" >/dev/null 2>&1
-  uv run ruff format "$@" >/dev/null 2>&1
+if [ "$1" = "--fix" ]; then
+    echo "Applying formatting..."
+    cargo fmt
+    echo "Applying clippy fixes..."
+    # --allow-dirty/staged allows fixing even if git has changes
+    cargo clippy --fix --allow-dirty --allow-staged
+else
+    echo "Checking formatting..."
+    cargo fmt -- --check
+    echo "Running clippy..."
+    cargo clippy -- -D warnings
 fi
-
-uv run basedpyright "$@"
-uv run ruff check "$@"
-uv run ty check "$@"

@@ -6,11 +6,13 @@ Manage context by `add`ing and `drop`ping files, control history, and receive ou
 
 ## Installation
 
-Install `aico` using `uv`:
+Install `aico` from source using `cargo`:
 
 ```bash
-uv tool install --from git+https://github.com/jurriaan/aico/ aico
+cargo install --git https://github.com/jurriaan/aico.git
 ```
+
+Ensure that `$HOME/.cargo/bin` is in your `PATH`.
 
 ## Configuration
 
@@ -158,12 +160,14 @@ For more detailed usage examples and tutorials, see the [docs/](docs/) directory
 - `aico status`: Shows a comprehensive summary of the session status, including token usage, estimated cost, and chat history configuration.
 - `aico log`: Show a compact `git log`-style view of the active conversation context.
 - `aico set-history <index>`: Set which message pair the active history starts from. For example, `aico set-history 0` makes the full history active.
+- `aico completions <shell>`: Generates shell completion scripts (e.g., for `bash`, `zsh`, `fish`) to `stdout`.
 - `aico commit`: Generates a Conventional Commit message for staged changes. (addon)
 - `aico summarize`: Archives history and resets the active window via `PROJECT_SUMMARY.md`. (addon)
 - `aico session-list`: List available session branches.
 - `aico session-switch <name>`: Switch the active branch.
 - `aico session-fork <name>`: Create a new branch from the current one.
 - `aico session-new <name>`: Create a new, empty session branch.
+- `aico trust [path]`: Whitelists a project directory to enable the execution of local addons found in `.aico/addons/`.
 
 ## Addons: Extending aico
 

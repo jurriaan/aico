@@ -1,25 +1,10 @@
 #!/bin/sh
 set -e
-
 cd "$(dirname "$0")/.."
 
-export LITELLM_LOCAL_MODEL_COST_MAP=True
-
-case "$1" in
-  co*)
-    echo "Running tests for coverage (pytest --cov=app)..."
-    uv run pytest --cov=app
-    ;;
-  *)
-    echo "Running tests (pytest)..."
-    uv run pytest "$@" -vv
-    ;;
-esac
+echo ":: cargo test ::"
+cargo nextest run
 
 echo ""
-echo "Verifying documentation (clitest)..."
-if command -v clitest >/dev/null 2>&1; then
-    tests/run_doc_tests.sh
-else
-    echo "Warning: clitest not found, skipping functional tests."
-fi
+echo ":: doc tests (clitest) ::"
+./tests/run_doc_tests.sh

@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+cd "$(dirname "$0")/.."
+
+
+cargo build --release --target aarch64-unknown-linux-musl --target riscv64gc-unknown-linux-musl --target x86_64-unknown-linux-musl
+
+mkdir -p build
+
+rm build/aico-linux-riscv64gc build/aico-linux-x86_64 build/aico-linux-aarch64 || true
+
+cp target/aarch64-unknown-linux-musl/release/aico build/aico-linux-aarch64
+cp target/x86_64-unknown-linux-musl/release/aico build/aico-linux-x86_64
+cp target/riscv64gc-unknown-linux-musl/release/aico build/aico-linux-riscv64gc
+
+file build/*
+
+ls -al build/

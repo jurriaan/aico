@@ -1,8 +1,11 @@
 .aider*
-__pycache__
 .aico/sessions
 .aico/history
 .aico/summaries
 .ai_session.json
 tmp
+target/
+debug/
+build/
+.stignore
 PROJECT_SUMMARY.md

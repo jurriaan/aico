@@ -1,0 +1,46 @@
+[[tools."aqua:nextest-rs/nextest/cargo-nextest"]]
+version = "0.9.120"
+backend = "aqua:nextest-rs/nextest/cargo-nextest"
+"platforms.linux-arm64" = { checksum = "sha256:5e13751733a1fc4d26984ad5e1bce10d057d95299b02ed3ac96877b7288c8feb", url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.120/cargo-nextest-0.9.120-aarch64-unknown-linux-gnu.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:e00511fc23241ffd3ca1d95b23bde8a9cd0fb96bb691a9957a909ba74e7a5238", url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.120/cargo-nextest-0.9.120-x86_64-unknown-linux-musl.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:e2aa5a27bfdac66c913346985a1ceff50ab9590b846798440464410bd5a309b9", url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.120/cargo-nextest-0.9.120-universal-apple-darwin.tar.gz"}
+"platforms.macos-x64" = { checksum = "sha256:e2aa5a27bfdac66c913346985a1ceff50ab9590b846798440464410bd5a309b9", url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.120/cargo-nextest-0.9.120-universal-apple-darwin.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:b579c608d6ba1658655b0c2c7f265c07002b4b75d53906b9c2aa9a2042967037", url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.120/cargo-nextest-0.9.120-x86_64-pc-windows-msvc.tar.gz"}
+
+[[tools."aqua:rust-cross/cargo-zigbuild"]]
+version = "0.20.1"
+backend = "aqua:rust-cross/cargo-zigbuild"
+"platforms.linux-arm64" = { checksum = "sha256:e9631045cc5f33ef0d6d9186196192d70b8018bf7633626c3a7c1384e81b7f67", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.aarch64-unknown-linux-musl.tar.gz"}
+"platforms.linux-x64" = { checksum = "sha256:742ed281f15fef6eaf49535ac10ffe98fb57913d0c4c88d6888d794043c05618", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.x86_64-unknown-linux-musl.tar.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:d5c7ac2e6f25fb76083dff84640cdf679c5da858b9c97631555c3185be2fbf35", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.apple-darwin.tar.gz"}
+"platforms.macos-x64" = { checksum = "sha256:d5c7ac2e6f25fb76083dff84640cdf679c5da858b9c97631555c3185be2fbf35", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.apple-darwin.tar.gz"}
+"platforms.windows-x64" = { checksum = "sha256:b0bb728ba068ee61342f40a2124b3d8d234af8f716dd416b7c1f794dfeb4e478", url = "https://github.com/rust-cross/cargo-zigbuild/releases/download/v0.20.1/cargo-zigbuild-v0.20.1.windows-x64.zip"}
+
+[[tools.rust]]
+version = "1.92.0"
+backend = "core:rust"
+
+[[tools.rust-analyzer]]
+version = "2026-01-05"
+backend = "aqua:rust-lang/rust-analyzer"
+"platforms.linux-arm64" = { checksum = "sha256:c4a2da956937a0c4c284b42539a4389757df325031633926170bd286005c5285", url = "https://github.com/rust-lang/rust-analyzer/releases/download/2026-01-05/rust-analyzer-aarch64-unknown-linux-gnu.gz"}
+"platforms.linux-x64" = { checksum = "sha256:d64775378e32e9cd887cb232f287621ae348305d30bb25fa4902bb8754d2c236", url = "https://github.com/rust-lang/rust-analyzer/releases/download/2026-01-05/rust-analyzer-x86_64-unknown-linux-gnu.gz"}
+"platforms.macos-arm64" = { checksum = "sha256:a8ba266ef655bd46fefe04161613eb05a5b93c41e0ad179cfa9915e6fe696dc1", url = "https://github.com/rust-lang/rust-analyzer/releases/download/2026-01-05/rust-analyzer-aarch64-apple-darwin.gz"}
+"platforms.macos-x64" = { checksum = "sha256:ecb8d3201ad2a0aabc4cd71c74dbcec8eb667fe3afabf2c12a95f9298cacbf1c", url = "https://github.com/rust-lang/rust-analyzer/releases/download/2026-01-05/rust-analyzer-x86_64-apple-darwin.gz"}
+"platforms.windows-x64" = { checksum = "sha256:cada23f7192f0b807a09af1392772ccf6c660ac3da5c19ef0e04292f4405a34b", url = "https://github.com/rust-lang/rust-analyzer/releases/download/2026-01-05/rust-analyzer-x86_64-pc-windows-msvc.zip"}
+
+[[tools.upx]]
+version = "5.1.0"
+backend = "aqua:upx/upx"
+"platforms.linux-arm64" = { checksum = "sha256:222dde34dfa3244a31b06c97820ee651515270e524736f532ac8456783afe76e", url = "https://github.com/upx/upx/releases/download/v5.1.0/upx-5.1.0-arm64_linux.tar.xz"}
+"platforms.linux-x64" = { checksum = "sha256:946b7269d0f7fcc1c5da0f771ea7fe9c0fed3534cf41d285980830019b4bc95e", url = "https://github.com/upx/upx/releases/download/v5.1.0/upx-5.1.0-amd64_linux.tar.xz"}
+"platforms.windows-x64" = { checksum = "sha256:41c7492edeed0f7e67d347ca9e8d2131e2af7ca7a7695f92283a8e655c251c13", url = "https://github.com/upx/upx/releases/download/v5.1.0/upx-5.1.0-win64.zip"}
+
+[[tools.zig]]
+version = "0.15.2"
+backend = "core:zig"
+"platforms.linux-arm64" = { checksum = "sha256:958ed7d1e00d0ea76590d27666efbf7a932281b3d7ba0c6b01b0ff26498f667f", url = "https://ziglang.org/download/0.15.2/zig-aarch64-linux-0.15.2.tar.xz"}
+"platforms.linux-x64" = { checksum = "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239", url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"}
+"platforms.macos-arm64" = { checksum = "sha256:3cc2bab367e185cdfb27501c4b30b1b0653c28d9f73df8dc91488e66ece5fa6b", url = "https://ziglang.org/download/0.15.2/zig-aarch64-macos-0.15.2.tar.xz"}
+"platforms.macos-x64" = { checksum = "sha256:375b6909fc1495d16fc2c7db9538f707456bfc3373b14ee83fdd3e22b3d43f7f", url = "https://ziglang.org/download/0.15.2/zig-x86_64-macos-0.15.2.tar.xz"}
+"platforms.windows-x64" = { checksum = "sha256:3a0ed1e8799a2f8ce2a6e6290a9ff22e6906f8227865911fb7ddedc3cc14cb0c", url = "https://ziglang.org/download/0.15.2/zig-x86_64-windows-0.15.2.zip"}

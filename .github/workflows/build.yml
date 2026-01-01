@@ -1,0 +1,77 @@
+name: Build
+run-name: build
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+  CARGO_INCREMENTAL: "0"
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: musl-tools gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu
+          version: 1.3
+      - run: wget http://ports.ubuntu.com/ubuntu-ports/ubuntu-ports/pool/universe/m/musl/musl-dev_1.2.4-2_arm64.deb
+      - run: wget http://ports.ubuntu.com/ubuntu-ports/ubuntu-ports/pool/universe/m/musl/musl_1.2.4-2_arm64.deb
+      - run: wget http://ports.ubuntu.com/ubuntu-ports/ubuntu-ports/pool/universe/m/musl/musl-dev_1.2.4-2_riscv64.deb
+      - run: wget http://ports.ubuntu.com/ubuntu-ports/ubuntu-ports/pool/universe/m/musl/musl_1.2.4-2_riscv64.deb
+      - run: sudo dpkg -i --force architecture musl_1.2.4-2_arm64.deb
+      - run: sudo dpkg -i --force architecture --force depends musl-dev_1.2.4-2_arm64.deb
+      - run: sudo dpkg -i --force architecture musl_1.2.4-2_riscv64.deb
+      - run: sudo dpkg -i --force architecture --force depends musl-dev_1.2.4-2_riscv64.deb
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.9
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ''
+      - uses: jdx/mise-action@v3
+        with:
+          version: 2026.1.1
+      - run: script/setup
+      - run: script/build
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build
+          path: |
+            build
+
+  build-macos:
+    runs-on: macos-latest
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.9
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Build
+        run: cargo build --release
+      - name: Prepare artifact
+        run: |
+          mkdir -p build-macos
+          cp target/release/aico build-macos/aico-macos-arm64
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-macos
+          path: build-macos

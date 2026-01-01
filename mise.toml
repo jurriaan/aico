@@ -1,5 +1,9 @@
+min_version = '2026.1.1'
+
 [tools]
-uv = "latest"
-"http:clitest" = { version = "0.5.0", url = "https://raw.githubusercontent.com/aureliojargas/clitest/8bdaae2f56e524f8824307d5c443e6353fe0dbd9/clitest" }
-jq = "latest"
-bat = "latest"
+rust = "1.92.0"
+rust-analyzer = "latest"
+"aqua:nextest-rs/nextest/cargo-nextest" = "latest"
+
+[task_config]
+includes = ["script"]

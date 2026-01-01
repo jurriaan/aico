@@ -1,34 +1,48 @@
 #!/bin/sh
 set -e
 
-# Ensure we have clitest
+# Ensure clitest is installed
 if ! command -v clitest >/dev/null 2>&1; then
-  echo "Error: clitest not found. Please install it to run functional tests."
+  echo "Error: clitest not found. Please install it (e.g., 'go install github.com/shmup/clitest@latest' or from package manager)."
   exit 1
 fi
 
-# Create a temporary workspace
-TEST_WORKSPACE=$(mktemp -d)
-
-# Capture paths before moving to temporary workspace
+# Locate Project Root (aico/)
+# Script is expected to be in aico/tests/
 PROJECT_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 FEATURES_DIR="$PROJECT_ROOT/docs"
 
-# Start Mock LLM Server
-python3 "$PROJECT_ROOT/tests/support/mock_llm.py" &
+# 1. Build the project (workspace builds both aico and mock_server)
+echo "Building workspace (debug)..."
+cd "$PROJECT_ROOT"
+cargo build --quiet --workspace
+
+# 2. Start Mock LLM Server (Rust)
+echo "Starting Mock LLM..."
+"$PROJECT_ROOT/target/debug/mock_server" &
 MOCK_PID=$!
 
-# Cleanup trap
+# 3. Setup Test Workspace
+TEST_WORKSPACE=$(mktemp -d)
 trap 'kill $MOCK_PID 2>/dev/null || true; rm -rf "$TEST_WORKSPACE"' EXIT
 
-# Isolate environment
+# 4. Configure Environment
+export AICO_WIDTH=80
+export AICO_FORCE_EDITOR=1
 export HOME="$TEST_WORKSPACE"
 export XDG_CONFIG_HOME="$TEST_WORKSPACE/.config"
 export XDG_CACHE_HOME="$TEST_WORKSPACE/.cache"
+# Force aico to use the mock server
 export OPENAI_API_KEY="sk-test-key"
 export OPENAI_BASE_URL="http://localhost:5005/v1"
 
-# Populate Model Metadata Cache for deterministic status checks
+# 5. Link Compiled Binary
+mkdir -p "$TEST_WORKSPACE/bin"
+# Use debug build for speed during dev testing
+ln -sf "$PROJECT_ROOT/target/debug/aico" "$TEST_WORKSPACE/bin/aico"
+export PATH="$TEST_WORKSPACE/bin:$PATH"
+
+# Populate Model Metadata Cache for deterministic status and cost checks
 mkdir -p "$XDG_CACHE_HOME/aico"
 cat <<EOF >"$XDG_CACHE_HOME/aico/models.json"
 {
@@ -43,57 +57,52 @@ cat <<EOF >"$XDG_CACHE_HOME/aico/models.json"
 }
 EOF
 
-# Move to workspace
-cd "$TEST_WORKSPACE"
-
-# and ensure we use the local version of the code via the shim.
-mkdir -p "$TEST_WORKSPACE/bin"
-REAL_AICO_ENTRY="$PROJECT_ROOT/src/aico/main.py"
-SHIM_TEMPLATE="$PROJECT_ROOT/tests/support/aico_shim.sh"
-
-cp "$SHIM_TEMPLATE" "$TEST_WORKSPACE/bin/aico"
-# We need to bake the REAL_AICO_ENTRY path into the shim or pass it.
-# Replacing the placeholder $1 wrapper logic for simplicity here:
-cat <<EOF >"$TEST_WORKSPACE/bin/aico"
-#!/bin/bash
-"$SHIM_TEMPLATE" "$REAL_AICO_ENTRY" "\$@"
-EOF
-
-chmod +x "$TEST_WORKSPACE/bin/aico"
-
-export PATH="$TEST_WORKSPACE/bin:$PATH"
-
-# Run clitest against feature files in the project root
-
-RETRY_COUNT=0
-MAX_RETRIES=10
+# 6. Wait for Mock Server
+RETRY=0
 while ! curl -s http://localhost:5005/v1 >/dev/null 2>&1; do
-  sleep 1
-  RETRY_COUNT=$((RETRY_COUNT + 1))
-  if [ "$RETRY_COUNT" -gt "$MAX_RETRIES" ]; then
-    echo "Error: Mock LLM server failed to start"
+  sleep 0.5
+  RETRY=$((RETRY + 1))
+  if [ "$RETRY" -gt 20 ]; then
+    echo "Error: Mock LLM failed to start."
     exit 1
   fi
 done
 
-# Explicitly unset inherited environment variables that could bias tests
-unset AICO_SESSION_FILE
-unset PAGER
+# 7. Move to Test Workspace to prevent polluting the project root
+# This ensures .aico and .ai_session.json are created in the temp folder
+cd "$TEST_WORKSPACE"
 
-# Check if the directory exists and contains markdown files before running clitest
-if [ -d "$FEATURES_DIR" ]; then
-  for f in "$FEATURES_DIR"/*.md; do
-    FNAME=$(basename "$f")
-    echo
-    echo "================================================================================"
-    printf "\033[1;34mVerifying Documentation:\033[0m \033[1m%s\033[0m\n" "$FNAME"
-    echo "================================================================================"
-    # Isolate each feature file by cleaning up session state before each run
-    rm -rf .ai_session.json .aico
-    clitest "$f"
-  done
-  echo
+# Clean session env vars that might leak
+unset AICO_SESSION_FILE
+
+if [ $# -gt 0 ]; then
+  # If absolute paths were passed, use them; otherwise they are relative to PROJECT_ROOT
+  FILES="$@"
 else
-  echo "Error: Features directory not found at $FEATURES_DIR"
+  FILES="$FEATURES_DIR/*.md"
+fi
+
+FOUND=0
+for f in $FILES; do
+  [ -e "$f" ] || continue
+  FOUND=1
+  echo
+  echo "----------------------------------------------------------------"
+  echo "Testing: $(basename "$f")"
+  echo "----------------------------------------------------------------"
+
+  # Clean local state between files (now inside TEST_WORKSPACE)
+  rm -rf .ai_session.json .aico
+
+  # Run clitest - $f is an absolute path to the docs folder,
+  # but clitest will execute the commands in the CWD ($TEST_WORKSPACE)
+  clitest "$f"
+done
+
+if [ "$FOUND" -eq 0 ]; then
+  echo "Error: No test files found matching: $FILES"
   exit 1
 fi
+
+echo ""
+echo "All doc tests passed!"

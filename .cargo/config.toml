@@ -1,0 +1,9 @@
+# Configuration for RISC-V 64 GC (musl)
+[target.riscv64gc-unknown-linux-musl]
+# This setup is needed somehow to ensure static linking
+linker = "riscv64-linux-musl-gcc"
+rustflags = ["-C", "target-feature=+crt-static"]
+
+# Configuration for ARM64 (musl)
+[target.aarch64-unknown-linux-musl]
+linker = "aarch64-linux-musl-gcc"

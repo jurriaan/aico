@@ -1,5 +1,6 @@
 #!/bin/sh
-set -e
+
+set -eu
 cd "$(dirname "$0")/.."
 
 if ! hash mise 2>/dev/null; then
@@ -14,4 +15,52 @@ if ! hash mise 2>/dev/null; then
   fi
 fi
 
+if ! hash musl-gcc 2>/dev/null; then
+  if hash pacman 2>/dev/null; then
+    sudo pacman -S --noconfirm musl
+  else
+    echo "musl-gcc not found. Please install it."
+  fi
+fi
+
+if ! hash riscv64-linux-musl-gcc 2>/dev/null; then
+  if hash pacman 2>/dev/null; then
+    sudo pacman -S --noconfirm musl-riscv64
+  else
+    echo "riscv64-linux-musl-gcc not found. Please install it."
+  fi
+fi
+
+if ! hash aarch64-linux-musl-gcc 2>/dev/null; then
+  if hash pacman 2>/dev/null; then
+    sudo pacman -S --noconfirm musl-aarch64
+  else
+    echo "aarch64-linux-musl-gcc not found. Please install it."
+  fi
+fi
+
+if ! hash aarch64-linux-gnu-gcc 2>/dev/null; then
+  if hash pacman 2>/dev/null; then
+    sudo pacman -S --noconfirm aarch64-linux-gnu-gcc
+  else
+    echo "gcc-aarch64-linux-gnu not found. Please install it."
+  fi
+fi
+
+if ! hash riscv64-linux-gnu-gcc 2>/dev/null; then
+  if hash pacman 2>/dev/null; then
+    sudo pacman -S --noconfirm riscv64-linux-gnu-gcc
+  else
+    echo "gcc-riscv64-linux-gnu not found. Please install it."
+  fi
+fi
+
+# Activate mise and install dependencies
+mise trust -q
 mise install
+
+rustup target add x86_64-unknown-linux-musl
+rustup target add aarch64-unknown-linux-musl
+rustup target add riscv64gc-unknown-linux-musl
+
+mise exec -- cargo fetch --target x86_64-unknown-linux-musl --target aarch64-unknown-linux-musl --target riscv64gc-unknown-linux-musl
