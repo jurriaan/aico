@@ -3,7 +3,7 @@ set -e
 
 # Ensure clitest is installed
 if ! command -v clitest >/dev/null 2>&1; then
-  echo "Error: clitest not found. Please install it (e.g., 'go install github.com/shmup/clitest@latest' or from package manager)."
+  echo "Error: clitest not found. Please install it (https://github.com/aureliojargas/clitest)."
   exit 1
 fi
 

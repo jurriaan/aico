@@ -4,6 +4,7 @@ min_version = '2026.1.1'
 rust = "1.92.0"
 rust-analyzer = "latest"
 "aqua:nextest-rs/nextest/cargo-nextest" = "latest"
+"http:clitest" = { version = "latest", url = "https://raw.githubusercontent.com/aureliojargas/clitest/master/clitest" }
 
 [task_config]
 includes = ["script"]
