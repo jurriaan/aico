@@ -12,7 +12,7 @@ use tokio::net::TcpListener;
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let app = Router::new().route("/v1/chat/completions", post(chat_completions));
-    let listener = TcpListener::bind("0.0.0.0:5005").await.unwrap();
+    let listener = TcpListener::bind("127.0.0.1:5005").await.unwrap();
     println!(
         "Mock LLM Server listening on {}",
         listener.local_addr().unwrap()

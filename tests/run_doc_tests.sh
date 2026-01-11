@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -e
 
 # Ensure clitest is installed
@@ -19,7 +19,11 @@ cargo build --quiet --workspace
 
 # 2. Start Mock LLM Server (Rust)
 echo "Starting Mock LLM..."
-"$PROJECT_ROOT/target/debug/mock_server" &
+if [ "${CI:-}" = "true" ]; then
+  "$PROJECT_ROOT/target/debug/mock_server" > /dev/null 2>&1 &
+else
+  "$PROJECT_ROOT/target/debug/mock_server" &
+fi
 MOCK_PID=$!
 
 # 3. Setup Test Workspace
