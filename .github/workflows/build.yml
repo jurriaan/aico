@@ -5,6 +5,7 @@ on:
     branches:
       - main
 
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -12,6 +13,7 @@ env:
   SCCACHE_GHA_ENABLED: "true"
   RUSTC_WRAPPER: "sccache"
   CARGO_INCREMENTAL: "0"
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -63,6 +65,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: ''
+          cache-key: 'test'
       - uses: jdx/mise-action@v3
         with:
           version: 2026.1.1
