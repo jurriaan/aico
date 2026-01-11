@@ -197,6 +197,58 @@ fn test_add_multiple_files_with_one_non_existent_partially_fails() {
 }
 
 #[test]
+fn test_add_directory_fails() {
+    let temp = tempdir().unwrap();
+    let root = temp.path();
+    cargo_bin_cmd!("aico")
+        .current_dir(root)
+        .arg("init")
+        .assert()
+        .success();
+
+    let subdir = root.join("mysubdir");
+    fs::create_dir(&subdir).unwrap();
+
+    cargo_bin_cmd!("aico")
+        .current_dir(root)
+        .args(["add", "mysubdir"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Error: Cannot add a directory: mysubdir",
+        ));
+}
+
+#[test]
+fn test_add_symlink_to_directory_fails() {
+    let temp = tempdir().unwrap();
+    let root = temp.path();
+    cargo_bin_cmd!("aico")
+        .current_dir(root)
+        .arg("init")
+        .assert()
+        .success();
+
+    let subdir = root.join("mysubdir");
+    fs::create_dir(&subdir).unwrap();
+    let link = root.join("subdir_link");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("mysubdir", &link).unwrap();
+
+    #[cfg(unix)]
+    {
+        cargo_bin_cmd!("aico")
+            .current_dir(root)
+            .args(["add", "subdir_link"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(
+                "Error: Cannot add a directory: subdir_link",
+            ));
+    }
+}
+
+#[test]
 fn test_drop_multiple_files_successfully() {
     let temp = tempdir().unwrap();
     let root = temp.path();

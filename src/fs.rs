@@ -45,10 +45,17 @@ pub fn validate_input_paths(
         let logical_abs_path = normalize_path(&cwd.join(path));
 
         // 2. Existence check (optional but standard)
-        if require_exists && !logical_abs_path.exists() {
-            eprintln!("Error: File not found: {}", path.display());
-            has_errors = true;
-            continue;
+        if require_exists {
+            if !logical_abs_path.exists() {
+                eprintln!("Error: File not found: {}", path.display());
+                has_errors = true;
+                continue;
+            }
+            if logical_abs_path.is_dir() {
+                eprintln!("Error: Cannot add a directory: {}", path.display());
+                has_errors = true;
+                continue;
+            }
         }
 
         // 3. Security check: Must be inside session root physically.
