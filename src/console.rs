@@ -12,37 +12,34 @@ pub fn strip_ansi_codes(s: &str) -> String {
     RE.replace_all(s, "").to_string()
 }
 
-pub fn get_terminal_size() -> (usize, usize) {
-    static TERMINAL_SIZE: std::sync::OnceLock<(usize, usize)> = std::sync::OnceLock::new();
-
-    *TERMINAL_SIZE.get_or_init(|| {
-        let aico_cols = std::env::var("AICO_WIDTH")
-            .ok()
-            .and_then(|s| s.parse().ok());
-        let aico_rows = std::env::var("AICO_HEIGHT")
-            .ok()
-            .and_then(|s| s.parse().ok());
-
-        let env_cols = std::env::var("COLUMNS").ok().and_then(|s| s.parse().ok());
-        let env_rows = std::env::var("LINES").ok().and_then(|s| s.parse().ok());
-
-        let (tty_cols, tty_rows) = if is_stdout_terminal() {
-            crossterm::terminal::size()
-                .map(|(c, r)| (Some(c as usize), Some(r as usize)))
-                .unwrap_or((None, None))
-        } else {
-            (None, None)
-        };
-
-        let cols = aico_cols.or(env_cols).or(tty_cols).unwrap_or(80);
-        let rows = aico_rows.or(env_rows).or(tty_rows).unwrap_or(24);
-
-        (cols, rows)
-    })
-}
-
 pub fn get_terminal_width() -> usize {
-    get_terminal_size().0
+    static TERMINAL_WIDTH: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
+    *TERMINAL_WIDTH.get_or_init(|| {
+        // 1. Check AICO_COLUMNS
+        if let Ok(w) = std::env::var("AICO_COLUMNS").map(|s| s.parse().unwrap_or(0))
+            && w > 0
+        {
+            return w;
+        }
+
+        // 2. Check COLUMNS
+        if let Ok(w) = std::env::var("COLUMNS").map(|s| s.parse().unwrap_or(0))
+            && w > 0
+        {
+            return w;
+        }
+
+        // 3. System TTY (Only called if env vars are missing)
+        if is_stdout_terminal()
+            && let Ok((w, _)) = crossterm::terminal::size()
+        {
+            return w as usize;
+        }
+
+        // 4. Default Fallback
+        80
+    })
 }
 
 pub fn draw_panel(title: &str, lines: &[String], width: usize) {

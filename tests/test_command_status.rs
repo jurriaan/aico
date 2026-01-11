@@ -171,7 +171,7 @@ fn test_status_handles_dangling_messages() {
     // WHEN running status
     let assert = cargo_bin_cmd!("aico")
         .current_dir(root)
-        .env("AICO_WIDTH", "120")
+        .env("COLUMNS", "120")
         .arg("status")
         .assert()
         .success();
@@ -308,7 +308,7 @@ fn test_status_history_summary_logic() {
     // WHEN `aico status` is run
     let assert = cargo_bin_cmd!("aico")
         .current_dir(root)
-        .env("AICO_WIDTH", "120")
+        .env("COLUMNS", "120")
         .arg("status")
         .assert()
         .success();

@@ -1,12 +1,6 @@
 #!/bin/bash
 set -e
 
-# Ensure clitest is installed
-if ! command -v clitest >/dev/null 2>&1; then
-  echo "Error: clitest not found. Please install it (https://github.com/aureliojargas/clitest)."
-  exit 1
-fi
-
 # Locate Project Root (aico/)
 # Script is expected to be in aico/tests/
 PROJECT_ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -17,33 +11,28 @@ echo "Building workspace (debug)..."
 cd "$PROJECT_ROOT"
 cargo build --quiet --workspace
 
-# 2. Start Mock LLM Server (Rust)
-echo "Starting Mock LLM..."
-if [ "${CI:-}" = "true" ]; then
-  "$PROJECT_ROOT/target/debug/mock_server" > /dev/null 2>&1 &
-else
-  "$PROJECT_ROOT/target/debug/mock_server" &
-fi
-MOCK_PID=$!
-
-# 3. Setup Test Workspace
+# 2. Setup Test Workspace
 TEST_WORKSPACE=$(mktemp -d)
-trap 'kill $MOCK_PID 2>/dev/null || true; rm -rf "$TEST_WORKSPACE"' EXIT
+trap 'rm -rf "$TEST_WORKSPACE"' EXIT
 
-# 4. Configure Environment
-export AICO_WIDTH=80
-export AICO_FORCE_EDITOR=1
+# 3. Configure Environment
+export COLUMNS=80
+export AICO_COLUMNS=80
 export HOME="$TEST_WORKSPACE"
 export XDG_CONFIG_HOME="$TEST_WORKSPACE/.config"
 export XDG_CACHE_HOME="$TEST_WORKSPACE/.cache"
-# Force aico to use the mock server
-export OPENAI_API_KEY="sk-test-key"
-export OPENAI_BASE_URL="http://localhost:5005/v1"
 
-# 5. Link Compiled Binary
+# Force aico to use the mock server (base url overwritten by mock_server)
+export OPENAI_API_KEY="sk-test-key"
+export OPENAI_BASE_URL="http://localhost:5005/v1" 
+
+# 4. Link Compiled Binary and Shim
 mkdir -p "$TEST_WORKSPACE/bin"
 # Use debug build for speed during dev testing
-ln -sf "$PROJECT_ROOT/target/debug/aico" "$TEST_WORKSPACE/bin/aico"
+ln -sf "$PROJECT_ROOT/target/debug/aico" "$TEST_WORKSPACE/bin/aico_bin"
+export AICO_BINARY="$TEST_WORKSPACE/bin/aico_bin"
+cp "$PROJECT_ROOT/tests/support/aico_shim.sh" "$TEST_WORKSPACE/bin/aico"
+chmod +x "$TEST_WORKSPACE/bin/aico"
 export PATH="$TEST_WORKSPACE/bin:$PATH"
 
 # Populate Model Metadata Cache for deterministic status and cost checks
@@ -61,18 +50,7 @@ cat <<EOF >"$XDG_CACHE_HOME/aico/models.json"
 }
 EOF
 
-# 6. Wait for Mock Server
-RETRY=0
-while ! curl -s http://localhost:5005/v1 >/dev/null 2>&1; do
-  sleep 0.5
-  RETRY=$((RETRY + 1))
-  if [ "$RETRY" -gt 20 ]; then
-    echo "Error: Mock LLM failed to start."
-    exit 1
-  fi
-done
-
-# 7. Move to Test Workspace to prevent polluting the project root
+# 5. Move to Test Workspace to prevent polluting the project root
 # This ensures .aico and .ai_session.json are created in the temp folder
 cd "$TEST_WORKSPACE"
 
@@ -100,7 +78,9 @@ for f in $FILES; do
 
   # Run clitest - $f is an absolute path to the docs folder,
   # but clitest will execute the commands in the CWD ($TEST_WORKSPACE)
-  clitest "$f"
+  #
+  # clitest is force-ran using bash as on GitHub Actions hangs otherwise.
+  "$PROJECT_ROOT/target/debug/mock_server" bash clitest "$f"
 done
 
 if [ "$FOUND" -eq 0 ]; then

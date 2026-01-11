@@ -268,6 +268,7 @@ async fn test_streaming_handles_multiple_patches_for_same_file_tty() {
         .env("OPENAI_API_KEY", "sk-test")
         .env("OPENAI_BASE_URL", server.url())
         .env("AICO_FORCE_TTY", "1")
+        .env("COLUMNS", "80")
         .args(["gen", "multi"])
         .assert()
         .success();

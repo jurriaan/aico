@@ -71,12 +71,6 @@ pub fn run(index_str: String, prompt_flag: bool) -> Result<(), AicoError> {
 
     let original_content = &record.content;
 
-    // Detect if we have piped input. We only read from stdin if it's not a terminal.
-    // To prevent hanging in tests or non-interactive environments where stdin is open but empty,
-    // we use a check (if possible) or ensure our tests always provide EOF.
-    // For Rust, the most reliable way to check for 'piped' input that doesn't hang
-    // is often specific to the OS, but we can refine the logic to check if stdin is a terminal.
-
     let is_piped = !std::io::stdin().is_terminal();
     let force_editor = std::env::var("AICO_FORCE_EDITOR").is_ok();
 
@@ -92,7 +86,7 @@ pub fn run(index_str: String, prompt_flag: bool) -> Result<(), AicoError> {
     let norm_new = new_content.replace("\r\n", "\n");
     let norm_old = original_content.replace("\r\n", "\n");
 
-    if (norm_new.trim().is_empty() && is_piped && !force_editor) || norm_new == norm_old {
+    if norm_new.trim().is_empty() || norm_new == norm_old {
         println!("No changes detected. Aborting.");
         return Ok(());
     }

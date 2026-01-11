@@ -349,13 +349,14 @@ async fn test_gen_failed_patch_is_fenced_in_output() {
         .create_async()
         .await;
 
-    // Use AICO_WIDTH/HEIGHT to simulate TTY to ensure we go through LiveDisplay path
+    // Use AICO_FORCE_TTY to simulate TTY to ensure we go through LiveDisplay path
     let output = cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("OPENAI_API_KEY", "sk-test")
         .env("OPENAI_BASE_URL", server.url())
-        .env("AICO_WIDTH", "80")
+        .env("COLUMNS", "80")
         .env("AICO_FORCE_TTY", "1")
+        .env("COLUMNS", "80")
         .args(["gen", "Fix it"])
         .assert()
         .success()

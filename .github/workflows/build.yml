@@ -41,9 +41,10 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: ''
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@e53f0d17e7bc32c896a495315e0b17812356bc68
         with:
           version: 2026.1.1
+          add_shims_to_path: false
       - run: script/setup
       - run: script/build
       - name: Archive artifacts
@@ -67,10 +68,12 @@ jobs:
         with:
           rustflags: ''
           cache-key: 'test'
-      - uses: jdx/mise-action@v3
+          toolchain: stable
+          components: 'cargo, rust-std, rustc, rustfmt, clippy'
+      - uses: jdx/mise-action@e53f0d17e7bc32c896a495315e0b17812356bc68
         with:
           version: 2026.1.1
-      - run: script/setup
+          add_shims_to_path: false
       - run: script/lint
       - run: script/test
 

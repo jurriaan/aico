@@ -51,22 +51,36 @@ if [ -z "$INSTRUCTION" ]; then
   exit 1
 fi
 
-# Get the original response metadata using the new --json flag
-ORIG_RESP_JSON=$(aico last "$INDEX" --json 2>/dev/null)
-if [ -z "$ORIG_RESP_JSON" ]; then
+# 1. Create a temp file for the JSON data
+JSON_DUMP=$(mktemp -t aico_refine_dump.XXXXXX)
+
+# 2. Direct output to file instead of variable
+if ! aico last "$INDEX" --json > "$JSON_DUMP" 2>/dev/null; then
     echo "Error: Could not retrieve message pair at index $INDEX."
+    rm -f "$JSON_DUMP"
     exit 1
 fi
 
-# Extract mode and absolute index from JSON
-ORIG_MODE=$(echo "$ORIG_RESP_JSON" | jq -r .assistant.mode)
-ORIG_CONTENT=$(echo "$ORIG_RESP_JSON" | jq -r .assistant.content)
-ORIG_PROMPT_CONTENT=$(echo "$ORIG_RESP_JSON" | jq -r .user.content)
-ABS_INDEX=$(echo "$ORIG_RESP_JSON" | jq -r .pair_index)
+# 3. Validation: Check if file is empty
+if [ ! -s "$JSON_DUMP" ]; then
+    echo "Error: Could not retrieve message pair at index $INDEX (Empty response)."
+    rm -f "$JSON_DUMP"
+    exit 1
+fi
+
+# 4. Read directly from file (No 'echo' pipe)
+ORIG_MODE=$(jq -r .assistant.mode "$JSON_DUMP")
+ORIG_CONTENT=$(jq -r .assistant.content "$JSON_DUMP")
+ORIG_PROMPT_CONTENT=$(jq -r .user.content "$JSON_DUMP")
+ABS_INDEX=$(jq -r .pair_index "$JSON_DUMP")
+ORIG_USER_ID=$(jq -r .user.id "$JSON_DUMP")
 
 # Ephemeral Execution Setup
 SESSION_NAME="refine-$(date +%s)-$$"
 PAYLOAD=$(mktemp -t aico_refine_payload.XXXXXX)
+
+# Cleanup the dump file early
+rm -f "$JSON_DUMP"
 PROMPT_FILE=$(mktemp -t aico_refine_prompt.XXXXXX)
 SYSTEM_PROMPT_FILE=$(mktemp -t aico_refine_sysprompt.XXXXXX)
 
@@ -156,7 +170,10 @@ aico last --json > "$REFINE_PAYLOAD"
 '
 
 # Calculate the absolute end of history for the undo range
-LAST_INDEX=$(aico last -1 --json 2>/dev/null | jq -r .pair_index)
+LAST_INDEX_DUMP=$(mktemp -t aico_refine_last.XXXXXX)
+aico last -1 --json > "$LAST_INDEX_DUMP" 2>/dev/null || true
+LAST_INDEX=$(jq -r .pair_index "$LAST_INDEX_DUMP")
+rm -f "$LAST_INDEX_DUMP"
 
 # Export all context needed by the inner logic
 export REFINE_INDEX="$ABS_INDEX"
@@ -172,8 +189,7 @@ aico session-fork --ephemeral "$SESSION_NAME" -- sh -c "$REFINE_LOGIC"
 
 # 2. Apply to Main Session
 if [ -s "$PAYLOAD" ]; then
-    NEW_ASST_ID=$(cat "$PAYLOAD" | jq -r .assistant.id)
-    ORIG_USER_ID=$(echo "$ORIG_RESP_JSON" | jq -r .user.id)
+    NEW_ASST_ID=$(jq -r .assistant.id "$PAYLOAD")
 
     if [ "$NEW_ASST_ID" = "null" ] || [ "$ORIG_USER_ID" = "null" ]; then
        echo "Error: IDs could not be resolved. Cannot use surgical history splice."

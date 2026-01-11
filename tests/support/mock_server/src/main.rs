@@ -7,17 +7,69 @@ use axum::{
 use futures::stream::{self, Stream};
 use serde_json::{Value, json};
 use std::convert::Infallible;
+use std::env;
+use std::process::Stdio;
 use tokio::net::TcpListener;
+use tokio::process::Command;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    // 1. Parse CLI arguments
+    let args: Vec<String> = env::args().skip(1).collect();
+    if args.is_empty() {
+        eprintln!("Usage: mock-server <command> [args...]");
+        std::process::exit(1);
+    }
+    let command_name = &args[0];
+    let command_args = &args[1..];
+
+    // 2. Setup Router
     let app = Router::new().route("/v1/chat/completions", post(chat_completions));
-    let listener = TcpListener::bind("127.0.0.1:5005").await.unwrap();
+
+    // 3. Bind to Port 0 (Random Available Port)
+    // The OS will automatically pick a free port, preventing conflicts.
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind to random port");
+    let local_addr = listener.local_addr().unwrap();
+    let actual_port = local_addr.port();
+
     println!(
-        "Mock LLM Server listening on {}",
-        listener.local_addr().unwrap()
+        "[Mock Wrapper] Server bound to random port: {}",
+        actual_port
     );
-    axum::serve(listener, app).await.unwrap();
+
+    // 4. Spawn the server task
+    let server_handle = tokio::spawn(async move {
+        if let Err(e) = axum::serve(listener, app).await {
+            eprintln!("[Mock Wrapper] Server error: {}", e);
+        }
+    });
+
+    // 5. Construct the base URL
+    let base_url = format!("http://127.0.0.1:{}/v1", actual_port);
+    println!("[Mock Wrapper] Injecting OPENAI_BASE_URL={}", base_url);
+
+    // 6. Run the user's command with the new environment variable
+    // Note: Command::new() inherits the parent's env vars by default.
+    // We only need to explicitly add/overwrite the specific ones we care about.
+    let mut child = Command::new(command_name)
+        .args(command_args)
+        .env("OPENAI_BASE_URL", base_url) // Inject the dynamic URL
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("Failed to spawn command");
+
+    // 7. Wait and cleanup
+    let status = child.wait().await.expect("Failed to wait for command");
+    server_handle.abort();
+
+    let code = status.code().unwrap_or(1);
+    println!("[Mock Wrapper] Command finished with exit code: {}", code);
+    std::process::exit(code);
 }
 
 async fn chat_completions(
