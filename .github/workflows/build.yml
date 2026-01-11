@@ -50,6 +50,26 @@ jobs:
           path: |
             build
 
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.9
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ''
+      - uses: jdx/mise-action@v3
+        with:
+          version: 2026.1.1
+      - run: script/setup
+      - run: script/lint
+      - run: script/test
+
   build-macos:
     runs-on: macos-latest
     env:
