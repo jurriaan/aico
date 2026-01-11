@@ -1,6 +1,8 @@
 use aico::utils::setup_crypto_provider;
 use clap::CommandFactory;
 use clap::{Parser, Subcommand};
+use clap_complete::ArgValueCompleter;
+use clap_complete::CompletionCandidate;
 use std::path::PathBuf;
 
 // Use jemalloc on musl x86_64 for better performance
@@ -65,7 +67,7 @@ enum Commands {
     },
     /// Remove file(s) from the session context.
     Drop {
-        #[arg(required = true)]
+        #[arg(required = true, add = ArgValueCompleter::new(session_completer))]
         file_paths: Vec<PathBuf>,
     },
 
@@ -181,11 +183,8 @@ enum Commands {
         json: bool,
     },
 
-    /// Generate shell completions
-    Completions {
-        #[arg(value_parser = clap::value_parser!(clap_complete::Shell))]
-        shell: clap_complete::Shell,
-    },
+    /// Show instructions for enabling shell completions.
+    Completions,
 
     /// Export the active chat history to stdout
     DumpHistory,
@@ -193,6 +192,7 @@ enum Commands {
     /// Manage trusted projects for addon execution
     Trust {
         /// The project path to trust. Defaults to current directory.
+        #[arg(value_hint = clap::ValueHint::DirPath)]
         path: Option<PathBuf>,
         /// Revoke trust for the specified path.
         #[arg(long, aliases = ["untrust"])]
@@ -218,22 +218,7 @@ enum Commands {
 async fn main() {
     setup_crypto_provider();
 
-    // Handle shell completions if AICO_COMPLETE is set
-    if let Some(env_complete) = std::env::var_os("AICO_COMPLETE") {
-        if let Ok(session) = aico::session::Session::load_active() {
-            let current_input = env_complete.to_string_lossy();
-            let current_args = std::env::args().collect::<Vec<_>>();
-
-            if current_args.iter().any(|arg| arg == "drop") {
-                for file in session.get_context_files() {
-                    if file.starts_with(current_input.as_ref()) {
-                        println!("{}", file);
-                    }
-                }
-            }
-        }
-        return;
-    }
+    clap_complete::CompleteEnv::with_factory(Cli::command).complete();
 
     // Intercept help to show addons
     let args: Vec<String> = std::env::args().collect();
@@ -293,9 +278,20 @@ async fn main() {
             aico::commands::session_cmds::new_session(name, model)
         }
         Commands::Status { json } => aico::commands::status::run(json).await,
-        Commands::Completions { shell } => {
-            let mut cmd = Cli::command();
-            clap_complete::generate(shell, &mut cmd, "aico", &mut std::io::stdout());
+        Commands::Completions => {
+            println!(
+                "Bash:\n\
+                echo \"source <(COMPLETE=bash aico)\" >> ~/.bashrc\n\
+                \n\
+                Elvish:\n\
+                echo \"eval (E:COMPLETE=elvish aico | slurp)\" >> ~/.elvish/rc.elv\n\
+                \n\
+                Fish:\n\
+                echo \"COMPLETE=fish aico | source\" >> ~/.config/fish/config.fish\n\
+                \n\
+                Zsh:\n\
+                echo \"source <(COMPLETE=zsh aico)\" >> ~/.zshrc\n"
+            );
             Ok(())
         }
         Commands::DumpHistory => aico::commands::dump_history::run(),
@@ -337,5 +333,19 @@ fn print_help_with_addons() {
         for addon in addons {
             println!("  {:<15} {}", addon.name, addon.help_text);
         }
+    }
+}
+
+fn session_completer(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
+    if let Ok(session) = aico::session::Session::load_active() {
+        let current_input = current.to_string_lossy();
+        session
+            .get_context_files()
+            .into_iter()
+            .filter(|f| f.starts_with(current_input.as_ref()))
+            .map(CompletionCandidate::new)
+            .collect()
+    } else {
+        vec![]
     }
 }

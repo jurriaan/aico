@@ -14,8 +14,9 @@ fn run_editor(content: &str) -> Result<String, AicoError> {
 
     // 2. Open Editor
     let editor = env::var("EDITOR").unwrap_or_else(|_| "vi".into());
-    let parts = shell_words::split(&editor)
-        .map_err(|e| AicoError::Configuration(format!("Failed to parse EDITOR variable: {}", e)))?;
+    let parts = shlex::split(&editor).ok_or_else(|| {
+        AicoError::Configuration(format!("Failed to parse EDITOR variable: '{}'", editor))
+    })?;
 
     if parts.is_empty() {
         return Err(AicoError::Configuration(

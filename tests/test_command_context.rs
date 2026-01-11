@@ -383,11 +383,12 @@ fn test_drop_autocompletion() {
         .assert()
         .success();
 
-    // Verify 'drop' suggests context files when AICO_COMPLETE is set
+    // Verify 'drop' suggests context files using clap's dynamic completion
     cargo_bin_cmd!("aico")
         .current_dir(root)
-        .env("AICO_COMPLETE", "file")
-        .arg("drop")
+        .env("COMPLETE", "bash")
+        .env("_CLAP_COMPLETE_INDEX", "2")
+        .args(["--", "aico", "drop", "file"])
         .assert()
         .stdout(predicate::str::contains("file1.txt"))
         .stdout(predicate::str::contains("file2.txt"));
