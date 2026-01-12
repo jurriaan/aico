@@ -36,6 +36,10 @@ static RE_ANSI: OnceLock<Regex> = OnceLock::new();
 static RE_SPLIT_ANSI: OnceLock<Regex> = OnceLock::new();
 static RE_ANSI_PARTS: OnceLock<Regex> = OnceLock::new();
 
+fn get_re(re: &'static OnceLock<Regex>) -> &'static Regex {
+    re.get().expect("Regex not initialized")
+}
+
 fn init_statics() {
     SYNTAX_SET.get_or_init(SyntaxSet::load_defaults_newlines);
     THEME.get_or_init(|| {
@@ -162,7 +166,7 @@ impl MarkdownStreamer {
     }
 
     fn visible_width(&self, text: &str) -> usize {
-        let stripped = RE_ANSI.get().unwrap().replace_all(text, "");
+        let stripped = get_re(&RE_ANSI).replace_all(text, "");
         UnicodeWidthStr::width(stripped.as_ref())
     }
 
@@ -195,14 +199,14 @@ impl MarkdownStreamer {
         let trimmed = expanded.trim_end();
 
         // --- 1. CODE BLOCK HANDLING ---
-        if let Some(caps) = RE_CODE_FENCE.get().unwrap().captures(trimmed) {
+        if let Some(caps) = get_re(&RE_CODE_FENCE).captures(trimmed) {
             if self.in_code_block {
                 self.in_code_block = false;
                 queue!(w, ResetColor, Print("\n"))?;
             } else {
                 self.in_code_block = true;
                 self.list_stack.clear();
-                let lang = caps.get(2).map(|s| s.as_str()).unwrap_or("bash");
+                let lang = caps.get(2).map_or("bash", |m| m.as_str());
                 self.code_lang = if lang.is_empty() {
                     "bash".to_string()
                 } else {
@@ -219,7 +223,7 @@ impl MarkdownStreamer {
 
         // --- 1.5. MATH BLOCK HANDLING ---
         // Check for block toggle '$$'
-        if RE_MATH_BLOCK.get().unwrap().is_match(trimmed) {
+        if get_re(&RE_MATH_BLOCK).is_match(trimmed) {
             if self.in_math_block {
                 // Closing Math Block
                 self.in_math_block = false;
@@ -265,12 +269,12 @@ impl MarkdownStreamer {
 
         // --- 2. TABLE HANDLING ---
         // Detect Separator Row
-        if self.in_table && RE_TABLE_SEP.get().unwrap().is_match(trimmed) {
+        if self.in_table && get_re(&RE_TABLE_SEP).is_match(trimmed) {
             self.table_header_printed = true;
             return Ok(());
         }
 
-        if RE_TABLE_ROW.get().unwrap().is_match(trimmed) {
+        if get_re(&RE_TABLE_ROW).is_match(trimmed) {
             self.in_table = true;
             self.list_stack.clear();
             return self.render_stream_table_row(w, trimmed);
@@ -282,10 +286,15 @@ impl MarkdownStreamer {
         // --- 3. BLOCKQUOTE & PREFIX CALCULATION ---
         let mut content = raw_line;
         let mut line_depth = 0;
+        let re_bq = get_re(&RE_BLOCKQUOTE);
 
-        while let Some(caps) = RE_BLOCKQUOTE.get().unwrap().captures(content) {
+        while let Some(caps) = re_bq.captures(content) {
             line_depth += 1;
-            content = caps.get(2).unwrap().as_str();
+            if let Some(m) = caps.get(2) {
+                content = m.as_str();
+            } else {
+                break;
+            }
         }
 
         // Strict state reset matching Python
@@ -311,20 +320,18 @@ impl MarkdownStreamer {
         // Replace $...$ with unicode BEFORE wrapping text
         // We use a Cow so we don't allocate if no math is found
         let clean_content_bound =
-            RE_MATH_INLINE
-                .get()
-                .unwrap()
-                .replace_all(clean_content, |caps: &regex::Captures| {
-                    // convert content inside $
-                    unicodeit::replace(&caps[1])
-                });
+            get_re(&RE_MATH_INLINE).replace_all(clean_content, |caps: &regex::Captures| {
+                // convert content inside $
+                unicodeit::replace(&caps[1])
+            });
         let clean_content = &clean_content_bound;
 
         // --- 4. HEADER HANDLING ---
-        if let Some(caps) = RE_HEADER.get().unwrap().captures(clean_content) {
-            let level = caps.get(1).unwrap().as_str().len();
+        if let Some(caps) = get_re(&RE_HEADER).captures(clean_content) {
+            let level_str = caps.get(1).map_or("", |m| m.as_str());
+            let text = caps.get(2).map_or("", |m| m.as_str());
+            let level = level_str.len();
             self.list_stack.clear();
-            let text = caps.get(2).unwrap().as_str();
 
             match level {
                 1 => {
@@ -389,40 +396,45 @@ impl MarkdownStreamer {
         }
 
         // --- 5. LIST HANDLING ---
-        if let Some(caps) = RE_LIST.get().unwrap().captures(clean_content) {
-            let raw_indent = caps.get(1).unwrap().as_str();
-            let bullet = caps.get(2).unwrap().as_str();
-            let text_part = caps.get(3).unwrap().as_str();
+        if let Some(caps) = get_re(&RE_LIST).captures(clean_content) {
+            let raw_indent = caps.get(1).map_or("", |m| m.as_str());
+            let bullet = caps.get(2).map_or("-", |m| m.as_str());
+            let text_part = caps.get(3).map_or("", |m| m.as_str());
 
             let indent_len = raw_indent.len();
             let is_ordered = bullet.chars().any(|c| c.is_numeric());
 
-            if let Some((last_indent, _, _)) = self.list_stack.last() {
-                if indent_len > *last_indent {
-                    self.list_stack.push((indent_len, is_ordered, 1));
-                } else if indent_len < *last_indent {
-                    while let Some((curr, _, _)) = self.list_stack.last() {
-                        if *curr > indent_len {
-                            self.list_stack.pop();
-                        } else {
-                            break;
-                        }
-                    }
-                    if let Some(top) = self.list_stack.last_mut() {
-                        top.2 += 1;
-                    }
-                } else {
-                    self.list_stack.last_mut().unwrap().2 += 1;
+            // --- Stack Logic (Simplified for Indentation Only) ---
+            // We only need the stack to track nesting levels for the visual tree/margin.
+            let last_indent = self.list_stack.last().map(|(len, _, _)| *len).unwrap_or(0);
+
+            if self.list_stack.is_empty() || indent_len > last_indent {
+                self.list_stack.push((indent_len, is_ordered, 0)); // 0 is dummy counter
+            } else if indent_len < last_indent {
+                while self
+                    .list_stack
+                    .last()
+                    .is_some_and(|(d, _, _)| *d > indent_len)
+                {
+                    self.list_stack.pop();
                 }
-            } else {
-                self.list_stack.push((indent_len, is_ordered, 1));
+                // If we popped everything or landed on a mismatch, push new level
+                let should_push = match self.list_stack.last() {
+                    Some((d, _, _)) => *d != indent_len,
+                    None => true,
+                };
+                if should_push {
+                    self.list_stack.push((indent_len, is_ordered, 0));
+                }
             }
 
+            // --- Display Logic ---
+            // Use the raw captured bullet. If it was "2.", print "2.".
+            // If it was unordered ("-", "*", "+"), normalize to "•".
             let display_bullet = if is_ordered {
-                let count = self.list_stack.last().unwrap().2;
-                format!("{}.", count)
+                bullet.to_string()
             } else {
-                "•".to_string()
+                "•".to_string() // Normalize '-', '*', '+' to a nice dot
             };
             let display_bullet = &display_bullet;
 
@@ -465,7 +477,7 @@ impl MarkdownStreamer {
         }
 
         // --- 6. HORIZONTAL RULE ---
-        if RE_HR.get().unwrap().is_match(clean_content) {
+        if get_re(&RE_HR).is_match(clean_content) {
             queue!(
                 w,
                 Print(&prefix),
@@ -510,7 +522,7 @@ impl MarkdownStreamer {
         // Active ANSI codes stack (to avoid bloat)
         let mut active_codes: Vec<String> = Vec::new();
 
-        for caps in RE_SPLIT_ANSI.get().unwrap().captures_iter(text) {
+        for caps in get_re(&RE_SPLIT_ANSI).captures_iter(text) {
             let token = caps.get(1).unwrap().as_str();
 
             if token.starts_with("\x1b") {
@@ -536,8 +548,13 @@ impl MarkdownStreamer {
                         }
 
                         // Force split at least one char if zero (shouldn't happen with width > 0)
-                        if split_idx == 0 && !token_str.is_empty() {
-                            split_idx = token_str.chars().next().unwrap().len_utf8();
+                        if split_idx == 0 {
+                            split_idx = token_str.chars().next().map_or(0, |c| c.len_utf8());
+                        }
+
+                        // If it's still 0, it means the string was empty, so we break to avoid infinite loop
+                        if split_idx == 0 {
+                            break;
                         }
 
                         let head = &token_str[..split_idx];
@@ -575,7 +592,7 @@ impl MarkdownStreamer {
     }
 
     fn update_ansi_state(&self, state: &mut Vec<String>, code: &str) {
-        let caps = RE_ANSI_PARTS.get().unwrap().captures(code);
+        let caps = get_re(&RE_ANSI_PARTS).captures(code);
         if caps.is_none() {
             return;
         }
@@ -605,7 +622,7 @@ impl MarkdownStreamer {
 
         if category != "other" {
             state.retain(|existing| {
-                let c_caps = RE_ANSI_PARTS.get().unwrap().captures(existing);
+                let c_caps = get_re(&RE_ANSI_PARTS).captures(existing);
                 if let Some(cc) = c_caps {
                     let c_content = cc.get(1).map_or("", |m| m.as_str());
                     let c_num: i32 = c_content
@@ -822,15 +839,17 @@ impl MarkdownStreamer {
     }
 
     pub fn render_inline_to_string(&self, text: &str) -> String {
-        let text_linked = RE_LINK
-            .get()
-            .unwrap()
-            .replace_all(text, |caps: &regex::Captures| {
-                format!(
-                    "\x1b]8;;{}\x1b\\\x1b[33m\x1b[4m{}\x1b[24m\x1b[39m\x1b]8;;\x1b\\",
-                    &caps[2], &caps[1]
-                )
-            });
+        let re_link = get_re(&RE_LINK);
+        let re_tok = get_re(&RE_TOKENIZER);
+
+        let text_linked = re_link.replace_all(text, |caps: &regex::Captures| {
+            let link_text = caps.get(1).map_or("", |m| m.as_str());
+            let link_url = caps.get(2).map_or("", |m| m.as_str());
+            format!(
+                "\x1b]8;;{}\x1b\\\x1b[33m\x1b[4m{}\x1b[24m\x1b[39m\x1b[39m\x1b]8;;\x1b\\",
+                link_url, link_text
+            )
+        });
 
         let mut out = String::new();
         let mut in_bold = false;
@@ -839,8 +858,11 @@ impl MarkdownStreamer {
         let mut in_code = false;
         let mut in_underline = false;
 
-        for caps in RE_TOKENIZER.get().unwrap().captures_iter(&text_linked) {
-            let token_match = caps.get(1).unwrap();
+        for caps in re_tok.captures_iter(&text_linked) {
+            let token_match = match caps.get(1) {
+                Some(m) => m,
+                None => continue,
+            };
             let token = token_match.as_str();
 
             if token.starts_with('`') {
