@@ -11,7 +11,7 @@ use std::time::Instant;
 
 pub fn extract_reasoning_header(reasoning_buffer: &str) -> Option<String> {
     static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-        regex::Regex::new(r"(?m)(?:^#{1,6}\s+(?P<header>.+?)$)|(?:^[*]{2}(?P<bold>.+?)[*]{2})")
+        regex::Regex::new(r"(?m)(?:^#{1,6}\s+(?P<header>.+?)[\r\n])|(?:^[*]{2}(?P<bold>.+?)[*]{2})")
             .unwrap()
     });
 

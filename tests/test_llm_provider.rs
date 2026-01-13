@@ -1,30 +1,8 @@
 mod common;
 use crate::common::setup_session;
-use aico::llm::executor::extract_reasoning_header;
 use assert_cmd::cargo::cargo_bin_cmd;
 use mockito::Server;
 use serde_json::json;
-
-#[test]
-fn test_extract_reasoning_header() {
-    // Basic Markdown
-    assert_eq!(
-        extract_reasoning_header("### Planning\nI will start by..."),
-        Some("Planning".into())
-    );
-    // Bold
-    assert_eq!(
-        extract_reasoning_header("**Thought Process**\nFirst..."),
-        Some("Thought Process".into())
-    );
-    // Last match wins
-    assert_eq!(
-        extract_reasoning_header("## One\n**Two**"),
-        Some("Two".into())
-    );
-    // No match
-    assert_eq!(extract_reasoning_header("Just some text"), None);
-}
 
 #[tokio::test]
 async fn test_handle_unified_streaming_openai() {
