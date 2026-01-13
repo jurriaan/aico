@@ -7,6 +7,7 @@ pub struct LiveDisplay {
     last_rendered_tail: String,
     has_started_content: bool,
     last_status_len: usize,
+    width: u16,
 }
 
 impl LiveDisplay {
@@ -19,6 +20,7 @@ impl LiveDisplay {
             last_rendered_tail: String::new(),
             has_started_content: false,
             last_status_len: 0,
+            width,
         }
     }
 
@@ -26,10 +28,13 @@ impl LiveDisplay {
         if self.has_started_content {
             return;
         }
-        let width = crate::console::get_terminal_width();
+        let width = self.width as usize;
         let limit = width.saturating_sub(10);
-        let truncated = if text.len() > limit {
-            &text[..limit]
+
+        let truncated_owned: String;
+        let truncated = if text.chars().count() > limit {
+            truncated_owned = text.chars().take(limit).collect();
+            &truncated_owned
         } else {
             text
         };
@@ -41,7 +46,7 @@ impl LiveDisplay {
         let status = format!("\x1b[2m{}...\x1b[0m", truncated);
         let _ = write!(stdout, "{}", status);
         let _ = stdout.flush();
-        self.last_status_len = truncated.len() + 3;
+        self.last_status_len = truncated.chars().count() + 3;
     }
 
     pub fn render(&mut self, items: &[DisplayItem]) {
