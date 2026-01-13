@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 // --- Enums ---
 
@@ -53,8 +53,8 @@ pub struct HistoryRecord {
     pub role: Role,
     pub content: String,
     pub mode: Mode,
-    #[serde(default = "default_timestamp")]
-    pub timestamp: DateTime<Utc>,
+    #[serde(with = "time::serde::rfc3339", default = "default_timestamp")]
+    pub timestamp: OffsetDateTime,
 
     #[serde(default)]
     pub passthrough: bool,
@@ -89,8 +89,8 @@ pub struct SessionView {
     pub history_start_pair: usize,
     #[serde(default)]
     pub excluded_pairs: Vec<usize>,
-    #[serde(default = "default_timestamp")]
-    pub created_at: DateTime<Utc>,
+    #[serde(with = "time::serde::rfc3339", default = "default_timestamp")]
+    pub created_at: OffsetDateTime,
 }
 
 // --- Session Pointer (.ai_session.json) ---
@@ -322,6 +322,6 @@ pub struct ContextState<'a> {
 
 // --- Helpers ---
 
-pub fn default_timestamp() -> DateTime<Utc> {
-    Utc::now()
+pub fn default_timestamp() -> OffsetDateTime {
+    OffsetDateTime::now_utc()
 }

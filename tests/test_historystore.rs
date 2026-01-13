@@ -8,7 +8,7 @@ fn make_record(role: Role, content: &str) -> HistoryRecord {
         role,
         content: content.to_string(),
         mode: Mode::Conversation,
-        timestamp: chrono::Utc::now(),
+        timestamp: time::OffsetDateTime::now_utc(),
         passthrough: false,
         piped_content: None,
         model: None,
@@ -152,7 +152,7 @@ fn test_append_pair_to_view_helper() {
         message_indices: vec![],
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: chrono::Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
 
     let u_rec = make_record(Role::User, "u");
@@ -304,7 +304,7 @@ fn test_edit_message_appends_and_repoints() {
         message_indices: vec![u_idx, a_idx],
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: chrono::Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
 
     // WHEN editing the assistant message
@@ -370,7 +370,7 @@ fn test_find_message_pairs_in_view_logic() {
         message_indices: vec![u0, a0, u1, a1, d],
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: chrono::Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
 
     let session = make_test_session(store, view);
@@ -403,7 +403,7 @@ fn test_session_view_io_and_reconstruction() {
         message_indices: vec![u, a],
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: chrono::Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
 
     let view_path = sessions_dir.join("main.json");
@@ -434,7 +434,7 @@ fn test_switch_active_pointer_writes_pointer_file() {
         message_indices: vec![],
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: chrono::Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
     fs::write(&view_path, serde_json::to_string(&view).unwrap()).unwrap();
 
@@ -471,7 +471,7 @@ fn test_reconstruct_history_tolerates_internal_mismatch() {
         message_indices: vec![u1, u2],
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: chrono::Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
 
     // WHEN reconstructing
@@ -507,7 +507,7 @@ fn test_reconstruct_history_dangling_user_at_end() {
         message_indices: vec![u1, a1, u2],
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: chrono::Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
 
     // WHEN reconstructing
@@ -538,7 +538,7 @@ fn test_edit_message_chain_and_manual_revert() {
         message_indices: vec![u, a],
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: chrono::Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
 
     // WHEN applying two edits to response
@@ -578,7 +578,7 @@ fn test_session_view_validates_indices() {
         message_indices: vec![0, 1, 2],
         history_start_pair: 0,
         excluded_pairs: vec![1],
-        created_at: chrono::Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
     assert_eq!(view.model, "m");
 }
@@ -608,7 +608,7 @@ fn test_fork_view_truncates_at_pair() {
         message_indices: vec![u1, a1, u2, a2, u3],
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: chrono::Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
 
     // WHEN "forking" manually (which is what aico does internally via forking logic)

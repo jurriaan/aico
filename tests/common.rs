@@ -1,7 +1,6 @@
 use aico::historystore::store::HistoryStore;
 use aico::models::{HistoryRecord, Mode, Role, SessionPointer, SessionView};
 use assert_cmd::cargo::cargo_bin_cmd;
-use chrono::Utc;
 use std::fs;
 use std::path::Path;
 
@@ -33,7 +32,7 @@ pub fn init_session_with_history(root: &Path, pairs: Vec<(&str, &str)>) {
             role: Role::User,
             content: u_content.to_string(),
             mode: Mode::Conversation,
-            timestamp: Utc::now(),
+            timestamp: time::OffsetDateTime::now_utc(),
             passthrough: false,
             piped_content: None,
             model: None,
@@ -50,7 +49,7 @@ pub fn init_session_with_history(root: &Path, pairs: Vec<(&str, &str)>) {
             role: Role::Assistant,
             content: a_content.to_string(),
             mode: Mode::Conversation,
-            timestamp: Utc::now(),
+            timestamp: time::OffsetDateTime::now_utc(),
             passthrough: false,
             piped_content: None,
             model: Some("test-model".into()),
@@ -69,7 +68,7 @@ pub fn init_session_with_history(root: &Path, pairs: Vec<(&str, &str)>) {
         message_indices: indices,
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
 
     let view_path = sessions_dir.join("main.json");

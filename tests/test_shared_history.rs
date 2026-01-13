@@ -3,7 +3,6 @@ use aico::historystore::store::HistoryStore;
 use aico::models::{DerivedContent, DisplayItem, HistoryRecord, Mode, Role, SessionView};
 use aico::session::Session;
 use assert_cmd::cargo::cargo_bin_cmd;
-use chrono::Utc;
 use std::fs;
 use tempfile::tempdir;
 
@@ -31,7 +30,7 @@ fn test_load_from_shared_history_restores_all_fields() {
             role: Role::User,
             content: "u_content".into(),
             mode: Mode::Conversation,
-            timestamp: Utc::now(),
+            timestamp: time::OffsetDateTime::now_utc(),
             passthrough: true,
             piped_content: Some("piped_data".into()),
             model: None,
@@ -48,7 +47,7 @@ fn test_load_from_shared_history_restores_all_fields() {
             role: Role::Assistant,
             content: "a_content".into(),
             mode: Mode::Diff,
-            timestamp: Utc::now(),
+            timestamp: time::OffsetDateTime::now_utc(),
             passthrough: false,
             piped_content: None,
             model: Some("m_rec".into()),
@@ -73,7 +72,7 @@ fn test_load_from_shared_history_restores_all_fields() {
         message_indices: vec![u_idx, a_idx],
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
     let view_path = sessions_dir.join("main.json");
     fs::write(&view_path, serde_json::to_string(&view).unwrap()).unwrap();
@@ -172,7 +171,7 @@ fn test_last_on_shared_session_diff() {
             role: Role::User,
             content: "p".into(),
             mode: Mode::Diff,
-            timestamp: Utc::now(),
+            timestamp: time::OffsetDateTime::now_utc(),
             passthrough: false,
             piped_content: None,
             model: None,
@@ -190,7 +189,7 @@ fn test_last_on_shared_session_diff() {
             role: Role::Assistant,
             content: "applying change".to_string(),
             mode: Mode::Diff,
-            timestamp: Utc::now(),
+            timestamp: time::OffsetDateTime::now_utc(),
             passthrough: false,
             piped_content: None,
             model: Some("m".into()),
@@ -211,7 +210,7 @@ fn test_last_on_shared_session_diff() {
         message_indices: vec![u, a],
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
     fs::write(
         aico_dir.join("sessions/main.json"),

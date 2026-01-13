@@ -125,7 +125,7 @@ fn test_log_with_only_dangling_messages() {
             role: aico::models::Role::User,
             content: "dangling content".to_string(),
             mode: aico::models::Mode::Conversation,
-            timestamp: chrono::Utc::now(),
+            timestamp: time::OffsetDateTime::now_utc(),
             passthrough: false,
             piped_content: None,
             model: None,

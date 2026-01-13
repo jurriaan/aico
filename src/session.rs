@@ -4,10 +4,10 @@ use crate::fs::atomic_write_json;
 use crate::historystore::store::HistoryStore;
 use crate::models::{ActiveWindowSummary, MessageWithContext};
 use crate::models::{HistoryRecord, SessionPointer, SessionView};
-use chrono::{DateTime, Utc};
 use crossterm::style::Stylize;
 use std::env;
 use std::path::{Path, PathBuf};
+use time::OffsetDateTime;
 
 #[derive(Debug)]
 pub struct Session {
@@ -431,20 +431,16 @@ impl Session {
         let horizon = history
             .first()
             .map(|m| m.record.timestamp)
-            .unwrap_or_else(|| {
-                "3000-01-01T00:00:00Z"
-                    .parse::<chrono::DateTime<chrono::Utc>>()
-                    .unwrap()
-            });
+            .unwrap_or_else(|| time::macros::datetime!(3000-01-01 00:00:00 UTC));
 
         let mut static_files = vec![];
         let mut floating_files = vec![];
-        let mut max_float_mtime = DateTime::<Utc>::MIN_UTC;
+        let mut max_float_mtime = OffsetDateTime::UNIX_EPOCH;
 
         for (rel_path, content) in &self.context_content {
             let abs_path = self.root.join(rel_path);
             if let Ok(meta) = std::fs::metadata(&abs_path) {
-                let modified: DateTime<Utc> = meta.modified().map_err(AicoError::Io)?.into();
+                let modified: OffsetDateTime = meta.modified().map_err(AicoError::Io)?.into();
 
                 if modified < horizon {
                     static_files.push((rel_path.as_str(), content.as_str()));

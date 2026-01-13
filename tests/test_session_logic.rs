@@ -133,7 +133,7 @@ fn test_get_active_history_filters_and_slices() {
         role: aico::models::Role::User,
         content: "dangling user".into(),
         mode: aico::models::Mode::Conversation,
-        timestamp: chrono::Utc::now(),
+        timestamp: time::OffsetDateTime::now_utc(),
         passthrough: false,
         piped_content: None,
         model: None,

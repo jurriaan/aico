@@ -1,7 +1,6 @@
 mod common;
 use aico::llm::executor::build_request;
 use aico::models::{HistoryRecord, Mode, Role, SessionView};
-use chrono::{Duration, Utc};
 use std::fs;
 use tempfile::tempdir;
 
@@ -24,7 +23,7 @@ async fn test_interleaved_chronology() {
             message_indices: vec![],
             history_start_pair: 0,
             excluded_pairs: vec![],
-            created_at: Utc::now(),
+            created_at: time::OffsetDateTime::now_utc(),
         },
         store: aico::historystore::store::HistoryStore::new(root.join(".aico/history")),
         context_content: std::collections::HashMap::new(),
@@ -41,7 +40,7 @@ async fn test_interleaved_chronology() {
     .unwrap();
 
     // T=5: Create File A
-    let ts_5 = Utc::now() - Duration::seconds(100);
+    let ts_5 = time::OffsetDateTime::now_utc() - time::Duration::seconds(100);
     let file_a = root.join("file_a.py");
     fs::write(&file_a, "content_a").unwrap();
     fs::File::open(&file_a)
@@ -50,7 +49,7 @@ async fn test_interleaved_chronology() {
         .unwrap();
 
     // T=10: Msg 1
-    let ts_10 = ts_5 + Duration::seconds(5);
+    let ts_10 = ts_5 + time::Duration::seconds(5);
     let u1 = session
         .store
         .append(&HistoryRecord {
@@ -74,7 +73,7 @@ async fn test_interleaved_chronology() {
             role: Role::Assistant,
             content: "Resp 1".into(),
             mode: Mode::Conversation,
-            timestamp: ts_10 + Duration::seconds(1),
+            timestamp: ts_10 + time::Duration::seconds(1),
             passthrough: false,
             piped_content: None,
             model: Some("m".into()),
@@ -89,7 +88,7 @@ async fn test_interleaved_chronology() {
     session.save_view().unwrap();
 
     // T=20: Msg 2
-    let ts_20 = ts_10 + Duration::seconds(10);
+    let ts_20 = ts_10 + time::Duration::seconds(10);
     let u2 = session
         .store
         .append(&HistoryRecord {
@@ -113,7 +112,7 @@ async fn test_interleaved_chronology() {
             role: Role::Assistant,
             content: "Resp 2".into(),
             mode: Mode::Conversation,
-            timestamp: ts_20 + Duration::seconds(1),
+            timestamp: ts_20 + time::Duration::seconds(1),
             passthrough: false,
             piped_content: None,
             model: Some("m".into()),
@@ -128,7 +127,7 @@ async fn test_interleaved_chronology() {
     session.save_view().unwrap();
 
     // T=25: Modify File B (Between Msg 2 and Prompt)
-    let ts_25 = ts_20 + Duration::seconds(5);
+    let ts_25 = ts_20 + time::Duration::seconds(5);
     let file_b = root.join("file_b.py");
     fs::write(&file_b, "content_b").unwrap();
     fs::File::open(&file_b)
@@ -201,7 +200,7 @@ async fn test_fresh_session_behavior() {
             message_indices: vec![],
             history_start_pair: 0,
             excluded_pairs: vec![],
-            created_at: Utc::now(),
+            created_at: time::OffsetDateTime::now_utc(),
         },
         store: aico::historystore::store::HistoryStore::new(root.join(".aico/history")),
         context_content: std::collections::HashMap::new(),
@@ -257,7 +256,7 @@ async fn test_fresh_session_baseline() {
             message_indices: vec![],
             history_start_pair: 0,
             excluded_pairs: vec![],
-            created_at: Utc::now(),
+            created_at: time::OffsetDateTime::now_utc(),
         },
         store: aico::historystore::store::HistoryStore::new(root.join(".aico/history")),
         context_content: std::collections::HashMap::new(),
@@ -312,7 +311,7 @@ async fn test_static_context_baseline() {
             message_indices: vec![],
             history_start_pair: 0,
             excluded_pairs: vec![],
-            created_at: Utc::now(),
+            created_at: time::OffsetDateTime::now_utc(),
         },
         store: aico::historystore::store::HistoryStore::new(root.join(".aico/history")),
         context_content: std::collections::HashMap::new(),
@@ -327,7 +326,7 @@ async fn test_static_context_baseline() {
     )
     .unwrap();
 
-    let ts_base = Utc::now() - Duration::seconds(100);
+    let ts_base = time::OffsetDateTime::now_utc() - time::Duration::seconds(100);
 
     // File created at T=base
     let file = root.join("baseline.py");
@@ -341,7 +340,7 @@ async fn test_static_context_baseline() {
     let mut session = aico::session::Session::load(root.join(".ai_session.json")).unwrap();
 
     // History starts at T=base + 10s
-    let ts_10 = ts_base + Duration::seconds(10);
+    let ts_10 = ts_base + time::Duration::seconds(10);
     let u1 = session
         .store
         .append(&HistoryRecord {
@@ -365,7 +364,7 @@ async fn test_static_context_baseline() {
             role: Role::Assistant,
             content: "r1".into(),
             mode: Mode::Conversation,
-            timestamp: ts_10 + Duration::seconds(1),
+            timestamp: ts_10 + time::Duration::seconds(1),
             passthrough: false,
             piped_content: None,
             model: Some("m".into()),
@@ -417,7 +416,7 @@ async fn test_floating_context_splicing() {
             message_indices: vec![],
             history_start_pair: 0,
             excluded_pairs: vec![],
-            created_at: Utc::now(),
+            created_at: time::OffsetDateTime::now_utc(),
         },
         store: aico::historystore::store::HistoryStore::new(root.join(".aico/history")),
         context_content: std::collections::HashMap::new(),
@@ -432,10 +431,10 @@ async fn test_floating_context_splicing() {
     )
     .unwrap();
 
-    let ts_base = Utc::now() - Duration::seconds(100);
+    let ts_base = time::OffsetDateTime::now_utc() - time::Duration::seconds(100);
 
     // Initial message p1/r1 at T=10
-    let ts_10 = ts_base + Duration::seconds(10);
+    let ts_10 = ts_base + time::Duration::seconds(10);
     let u1 = session
         .store
         .append(&HistoryRecord {
@@ -459,7 +458,7 @@ async fn test_floating_context_splicing() {
             role: Role::Assistant,
             content: "r1".into(),
             mode: Mode::Conversation,
-            timestamp: ts_10 + Duration::seconds(1),
+            timestamp: ts_10 + time::Duration::seconds(1),
             passthrough: false,
             piped_content: None,
             model: Some("m".into()),
@@ -472,7 +471,7 @@ async fn test_floating_context_splicing() {
         .unwrap();
 
     // Secondary message p2/r2 at T=30
-    let ts_30 = ts_base + Duration::seconds(30);
+    let ts_30 = ts_base + time::Duration::seconds(30);
     let u2 = session
         .store
         .append(&HistoryRecord {
@@ -496,7 +495,7 @@ async fn test_floating_context_splicing() {
             role: Role::Assistant,
             content: "r2".into(),
             mode: Mode::Conversation,
-            timestamp: ts_30 + Duration::seconds(1),
+            timestamp: ts_30 + time::Duration::seconds(1),
             passthrough: false,
             piped_content: None,
             model: Some("m".into()),
@@ -512,7 +511,7 @@ async fn test_floating_context_splicing() {
     session.save_view().unwrap();
 
     // File modified at T=20 (between Pair 1 and Pair 2)
-    let ts_20 = ts_base + Duration::seconds(20);
+    let ts_20 = ts_base + time::Duration::seconds(20);
     let file = root.join("update.py");
     fs::write(&file, "v2").unwrap();
     fs::File::open(&file)
@@ -566,7 +565,7 @@ async fn test_shifting_horizon() {
             message_indices: vec![],
             history_start_pair: 0,
             excluded_pairs: vec![],
-            created_at: Utc::now(),
+            created_at: time::OffsetDateTime::now_utc(),
         },
         store: aico::historystore::store::HistoryStore::new(root.join(".aico/history")),
         context_content: std::collections::HashMap::new(),
@@ -581,10 +580,10 @@ async fn test_shifting_horizon() {
     )
     .unwrap();
 
-    let ts_base = Utc::now() - Duration::seconds(100);
+    let ts_base = time::OffsetDateTime::now_utc() - time::Duration::seconds(100);
 
     // Turn 1: Establish horizon at T=Base + 10s
-    let ts_10 = ts_base + Duration::seconds(10);
+    let ts_10 = ts_base + time::Duration::seconds(10);
     let u1 = session
         .store
         .append(&HistoryRecord {
@@ -608,7 +607,7 @@ async fn test_shifting_horizon() {
             role: Role::Assistant,
             content: "r1".into(),
             mode: Mode::Conversation,
-            timestamp: ts_10 + Duration::seconds(1),
+            timestamp: ts_10 + time::Duration::seconds(1),
             passthrough: false,
             piped_content: None,
             model: Some("m".into()),
@@ -623,12 +622,12 @@ async fn test_shifting_horizon() {
     session.save_view().unwrap();
 
     // File modified at T=Base + 20s (Floating relative to Turn 1)
-    let ts_20 = ts_base + Duration::seconds(20);
+    let ts_20 = ts_base + time::Duration::seconds(20);
     let app_py = root.join("app.py");
     fs::write(&app_py, "v2").unwrap();
     fs::File::open(&app_py)
         .unwrap()
-        .set_modified(chrono::DateTime::<chrono::Utc>::from(ts_20).into())
+        .set_modified(ts_20.into())
         .unwrap();
 
     // Re-load session to simulate a new CLI invocation after file modification
@@ -649,7 +648,7 @@ async fn test_shifting_horizon() {
     // If start_pair=1 and there are no messages after pair 0, the window is empty, horizon is Year 3000.
     // Let's add a second pair to make it clear.
 
-    let ts_30 = ts_base + Duration::seconds(30);
+    let ts_30 = ts_base + time::Duration::seconds(30);
     let u2 = session
         .store
         .append(&HistoryRecord {
@@ -673,7 +672,7 @@ async fn test_shifting_horizon() {
             role: Role::Assistant,
             content: "r2".into(),
             mode: Mode::Conversation,
-            timestamp: ts_30 + Duration::seconds(1),
+            timestamp: ts_30 + time::Duration::seconds(1),
             passthrough: false,
             piped_content: None,
             model: Some("m".into()),
@@ -724,7 +723,7 @@ async fn test_multiple_updates_synchronization() {
             message_indices: vec![],
             history_start_pair: 0,
             excluded_pairs: vec![],
-            created_at: Utc::now(),
+            created_at: time::OffsetDateTime::now_utc(),
         },
         store: aico::historystore::store::HistoryStore::new(root.join(".aico/history")),
         context_content: std::collections::HashMap::new(),
@@ -739,10 +738,10 @@ async fn test_multiple_updates_synchronization() {
     )
     .unwrap();
 
-    let ts_base = Utc::now() - Duration::seconds(100);
+    let ts_base = time::OffsetDateTime::now_utc() - time::Duration::seconds(100);
 
     // T=10: Turn 1
-    let ts_10 = ts_base + Duration::seconds(10);
+    let ts_10 = ts_base + time::Duration::seconds(10);
     let u1 = session
         .store
         .append(&HistoryRecord {
@@ -766,7 +765,7 @@ async fn test_multiple_updates_synchronization() {
             role: Role::Assistant,
             content: "r1".into(),
             mode: Mode::Conversation,
-            timestamp: ts_10 + Duration::seconds(1),
+            timestamp: ts_10 + time::Duration::seconds(1),
             passthrough: false,
             piped_content: None,
             model: Some("m".into()),
@@ -786,23 +785,23 @@ async fn test_multiple_updates_synchronization() {
     fs::write(&a_py, "a2").unwrap();
     fs::write(&b_py, "b2").unwrap();
 
-    let ts_25 = ts_base + Duration::seconds(25);
-    let ts_30 = ts_base + Duration::seconds(30);
+    let ts_25 = ts_base + time::Duration::seconds(25);
+    let ts_30 = ts_base + time::Duration::seconds(30);
 
     fs::File::open(&a_py)
         .unwrap()
-        .set_modified(chrono::DateTime::<chrono::Utc>::from(ts_25).into())
+        .set_modified(ts_25.into())
         .unwrap();
     fs::File::open(&b_py)
         .unwrap()
-        .set_modified(chrono::DateTime::<chrono::Utc>::from(ts_30).into())
+        .set_modified(ts_30.into())
         .unwrap();
 
     // Re-load session to simulate a new CLI invocation after multiple file modifications
     let mut session = aico::session::Session::load(root.join(".ai_session.json")).unwrap();
 
     // T=40: Turn 2
-    let ts_40 = ts_base + Duration::seconds(40);
+    let ts_40 = ts_base + time::Duration::seconds(40);
     let u2 = session
         .store
         .append(&HistoryRecord {
@@ -826,7 +825,7 @@ async fn test_multiple_updates_synchronization() {
             role: Role::Assistant,
             content: "r2".into(),
             mode: Mode::Conversation,
-            timestamp: ts_40 + Duration::seconds(1),
+            timestamp: ts_40 + time::Duration::seconds(1),
             passthrough: false,
             piped_content: None,
             model: Some("m".into()),

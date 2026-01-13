@@ -1,10 +1,10 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
+use time::OffsetDateTime;
 
 use crate::fs::atomic_write_json;
 
@@ -24,7 +24,8 @@ fn get_openrouter_url() -> String {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ModelRegistry {
-    last_fetched: String,
+    #[serde(with = "time::serde::rfc3339")]
+    last_fetched: OffsetDateTime,
     models: HashMap<String, ModelInfo>,
 }
 
@@ -81,9 +82,7 @@ async fn ensure_cache(path: &PathBuf) -> Option<ModelRegistry> {
         crate::fs::read_json::<ModelRegistry>(path)
             .ok()
             .inspect(|reg| {
-                if let Ok(dt) = DateTime::parse_from_rfc3339(&reg.last_fetched)
-                    && (Utc::now() - dt.with_timezone(&Utc)).num_days() < CACHE_TTL_DAYS
-                {
+                if (OffsetDateTime::now_utc() - reg.last_fetched).whole_days() < CACHE_TTL_DAYS {
                     return;
                 }
                 should_fetch = true;
@@ -137,7 +136,7 @@ async fn update_registry(path: PathBuf) -> Result<(), Box<dyn std::error::Error>
     }
 
     let registry = ModelRegistry {
-        last_fetched: Utc::now().to_rfc3339(),
+        last_fetched: OffsetDateTime::now_utc(),
         models: all_models,
     };
 

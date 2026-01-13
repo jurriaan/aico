@@ -2,8 +2,8 @@ use crate::console::{display_cost_summary, is_stdin_terminal, is_stdout_terminal
 use crate::exceptions::AicoError;
 use crate::models::{DerivedContent, HistoryRecord, Mode, Role};
 use crate::session::Session;
-use chrono::Utc;
 use std::io::{self, Read, Write};
+use time::OffsetDateTime;
 
 pub async fn run_llm_flow(
     cli_prompt: Option<String>,
@@ -97,7 +97,7 @@ pub async fn run_llm_flow(
         role: Role::User,
         content: prompt_text,
         mode: mode.clone(),
-        timestamp: Utc::now(),
+        timestamp: OffsetDateTime::now_utc(),
         passthrough,
         piped_content,
         model: None,
@@ -112,7 +112,7 @@ pub async fn run_llm_flow(
         role: Role::Assistant,
         content: interaction.content,
         mode: mode.clone(),
-        timestamp: Utc::now(),
+        timestamp: OffsetDateTime::now_utc(),
         passthrough,
         piped_content: None,
         model: Some(active_model),

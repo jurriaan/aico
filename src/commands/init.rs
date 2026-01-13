@@ -2,11 +2,11 @@ use crate::consts::SESSION_FILE_NAME;
 use crate::exceptions::AicoError;
 use crate::fs::atomic_write_json;
 use crate::models::{SessionPointer, SessionView};
-use chrono::Utc;
 use std::env;
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use time::OffsetDateTime;
 
 pub fn run(model: String) -> Result<(), AicoError> {
     let current_dir = env::current_dir()?;
@@ -48,7 +48,7 @@ pub fn run(model: String) -> Result<(), AicoError> {
         message_indices: vec![],
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: Utc::now(),
+        created_at: OffsetDateTime::now_utc(),
     };
 
     let view_path = sessions_dir.join("main.json");

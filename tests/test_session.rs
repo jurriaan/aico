@@ -24,7 +24,7 @@ fn test_session_load_active() {
         message_indices: vec![],
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: chrono::Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
     let view_path = sessions_dir.join("main.json");
     fs::write(&view_path, serde_json::to_string(&view).unwrap()).unwrap();
@@ -130,7 +130,7 @@ fn test_resolve_pair_index_bounds_checking() {
         message_indices: vec![],
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: chrono::Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
     std::fs::write(
         aico_dir.join("sessions/main.json"),
@@ -295,7 +295,7 @@ async fn test_active_history_filtering_and_slicing() {
         role: aico::models::Role::User,
         content: "dangling".into(),
         mode: aico::models::Mode::Conversation,
-        timestamp: chrono::Utc::now(),
+        timestamp: time::OffsetDateTime::now_utc(),
         passthrough: false,
         piped_content: None,
         model: None,

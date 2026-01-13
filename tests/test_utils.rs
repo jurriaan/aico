@@ -117,7 +117,6 @@ fn test_calculate_and_display_cost_shows_cached_tokens() {
     use aico::historystore::store::HistoryStore;
     use aico::models::SessionView;
     use aico::models::TokenUsage;
-    use chrono::Utc;
 
     let temp = tempdir().unwrap();
     let root = temp.path();
@@ -131,7 +130,7 @@ fn test_calculate_and_display_cost_shows_cached_tokens() {
         message_indices: vec![],
         history_start_pair: 0,
         excluded_pairs: vec![],
-        created_at: Utc::now(),
+        created_at: time::OffsetDateTime::now_utc(),
     };
 
     let usage = TokenUsage {
