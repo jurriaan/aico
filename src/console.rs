@@ -5,10 +5,11 @@ use crossterm::style::Stylize;
 use std::io::IsTerminal;
 use unicode_width::UnicodeWidthStr;
 
+pub const ANSI_REGEX_PATTERN: &str = r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b].*?(\x1b\\|[\x07])";
+
 pub fn strip_ansi_codes(s: &str) -> String {
-    static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-        regex::Regex::new(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b].*?(\x1b\\|[\x07])").unwrap()
-    });
+    static RE: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(ANSI_REGEX_PATTERN).unwrap());
     RE.replace_all(s, "").to_string()
 }
 
