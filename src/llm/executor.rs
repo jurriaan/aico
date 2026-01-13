@@ -9,6 +9,28 @@ use crate::session::Session;
 use futures_util::TryStreamExt;
 use std::time::Instant;
 
+pub fn resolve_reasoning_delta(delta: &crate::llm::api_models::ChunkDelta) -> String {
+    if let Some(ref r) = delta.reasoning_content
+        && !r.is_empty()
+    {
+        return r.clone();
+    }
+
+    let mut result = String::new();
+    if let Some(ref details) = delta.reasoning_details {
+        for detail in details {
+            match detail {
+                crate::llm::api_models::ReasoningDetail::Text { text } => result.push_str(text),
+                crate::llm::api_models::ReasoningDetail::Summary { summary } => {
+                    result.push_str(summary)
+                }
+                _ => {}
+            }
+        }
+    }
+    result
+}
+
 pub fn extract_reasoning_header(reasoning_buffer: &str) -> Option<String> {
     static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         regex::Regex::new(r"(?m)(?:^#{1,6}\s+(?P<header>.+?)[\r\n])|(?:^[*]{2}(?P<bold>.+?)[*]{2})")
@@ -140,23 +162,7 @@ pub async fn execute_interaction(
     {
         if let Some(parsed) = parse_sse_line(&line) {
             if let Some(choice) = parsed.choices.first() {
-                let mut reasoning_delta = String::new();
-                if let Some(ref r) = choice.delta.reasoning_content {
-                    reasoning_delta.push_str(r);
-                }
-                if let Some(ref details) = choice.delta.reasoning_details {
-                    for detail in details {
-                        match detail {
-                            crate::llm::api_models::ReasoningDetail::Text { text } => {
-                                reasoning_delta.push_str(text)
-                            }
-                            crate::llm::api_models::ReasoningDetail::Summary { summary } => {
-                                reasoning_delta.push_str(summary)
-                            }
-                            _ => {}
-                        }
-                    }
-                }
+                let reasoning_delta = resolve_reasoning_delta(&choice.delta);
 
                 if !reasoning_delta.is_empty() {
                     reasoning_buffer.push_str(&reasoning_delta);

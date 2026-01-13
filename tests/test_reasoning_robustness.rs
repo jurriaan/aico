@@ -1,4 +1,8 @@
-use aico::llm::executor::extract_reasoning_header;
+mod common;
+use crate::common::setup_session;
+use aico::llm::executor::{extract_reasoning_header, resolve_reasoning_delta};
+use assert_cmd::cargo::cargo_bin_cmd;
+use mockito::Server;
 
 #[test]
 fn test_reasoning_extraction_consolidated() {
@@ -17,6 +21,8 @@ fn test_reasoning_extraction_consolidated() {
         // SPACING
         ("####   Spaced Header   \n", Some("Spaced Header")),
         ("**  Spaced Bold  **", Some("Spaced Bold")),
+        // UNICODE
+        ("### ✨ Brillant\n", Some("✨ Brillant")),
         // MALFORMED
         ("Just text", None),
         ("#### ", None),
@@ -70,4 +76,93 @@ fn test_extract_reasoning_header_incremental_bold() {
         Some("Refining Markdown Header Processing".to_string()),
         "Failed to match complete bold header"
     );
+}
+
+#[tokio::test]
+async fn test_reasoning_double_accumulation_regression() {
+    // Regression test: Ensure we don't double-accumulate if a provider sends
+    // both direct reasoning content and structured reasoning details.
+    let chunk_json = serde_json::json!({
+        "choices": [{
+            "delta": {
+                "reasoning_content": "**Analy",
+                "reasoning_details": [{
+                    "type": "reasoning.text",
+                    "text": "**Analy"
+                }]
+            }
+        }]
+    });
+
+    let parsed: aico::llm::api_models::ChatCompletionChunk =
+        serde_json::from_value(chunk_json).unwrap();
+    let choice = &parsed.choices[0];
+
+    let reasoning_delta = resolve_reasoning_delta(&choice.delta);
+
+    let header = extract_reasoning_header(&reasoning_delta);
+
+    assert_eq!(header, None, "Double accumulation detected: {:?}", header);
+}
+
+#[test]
+fn test_reasoning_fallback_when_content_is_present_but_empty() {
+    use aico::llm::api_models::{ChunkDelta, ReasoningDetail};
+    use aico::llm::executor::resolve_reasoning_delta;
+
+    let delta = ChunkDelta {
+        content: None,
+        reasoning_content: Some("".to_string()),
+        reasoning_details: Some(vec![ReasoningDetail::Text {
+            text: "### Real Plan\n".to_string(),
+        }]),
+    };
+
+    let result = resolve_reasoning_delta(&delta);
+    assert_eq!(
+        extract_reasoning_header(&result),
+        Some("Real Plan".to_string())
+    );
+}
+
+#[tokio::test]
+async fn test_reasoning_to_content_transition_ui() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    setup_session(root);
+
+    let mut server = Server::new_async().await;
+
+    // Test various reasoning field aliases and content transition.
+    let chunks = vec![
+        "data: {\"choices\":[{\"delta\":{\"reasoning_details\":[{\"type\":\"reasoning.text\",\"text\":\"Analyzing...\"}]}}]}",
+        "data: {\"choices\":[{\"delta\":{\"reasoning\":\"### Planning\\n1. Search for bugs\\n2. Fix them\"}}]}",
+        "data: {\"choices\":[{\"delta\":{\"content\":\"Found a bug.\"}}]}",
+        "data: [DONE]",
+    ];
+
+    let mock = server
+        .mock("POST", "/chat/completions")
+        .with_status(200)
+        .with_header("content-type", "text/event-stream")
+        .with_body(chunks.join("\n\n") + "\n\n")
+        .create_async()
+        .await;
+
+    let assert = cargo_bin_cmd!("aico")
+        .current_dir(root)
+        .env("OPENAI_API_KEY", "sk-test")
+        .env("OPENAI_BASE_URL", server.url())
+        .args([
+            "ask",
+            "--model",
+            "openai/o1+reasoning_effort=low",
+            "find bugs",
+        ])
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert!(stdout.contains("Found a bug."));
+    mock.assert_async().await;
 }
