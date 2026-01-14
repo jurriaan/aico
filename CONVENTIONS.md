@@ -41,7 +41,9 @@ When writing code, you MUST follow these project-specific principles:
 
 ### Modern Rust and Type Safety
 
-- **Strict Error Handling:** Use the `thiserror` crate for the `AicoError` enum. Do not unwrap/expect in business logic unless it is a guaranteed impossibility. Propagate errors via `Result<T, AicoError>`.
+- **Strict Error Handling:** Use the `thiserror` crate for the `AicoError` enum. Zero-tolerance for `unwrap()` or `expect()` in logic reachable by user input, file data, or network responses. Panics are unacceptable for a CLI tool; all potential failures must be handled gracefully.
+- **Unicode Safety:** Never slice strings using raw byte indices unless the offsets are derived from character-aware methods (e.g., `find` or `char_indices`). Avoid splitting multi-byte characters.
+- **Deterministic Output:** When iterating over `HashMap` or `HashSet` keys for output generation (e.g., XML blocks, CLI tables, or diffs), always sort the keys first to ensure stable results.
 - **Clippy & Formatting:** All code MUST be formatted with `rustfmt` and pass `clippy` lints without warnings.
 - **Serde for Data Contracts:** Use `serde` (`Serialize`, `Deserialize`) for all data structures that are serialized/deserialized (e.g., `.ai_session.json`) or received from external APIs. This ensures strict schema validation.
 - **Type-Driven Design:** Use Rust's type system to make invalid states unrepresentable. Prefer Enums (e.g., `Mode`, `Role`) over stringly-typed logic.
