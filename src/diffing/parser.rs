@@ -110,6 +110,11 @@ impl<'a> Iterator for StreamParser<'a> {
                     if consumed_bytes > 0 {
                         continue;
                     }
+
+                    // If waiting for data within a file block, do not fall through to Text parsing.
+                    if next_header_idx == self.buffer.len() {
+                        return None;
+                    }
                 }
 
                 if next_header_idx < self.buffer.len() {
@@ -127,8 +132,10 @@ impl<'a> Iterator for StreamParser<'a> {
                     return Some(StreamYieldItem::Text(text));
                 }
 
-                let path_match = caps.name("path").unwrap().as_str();
-                let path_str = path_match
+                let path_str = caps
+                    .name("path")
+                    .unwrap()
+                    .as_str()
                     .trim()
                     .trim_matches(|c| c == '*' || c == '`')
                     .to_string();
@@ -171,30 +178,31 @@ impl<'a> Iterator for StreamParser<'a> {
 
 impl<'a> StreamParser<'a> {
     fn is_incomplete(&self, text: &str) -> bool {
-        let is_marker_start = |t: &str, marker: &str| {
-            if let Some(idx) = t.find(marker) {
-                let line_start = t[..idx].rfind('\n').map(|i| i + 1).unwrap_or(0);
-                let indent = &t[line_start..idx];
-                return indent.chars().all(|c| c.is_whitespace());
+        // Check if we are inside an unclosed SEARCH block
+        if let Some(idx) = text.find("<<<<<<< SEARCH") {
+            let line_start = text[..idx].rfind('\n').map(|i| i + 1).unwrap_or(0);
+            let indent = &text[line_start..idx];
+            if indent.chars().all(|c| c.is_whitespace()) && !text.contains(">>>>>>> REPLACE") {
+                return true;
             }
-            false
-        };
-
-        if is_marker_start(text, "<<<<<<< SEARCH") && !is_marker_start(text, ">>>>>>> REPLACE") {
-            return true;
         }
 
+        // Check for partial tokens at the end of the buffer
         if let Some(last_line) = text.split('\n').next_back() {
-            let trimmed_line = last_line.trim_start();
-            if !trimmed_line.is_empty() {
-                if trimmed_line.starts_with("File:")
-                    && !text.ends_with('\n')
-                    && !text.ends_with('\r')
-                {
+            let trimmed = last_line.trim_start();
+            if !trimmed.is_empty() {
+                // Partial "File:" header?
+                // Note: We deliberately don't check for \r here, forcing a wait for \n
+                if "File:".starts_with(trimmed) && trimmed.len() < "File:".len() {
                     return true;
                 }
+                if trimmed.starts_with("File:") && !text.ends_with('\n') {
+                    return true;
+                }
+
+                // Partial markers?
                 for marker in ["<<<<<<< SEARCH", "=======", ">>>>>>> REPLACE"] {
-                    if marker.starts_with(trimmed_line) && marker.len() > trimmed_line.len() {
+                    if marker.starts_with(trimmed) && marker.len() > trimmed.len() {
                         return true;
                     }
                 }
@@ -249,7 +257,7 @@ impl<'a> StreamParser<'a> {
             let block_replace_start_content =
                 sep_line_end + consume_line_ending(&chunk[sep_line_end..]);
 
-            let (replace_line_start, replace_line_end) =
+            let (replace_line_start, _replace_line_end) =
                 match find_marker_with_indent(chunk, replace_pattern, sep_line_end, &indent) {
                     Some(pair) => pair,
                     None => {
@@ -265,7 +273,7 @@ impl<'a> StreamParser<'a> {
                 items.push(StreamYieldItem::Text(chunk[cursor..search_idx].to_string()));
             }
 
-            let final_end = replace_line_end + consume_line_ending(&chunk[replace_line_end..]);
+            let final_end = replace_line_start + indent.len() + replace_pattern.len();
 
             let search_content = &chunk[block_search_start_content..sep_line_start];
             let replace_content = &chunk[block_replace_start_content..replace_line_start];
@@ -365,6 +373,15 @@ impl<'a> StreamParser<'a> {
     pub fn finish(&mut self, last_chunk: &str) -> (String, Vec<StreamYieldItem>, Vec<String>) {
         // Process any final tokens received.
         self.feed(last_chunk);
+
+        // Force flush if we are stuck waiting for a newline at EOF for a complete block
+        if self.is_incomplete(&self.buffer)
+            && self.buffer.contains("<<<<<<< SEARCH")
+            && self.buffer.contains(">>>>>>> REPLACE")
+        {
+            self.buffer.push('\n');
+        }
+
         let mut items: Vec<_> = self.by_ref().collect();
 
         // Anything remaining in the buffer is now considered a trailing segment.
@@ -507,9 +524,10 @@ fn find_marker_with_indent(
                 .find('\n')
                 .map(|idx| found_idx + marker.len() + idx)
                 .unwrap_or(chunk.len());
+            // We ignore \r here to allow CRLF support, checking only for \n as line terminator
             if chunk[found_idx + marker.len()..line_end]
                 .chars()
-                .all(|c| c.is_whitespace() && c != '\n' && c != '\r')
+                .all(|c| c.is_whitespace() && c != '\n')
             {
                 return Some((line_start, line_end));
             }

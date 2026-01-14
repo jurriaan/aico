@@ -48,8 +48,15 @@ fn test_analyze_streaming_partial_output() {
         .into_iter()
         .filter_map(|y| y.to_display_item(false))
         .collect();
-    assert_eq!(items4.len(), 1);
+
+    assert_eq!(items4.len(), 2);
     assert!(matches!(items4[0], DisplayItem::Diff(_)));
+
+    // Verify the second item is just the newline
+    match &items4[1] {
+        DisplayItem::Markdown(s) => assert_eq!(s, "\n"),
+        _ => panic!("Expected trailing newline as Markdown"),
+    }
 }
 
 #[test]
