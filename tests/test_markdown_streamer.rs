@@ -216,3 +216,41 @@ fn test_math_collision_inside_code_blocks() {
         cleaned
     );
 }
+
+#[test]
+fn test_header_style_preserved_after_inline_code() {
+    let mut streamer = MarkdownStreamer::new();
+    let mut sink = Vec::new();
+
+    // Level 3 header in aico typically uses Cyan (Color 36)
+    let input = "### Header `code` Policy\n";
+
+    streamer
+        .print_chunk(&mut sink, input)
+        .expect("Write failed");
+    streamer.flush(&mut sink).expect("Flush failed");
+
+    let raw_output = String::from_utf8_lossy(&sink);
+
+    // Find the position of the text segments
+    let policy_idx = raw_output
+        .find(" Policy")
+        .expect("Could not find cell content ' Policy'");
+
+    // Check the ANSI codes immediately preceding " Policy" (after the code block ends).
+    let window_before_policy = &raw_output[policy_idx.saturating_sub(40)..policy_idx];
+
+    // The 'reset foreground' sequence is \x1b[39m. This is what currently breaks the header color.
+    assert!(
+        !window_before_policy.contains("\x1b[39m"),
+        "After inline code in a header, the foreground was incorrectly reset to default terminal color.\nFound forbidden sequence: \\x1b[39m in context: {:?}",
+        window_before_policy
+    );
+
+    // It should contain the color sequence for the header (Cyan = 36)
+    assert!(
+        window_before_policy.contains("36"),
+        "Header color (Cyan/36) was not restored after inline code.\nFound context: {:?}",
+        window_before_policy
+    );
+}

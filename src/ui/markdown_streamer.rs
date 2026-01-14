@@ -330,7 +330,7 @@ impl MarkdownStreamer {
                 1 => {
                     queue!(w, Print(&prefix), Print("\n"))?;
 
-                    let styled_text = self.render_inline_to_string(text, None);
+                    let styled_text = self.render_inline_to_string(text, None, Some("\x1b[1m"));
                     let lines = self.wrap_ansi(&styled_text, available_width);
 
                     for line in lines {
@@ -351,7 +351,7 @@ impl MarkdownStreamer {
                 2 => {
                     queue!(w, Print(&prefix), Print("\n"))?;
 
-                    let styled_text = self.render_inline_to_string(text, None);
+                    let styled_text = self.render_inline_to_string(text, None, Some("\x1b[1;94m"));
                     let lines = self.wrap_ansi(&styled_text, available_width);
 
                     for line in lines {
@@ -372,19 +372,19 @@ impl MarkdownStreamer {
                 _ => {}
             }
 
-            let styled_text = self.render_inline_to_string(text, None);
-            let formatted_text = match level {
-                3 => {
-                    queue!(w, Print(&prefix))?;
-                    format!("\x1b[1;36m{}\x1b[0m", styled_text)
-                }
-                _ => {
-                    queue!(w, Print(&prefix))?;
-                    format!("\x1b[1;33m{}\x1b[0m", styled_text)
-                }
+            let (style_str, styled_text) = match level {
+                3 => (
+                    "\x1b[1;36m",
+                    self.render_inline_to_string(text, None, Some("\x1b[1;36m")),
+                ),
+                _ => (
+                    "\x1b[1;33m",
+                    self.render_inline_to_string(text, None, Some("\x1b[1;33m")),
+                ),
             };
 
-            queue!(w, Print(formatted_text), Print("\n"))?;
+            queue!(w, Print(&prefix))?;
+            queue!(w, Print(style_str), Print(styled_text), Print("\x1b[0m\n"))?;
             return Ok(());
         }
 
@@ -437,7 +437,7 @@ impl MarkdownStreamer {
             let hang_indent_str = " ".repeat((nesting_level * 2) + bullet_vis_width);
 
             // 1. Render Styles First
-            let styled_text = self.render_inline_to_string(text_part, None);
+            let styled_text = self.render_inline_to_string(text_part, None, None);
 
             // 2. Wrap using ANSI-aware logic. We wrap the content only, manually prepending and bullets/indent.
             let content_width = available_width.saturating_sub(hang_indent_str.len());
@@ -492,7 +492,7 @@ impl MarkdownStreamer {
             }
         } else {
             // Apply inline formatting FIRST, then wrap preserving ANSI
-            let styled_text = self.render_inline_to_string(clean_content, None);
+            let styled_text = self.render_inline_to_string(clean_content, None, None);
             let lines = self.wrap_ansi(&styled_text, available_width);
 
             for line in lines {
@@ -684,9 +684,12 @@ impl MarkdownStreamer {
 
             // 1. Render style FIRST (preserves Markdown across wraps)
             let styled_text = if !self.table_header_printed {
-                format!("\x1b[1;33m{}\x1b[0m", clean_cell)
+                format!(
+                    "\x1b[1;33m{}\x1b[0m",
+                    self.render_inline_to_string(clean_cell, Some(bg_color), Some("\x1b[1;33m"))
+                )
             } else {
-                self.render_inline_to_string(clean_cell, Some(bg_color))
+                self.render_inline_to_string(clean_cell, Some(bg_color), None)
             };
 
             // 2. Wrap using ANSI-aware logic
@@ -831,7 +834,12 @@ impl MarkdownStreamer {
         Ok(())
     }
 
-    pub fn render_inline_to_string(&self, text: &str, default_bg: Option<Color>) -> String {
+    pub fn render_inline_to_string(
+        &self,
+        text: &str,
+        default_bg: Option<Color>,
+        restore_fg: Option<&str>,
+    ) -> String {
         let re_link = get_re(&RE_LINK);
         let re_tok = get_re(&RE_TOKENIZER);
 
@@ -872,7 +880,11 @@ impl MarkdownStreamer {
                     } else {
                         out.push_str("\x1b[49m");
                     }
-                    out.push_str("\x1b[39m");
+                    if let Some(fg) = restore_fg {
+                        out.push_str(fg);
+                    } else {
+                        out.push_str("\x1b[39m");
+                    }
                 }
                 let body = token.trim_matches('`');
                 if !body.is_empty() {
