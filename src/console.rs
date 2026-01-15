@@ -14,9 +14,7 @@ pub fn strip_ansi_codes(s: &str) -> String {
 }
 
 pub fn get_terminal_width() -> usize {
-    static TERMINAL_WIDTH: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
-
-    *TERMINAL_WIDTH.get_or_init(|| {
+    static TERMINAL_WIDTH: std::sync::LazyLock<usize> = std::sync::LazyLock::new(|| {
         // 1. Check AICO_COLUMNS
         if let Ok(w) = std::env::var("AICO_COLUMNS").map(|s| s.parse().unwrap_or(0))
             && w > 0
@@ -40,7 +38,9 @@ pub fn get_terminal_width() -> usize {
 
         // 4. Default Fallback
         80
-    })
+    });
+
+    *TERMINAL_WIDTH
 }
 
 pub fn draw_panel(title: &str, lines: &[String], width: usize) {
@@ -94,24 +94,22 @@ pub fn is_stdin_terminal() -> bool {
 
 use crate::models::Mode;
 
-pub fn format_piped_output(
-    unified_diff: &Option<String>,
-    raw_content: &str,
+pub fn format_piped_output<'a>(
+    unified_diff: &'a Option<String>,
+    raw_content: &'a str,
     mode: &Mode,
-) -> String {
-    // 1. Strict contract for 'gen' (diff) mode: only print the unified diff; otherwise empty.
+) -> &'a str {
     if matches!(mode, Mode::Diff) {
-        return unified_diff.as_deref().unwrap_or("").to_string();
+        return unified_diff.as_deref().unwrap_or("");
     }
 
-    // 2. Flexible contract for other modes: prefer a valid diff, else fall back to raw content.
     if let Some(diff) = unified_diff
         && !diff.is_empty()
     {
-        return diff.clone();
+        return diff.as_str();
     }
 
-    raw_content.to_string()
+    raw_content
 }
 
 pub fn format_tokens(n: u32) -> String {
@@ -124,16 +122,24 @@ pub fn format_tokens(n: u32) -> String {
 
 pub fn format_thousands(n: u32) -> String {
     let s = n.to_string();
-    let bytes = s.as_bytes();
-    let mut result = String::new();
-    let len = bytes.len();
+    let len = s.len();
+    let num_commas = (len.saturating_sub(1)) / 3;
+    let mut result = String::with_capacity(len + num_commas);
 
-    for (i, &byte) in bytes.iter().enumerate() {
-        result.push(byte as char);
-        let remaining = len - i - 1;
-        if remaining > 0 && remaining.is_multiple_of(3) {
+    let offset = len % 3;
+    let mut chars = s.chars();
+
+    if offset > 0 {
+        for _ in 0..offset {
+            result.push(chars.next().unwrap());
+        }
+    }
+
+    for (i, c) in chars.enumerate() {
+        if i % 3 == 0 && (offset > 0 || i > 0) {
             result.push(',');
         }
+        result.push(c);
     }
     result
 }

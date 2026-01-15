@@ -1,5 +1,5 @@
 use crate::exceptions::AicoError;
-use crate::llm::tokens::{count_heuristic, count_max_alignment_tokens, count_system_tokens};
+use crate::llm::tokens::count_heuristic;
 use crate::model_registry::get_model_info;
 use crate::models::TokenInfo;
 use crate::session::Session;
@@ -8,6 +8,8 @@ use comfy_table::Row;
 use comfy_table::Width;
 use comfy_table::{Attribute, Cell, CellAlignment, Table};
 use crossterm::style::Stylize;
+use std::fmt::Write as _;
+use std::io::Write;
 
 use crate::historystore::reconstruct::reconstruct_history;
 
@@ -21,12 +23,12 @@ pub async fn run(json_output: bool) -> Result<(), AicoError> {
     let components = vec![
         TokenInfo {
             description: "system prompt".into(),
-            tokens: count_system_tokens(),
+            tokens: crate::llm::tokens::SYSTEM_TOKEN_COUNT,
             cost: None,
         },
         TokenInfo {
             description: "alignment prompts (worst-case)".into(),
-            tokens: count_max_alignment_tokens(),
+            tokens: crate::llm::tokens::MAX_ALIGNMENT_TOKENS,
             cost: None,
         },
     ];
@@ -43,7 +45,6 @@ pub async fn run(json_output: bool) -> Result<(), AicoError> {
         let rec = &item.record;
         if rec.role == crate::models::Role::User && !rec.passthrough {
             if let Some(ref piped) = rec.piped_content {
-                use std::fmt::Write;
                 let _ = write!(
                     history_counter,
                     "<stdin_content>\n{}\n</stdin_content>\n<prompt>\n{}\n</prompt>",
@@ -65,42 +66,28 @@ pub async fn run(json_output: bool) -> Result<(), AicoError> {
     };
 
     // 4. Context Files
-    let mut file_components = std::thread::scope(|s| {
-        let mut handles = Vec::new();
-        let mut sorted_keys: Vec<_> = session.context_content.keys().collect();
-        sorted_keys.sort();
+    let mut sorted_keys: Vec<_> = session.context_content.keys().collect();
+    sorted_keys.sort();
 
-        for rel_path in sorted_keys {
+    let mut file_components: Vec<TokenInfo> = sorted_keys
+        .into_iter()
+        .map(|rel_path| {
             let content = &session.context_content[rel_path];
-            handles.push(s.spawn(move || {
-                let wrapper = crate::models::format_file_context_xml(rel_path, content);
-                TokenInfo {
-                    description: rel_path.clone(),
-                    tokens: count_heuristic(&wrapper),
-                    cost: None,
-                }
-            }));
-        }
-        handles
-            .into_iter()
-            .map(|h| h.join().unwrap())
-            .collect::<Vec<_>>()
-    });
-
-    // Ensure they are strictly sorted by description after parallel processing
-    file_components.sort_by(|a, b| a.description.cmp(&b.description));
-
-    let mut missing_files = Vec::new();
-    for rel_path in &session.view.context_files {
-        if !session.context_content.contains_key(rel_path) {
-            missing_files.push(rel_path.clone());
-        }
-    }
+            let mut buffer = String::new();
+            crate::llm::executor::append_file_context_xml(&mut buffer, rel_path, content);
+            TokenInfo {
+                description: rel_path.clone(),
+                tokens: count_heuristic(&buffer),
+                cost: None,
+            }
+        })
+        .collect();
 
     // Calculate Costs and Totals
-    let mut all_included = components.clone();
-    all_included.push(history_comp.clone());
-    all_included.extend(file_components.clone());
+    let has_context_files = !file_components.is_empty();
+    let mut all_included = components;
+    all_included.push(history_comp);
+    all_included.append(&mut file_components);
 
     let mut total_tokens = 0;
     let mut total_cost = 0.0;
@@ -151,10 +138,15 @@ pub async fn run(json_output: bool) -> Result<(), AicoError> {
                 None
             },
         };
-        println!(
-            "{}",
-            serde_json::to_string(&resp).map_err(|e| AicoError::Session(e.to_string()))?
-        );
+        {
+            let mut stdout = std::io::stdout();
+            if let Err(e) = serde_json::to_writer(&mut stdout, &resp)
+                && !e.is_io()
+            {
+                return Err(AicoError::Session(e.to_string()));
+            }
+            let _ = writeln!(stdout);
+        }
         return Ok(());
     }
 
@@ -267,7 +259,7 @@ pub async fn run(json_output: bool) -> Result<(), AicoError> {
     }
 
     // 4. Context Files
-    if !file_components.is_empty() {
+    if has_context_files {
         let mut separator = Row::from(vec![
             Cell::new("─".repeat(width)),
             Cell::new("─".repeat(width)),

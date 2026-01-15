@@ -2,6 +2,7 @@ use crate::console::is_stdout_terminal;
 use crate::exceptions::AicoError;
 use crate::models::{DisplayItem, MessagePairJson, MessageWithId};
 use crate::session::Session;
+use std::io::Write;
 
 pub fn run(
     index_str: String,
@@ -27,12 +28,20 @@ pub fn run(
                 id: asst_id,
             },
         };
-        // Use serde_json::to_string_pretty if TTY, but here we prioritize machine-readable parity
-        if is_stdout_terminal() {
-            println!("{}", serde_json::to_string_pretty(&output)?);
+
+        let mut stdout = std::io::stdout();
+        let res = if crate::console::is_stdout_terminal() {
+            serde_json::to_writer_pretty(&mut stdout, &output)
         } else {
-            println!("{}", serde_json::to_string(&output)?);
+            serde_json::to_writer(&mut stdout, &output)
+        };
+
+        if let Err(e) = res
+            && !e.is_io()
+        {
+            return Err(AicoError::Serialization(e));
         }
+        let _ = writeln!(stdout);
         return Ok(());
     }
 

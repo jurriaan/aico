@@ -1,9 +1,10 @@
 use crate::consts::SESSION_FILE_NAME;
 use crate::exceptions::AicoError;
-use crate::fs::atomic_write_text;
+use crate::fs::atomic_write_json;
 use crate::historystore::store::HistoryStore;
 use crate::models::ActiveWindowSummary;
 use crate::models::{HistoryRecord, SessionPointer, SessionView};
+use crossterm::style::Stylize;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -88,26 +89,16 @@ impl Session {
         let store = HistoryStore::new(history_root);
 
         // --- Eager Loading ---
-        let mut sorted_files = view.context_files.clone();
-        sorted_files.sort();
-
-        let context_content = std::thread::scope(|s| {
-            let mut handles = Vec::new();
-            for rel_path in &sorted_files {
+        let context_content: std::collections::HashMap<String, String> = view
+            .context_files
+            .iter()
+            .filter_map(|rel_path| {
                 let abs_path = root.join(rel_path);
-                handles.push(s.spawn(move || {
-                    std::fs::read_to_string(&abs_path).map(|content| (rel_path.clone(), content))
-                }));
-            }
-
-            let mut map = std::collections::HashMap::with_capacity(sorted_files.len());
-            for h in handles {
-                if let Ok(Ok((path, content))) = h.join() {
-                    map.insert(path, content);
-                }
-            }
-            map
-        });
+                std::fs::read_to_string(&abs_path)
+                    .ok()
+                    .map(|content| (rel_path.clone(), content))
+            })
+            .collect();
 
         let history = std::collections::HashMap::new();
 
@@ -123,8 +114,7 @@ impl Session {
     }
 
     pub fn save_view(&self) -> Result<(), AicoError> {
-        let json = serde_json::to_string(&self.view)?;
-        atomic_write_text(&self.view_path, &json)
+        crate::fs::atomic_write_json(&self.view_path, &self.view)
     }
 
     pub fn sessions_dir(&self) -> PathBuf {
@@ -149,8 +139,8 @@ impl Session {
             path: rel_path.to_string_lossy().replace('\\', "/"),
         };
 
-        let json = serde_json::to_string(&pointer)?;
-        atomic_write_text(&self.file_path, &json)?;
+        atomic_write_json(&self.file_path, &pointer)?;
+
         Ok(())
     }
 
@@ -160,6 +150,53 @@ impl Session {
 
     pub fn resolve_pair_index(&self, index_str: &str) -> Result<usize, AicoError> {
         self.resolve_pair_index_internal(index_str, false)
+    }
+
+    pub fn resolve_indices(&self, indices: &[String]) -> Result<Vec<usize>, AicoError> {
+        let num_pairs = self.num_pairs();
+        let mut result = Vec::new();
+        // Default to last if empty
+        if indices.is_empty() {
+            if num_pairs == 0 {
+                return Err(AicoError::InvalidInput(
+                    "No message pairs found in history.".into(),
+                ));
+            }
+            result.push(num_pairs - 1);
+            return Ok(result);
+        }
+
+        for arg in indices {
+            // Handle ranges "0..2"
+            if let Some((start_str, end_str)) = arg.split_once("..") {
+                let is_start_neg = start_str.starts_with('-');
+                let is_end_neg = end_str.starts_with('-');
+
+                if is_start_neg != is_end_neg {
+                    return Err(AicoError::InvalidInput(format!(
+                        "Invalid index '{}'. Mixed positive and negative indices in a range are not supported.",
+                        arg
+                    )));
+                }
+
+                let start_idx = self.resolve_pair_index_internal(start_str, false)? as isize;
+                let end_idx = self.resolve_pair_index_internal(end_str, false)? as isize;
+
+                let step = if start_idx <= end_idx { 1 } else { -1 };
+                let len = (start_idx - end_idx).unsigned_abs() + 1;
+
+                result.extend(
+                    std::iter::successors(Some(start_idx), move |&n| Some(n + step))
+                        .take(len)
+                        .map(|i| i as usize),
+                );
+            } else {
+                result.push(self.resolve_pair_index_internal(arg, false)?);
+            }
+        }
+        result.sort();
+        result.dedup();
+        Ok(result)
     }
 
     pub fn resolve_pair_index_internal(
@@ -351,24 +388,25 @@ impl Session {
     }
 
     pub fn warn_missing_files(&self) {
-        use crossterm::style::Stylize;
-        let mut missing: Vec<String> = self
+        // Collect references (&String) instead of cloning
+        let mut missing: Vec<&String> = self
             .view
             .context_files
             .iter()
             .filter(|f| !self.context_content.contains_key(*f))
-            .cloned()
             .collect();
 
         if !missing.is_empty() {
             missing.sort();
+            let joined = missing
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+
             eprintln!(
                 "{}",
-                format!(
-                    "Warning: Context files not found on disk: {}",
-                    missing.join(" ")
-                )
-                .yellow()
+                format!("Warning: Context files not found on disk: {}", joined).yellow()
             );
         }
     }
@@ -445,7 +483,7 @@ impl Session {
     pub fn resolve_context_state(
         &self,
         history: &[crate::models::MessageWithContext],
-    ) -> Result<crate::models::ContextState, AicoError> {
+    ) -> Result<crate::models::ContextState<'_>, AicoError> {
         let horizon = history
             .first()
             .map(|m| m.record.timestamp)
@@ -473,26 +511,25 @@ impl Session {
                 let mtime = chrono::TimeZone::timestamp_opt(&chrono::Utc, mtime_secs, 0).unwrap();
 
                 if mtime < horizon {
-                    static_files.push((rel_path.clone(), content.clone()));
+                    static_files.push((rel_path.as_str(), content.as_str()));
                 } else {
                     if mtime > latest_floating_mtime {
                         latest_floating_mtime = mtime;
                     }
-                    floating_files.push((rel_path.clone(), content.clone()));
+                    floating_files.push((rel_path.as_str(), content.as_str()));
                 }
             }
         }
 
         // Determine Splice Point
-        let mut splice_idx = history.len();
-        if !floating_files.is_empty() {
-            for (i, item) in history.iter().enumerate() {
-                if item.record.timestamp > latest_floating_mtime {
-                    splice_idx = i;
-                    break;
-                }
-            }
-        }
+        let splice_idx = if floating_files.is_empty() {
+            history.len()
+        } else {
+            history
+                .iter()
+                .position(|item| item.record.timestamp > latest_floating_mtime)
+                .unwrap_or(history.len())
+        };
 
         Ok(crate::models::ContextState {
             static_files,

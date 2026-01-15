@@ -25,6 +25,28 @@ pub fn atomic_write_text<P: AsRef<Path>>(path: P, text: &str) -> Result<(), Aico
     Ok(())
 }
 
+pub fn atomic_write_json<T: serde::Serialize>(
+    path: &std::path::Path,
+    data: &T,
+) -> Result<(), crate::exceptions::AicoError> {
+    let dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    std::fs::create_dir_all(dir)?;
+
+    let mut temp_file = tempfile::NamedTempFile::new_in(dir)?;
+
+    // Buffer the writer for performance
+    {
+        let mut writer = std::io::BufWriter::new(&mut temp_file);
+        serde_json::to_writer(&mut writer, data)?;
+        writer.flush()?;
+    }
+
+    temp_file
+        .persist(path)
+        .map_err(|e| crate::exceptions::AicoError::Io(e.error))?;
+    Ok(())
+}
+
 /// Validates input paths relative to session root.
 pub fn validate_input_paths(
     session_root: &Path,
@@ -39,9 +61,10 @@ pub fn validate_input_paths(
         Err(_) => return (vec![], true),
     };
 
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
     for path in file_paths {
         // 1. Resolve to logical absolute path preserving symlinks segments where possible
-        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let logical_abs_path = normalize_path(&cwd.join(path));
 
         // 2. Existence check (optional but standard)
@@ -105,27 +128,19 @@ pub fn validate_input_paths(
     (valid_rels, has_errors)
 }
 
-/// Simple path normalization (like python os.path.normpath)
 fn normalize_path(path: &Path) -> PathBuf {
-    let components = path.components().peekable();
-    let mut ret = PathBuf::new();
-
-    for component in components {
-        match component {
-            Component::Prefix(..) => {
-                ret.push(component.as_os_str());
-            }
-            Component::RootDir => {
-                ret.push(component.as_os_str());
-            }
-            Component::CurDir => {}
-            Component::ParentDir => {
-                ret.pop();
-            }
-            Component::Normal(c) => {
-                ret.push(c);
-            }
-        }
-    }
-    ret
+    path.components()
+        .fold(PathBuf::new(), |mut acc, component| {
+            match component {
+                // ".." means pop the last segment
+                Component::ParentDir => {
+                    acc.pop();
+                }
+                // "." means do nothing
+                Component::CurDir => {}
+                // Normal segments, Root, and Prefix just get pushed
+                c => acc.push(c.as_os_str()),
+            };
+            acc
+        })
 }

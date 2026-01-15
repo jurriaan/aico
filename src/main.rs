@@ -323,9 +323,7 @@ async fn main() {
 
 fn print_help_with_addons() {
     let mut cmd = Cli::command();
-    let mut help = Vec::new();
-    cmd.write_help(&mut help).unwrap();
-    print!("{}", String::from_utf8_lossy(&help));
+    let _ = cmd.write_help(&mut std::io::stdout());
 
     let addons = aico::addons::discover_addons();
     if !addons.is_empty() {

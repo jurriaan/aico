@@ -301,23 +301,13 @@ pub struct InteractionConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct ContextState {
-    pub static_files: Vec<(String, String)>,
-    pub floating_files: Vec<(String, String)>,
+pub struct ContextState<'a> {
+    pub static_files: Vec<(&'a str, &'a str)>,
+    pub floating_files: Vec<(&'a str, &'a str)>,
     pub splice_idx: usize,
 }
 
 // --- Helpers ---
-
-pub fn format_file_context_xml(path: &str, content: &str) -> String {
-    let mut block = format!("  <file path=\"{}\">\n", path);
-    block.push_str(content);
-    if !content.ends_with('\n') {
-        block.push('\n');
-    }
-    block.push_str("  </file>\n");
-    block
-}
 
 pub fn default_timestamp() -> DateTime<Utc> {
     Utc::now()

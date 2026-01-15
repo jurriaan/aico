@@ -1,5 +1,5 @@
 use crate::exceptions::AicoError;
-use crate::fs::atomic_write_text;
+use crate::fs::atomic_write_json;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::env;
@@ -61,8 +61,7 @@ fn save_trusted_paths(paths: HashSet<String>) -> Result<(), AicoError> {
         trusted_projects: vec_paths,
     };
 
-    let json = serde_json::to_string_pretty(&config)?;
-    atomic_write_text(&trust_file, &json)?;
+    atomic_write_json(&trust_file, &config)?;
 
     #[cfg(unix)]
     {

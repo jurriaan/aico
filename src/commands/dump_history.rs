@@ -1,23 +1,23 @@
 use crate::exceptions::AicoError;
 use crate::historystore::reconstruct::reconstruct_history;
 use crate::session::Session;
+use std::io::Write;
 
 pub fn run() -> Result<(), AicoError> {
     let session = Session::load_active()?;
     let history_vec = reconstruct_history(&session.store, &session.view, false)?;
 
-    let mut log_parts = Vec::new();
+    let mut stdout = std::io::stdout().lock();
 
-    for item in history_vec {
-        let role = format!("{:?}", item.record.role).to_lowercase();
-        log_parts.push(format!(
+    for (i, item) in history_vec.iter().enumerate() {
+        if i > 0 {
+            writeln!(stdout, "\n")?;
+        }
+        write!(
+            stdout,
             "<!-- llm-role: {} -->\n{}",
-            role, item.record.content
-        ));
-    }
-
-    if !log_parts.is_empty() {
-        print!("{}", log_parts.join("\n\n"));
+            item.record.role, item.record.content
+        )?;
     }
 
     Ok(())

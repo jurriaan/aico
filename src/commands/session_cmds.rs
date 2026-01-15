@@ -1,5 +1,5 @@
 use crate::exceptions::AicoError;
-use crate::fs::atomic_write_text;
+use crate::fs::atomic_write_json;
 use crate::models::{SessionView, default_timestamp};
 use crate::session::Session;
 use std::fs;
@@ -19,16 +19,13 @@ pub fn list() -> Result<(), AicoError> {
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
 
-    let mut views = Vec::new();
-    for entry in fs::read_dir(sessions_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) == Some("json")
-            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-        {
-            views.push(stem.to_string());
-        }
-    }
+    let mut views: Vec<_> = fs::read_dir(sessions_dir)?
+        .filter_map(Result::ok) // Ignore IO errors on specific entries
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "json"))
+        .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .collect();
+
     views.sort();
 
     if views.is_empty() {
@@ -76,7 +73,7 @@ pub fn new_session(name: String, model: Option<String>) -> Result<(), AicoError>
         )));
     }
 
-    let new_model = model.unwrap_or(session.view.model.clone());
+    let new_model = model.unwrap_or_else(|| session.view.model.clone());
 
     let view = SessionView {
         model: new_model.clone(),
@@ -87,8 +84,7 @@ pub fn new_session(name: String, model: Option<String>) -> Result<(), AicoError>
         created_at: default_timestamp(),
     };
 
-    let json = serde_json::to_string(&view)?;
-    atomic_write_text(&new_view_path, &json)?;
+    atomic_write_json(&new_view_path, &view)?;
 
     session.switch_to_view(&new_view_path)?;
     println!(

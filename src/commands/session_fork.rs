@@ -1,5 +1,5 @@
 use crate::exceptions::AicoError;
-use crate::fs::atomic_write_text;
+use crate::fs::atomic_write_json;
 use crate::models::SessionPointer;
 use crate::session::Session;
 use std::fs;
@@ -51,8 +51,7 @@ pub fn run(
         new_view.excluded_pairs.retain(|&idx| idx <= limit);
     }
 
-    let view_json = serde_json::to_string(&new_view)?;
-    atomic_write_text(&new_view_path, &view_json)?;
+    atomic_write_json(&new_view_path, &new_view)?;
 
     if exec_args.is_empty() {
         // Standard fork: update pointer
@@ -76,9 +75,8 @@ pub fn run(
             pointer_type: "aico_session_pointer_v1".to_string(),
             path: rel_view_path.to_string_lossy().replace('\\', "/"),
         };
-        let ptr_json = serde_json::to_string(&pointer)?;
-        temp_ptr.as_file_mut().set_len(0)?;
-        temp_ptr.write_all(ptr_json.as_bytes())?;
+        serde_json::to_writer(&mut temp_ptr, &pointer)?;
+        temp_ptr.flush()?;
 
         let mut cmd = Command::new(&exec_args[0]);
         cmd.args(&exec_args[1..]);

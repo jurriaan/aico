@@ -1,6 +1,6 @@
 use crate::consts::SESSION_FILE_NAME;
 use crate::exceptions::AicoError;
-use crate::fs::atomic_write_text;
+use crate::fs::atomic_write_json;
 use crate::models::{SessionPointer, SessionView};
 use chrono::Utc;
 use std::env;
@@ -52,16 +52,14 @@ pub fn run(model: String) -> Result<(), AicoError> {
     };
 
     let view_path = sessions_dir.join("main.json");
-    let view_json = serde_json::to_string(&view)?;
-    atomic_write_text(&view_path, &view_json)?;
+    atomic_write_json(&view_path, &view)?;
 
     // 4. Create Pointer (relative path)
     let pointer = SessionPointer {
         pointer_type: "aico_session_pointer_v1".to_string(),
         path: ".aico/sessions/main.json".to_string(),
     };
-    let pointer_json = serde_json::to_string(&pointer)?;
-    atomic_write_text(&session_file, &pointer_json)?;
+    atomic_write_json(&session_file, &pointer)?;
 
     println!("Initialized session file: {}", SESSION_FILE_NAME);
 

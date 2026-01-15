@@ -38,22 +38,21 @@ pub fn run() -> Result<(), AicoError> {
     let mut dangling_history = Vec::new();
 
     // Separate paired vs dangling for Python parity
-    let mut i = 0;
-    while i < history_vec.len() {
-        let current = &history_vec[i];
-        let next = history_vec.get(i + 1);
+    let mut iter = history_vec.iter().peekable();
 
-        if current.record.role == Role::User
-            && next.is_some_and(|n| {
-                n.record.role == Role::Assistant && n.pair_index == current.pair_index
-            })
-        {
+    while let Some(current) = iter.next() {
+        // Check if the NEXT item completes a pair with the CURRENT item
+        let is_pair = current.record.role == Role::User
+            && iter.peek().is_some_and(|next| {
+                next.record.role == Role::Assistant && next.pair_index == current.pair_index
+            });
+
+        if is_pair {
             paired_history.push(current);
-            paired_history.push(next.unwrap());
-            i += 2;
+            // Safely consume the assistant message we just peeked at
+            paired_history.push(iter.next().unwrap());
         } else {
             dangling_history.push(current);
-            i += 1;
         }
     }
 
@@ -99,13 +98,13 @@ pub fn run() -> Result<(), AicoError> {
             pair_idx.to_string()
         };
 
-        let get_snippet = |content: &str| content.lines().next().unwrap_or("").trim().to_string();
-
         let (role_name, role_color) = match item.record.role {
             Role::User => ("user", Color::Blue),
             Role::Assistant => ("assistant", Color::Green),
             Role::System => ("system", Color::Grey),
         };
+
+        let snippet = item.record.content.lines().next().unwrap_or("").trim();
 
         table.add_row(create_log_row(
             if item.record.role == Role::User {
@@ -114,7 +113,7 @@ pub fn run() -> Result<(), AicoError> {
                 ""
             },
             role_name,
-            &get_snippet(&item.record.content),
+            snippet,
             role_color,
             is_excluded,
         ));

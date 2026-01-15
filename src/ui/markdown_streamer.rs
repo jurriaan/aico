@@ -7,80 +7,53 @@ use crossterm::{
     },
 };
 use regex::Regex;
+use std::fmt::Write as _;
 use std::io::{self, Write};
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Theme, ThemeSet};
 use syntect::parsing::SyntaxSet;
 use unicode_width::UnicodeWidthStr;
 
 // --- Static Resources ---
-static SYNTAX_SET: OnceLock<SyntaxSet> = OnceLock::new();
-static THEME: OnceLock<Theme> = OnceLock::new();
+static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+static THEME: LazyLock<Theme> = LazyLock::new(|| {
+    let ts = ThemeSet::load_defaults();
+    ts.themes
+        .get("base16-ocean.dark")
+        .or_else(|| ts.themes.values().next())
+        .expect("No themes found")
+        .clone()
+});
 
 // Regexes
-static RE_CODE_FENCE: OnceLock<Regex> = OnceLock::new();
-static RE_HEADER: OnceLock<Regex> = OnceLock::new();
-static RE_HR: OnceLock<Regex> = OnceLock::new();
-static RE_LIST: OnceLock<Regex> = OnceLock::new();
-static RE_BLOCKQUOTE: OnceLock<Regex> = OnceLock::new();
-static RE_TABLE_ROW: OnceLock<Regex> = OnceLock::new();
-static RE_TABLE_SEP: OnceLock<Regex> = OnceLock::new();
-// Math Regexes
-static RE_MATH_BLOCK: OnceLock<Regex> = OnceLock::new();
+static RE_CODE_FENCE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(\s*)`{3,5}(\w*)\s*$").unwrap());
+static RE_HEADER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(#{1,6})\s+(.*)").unwrap());
+static RE_HR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\s*[-*_]){3,}\s*$").unwrap());
+static RE_LIST: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(\s*)([-*+]|\d+\.)\s+(.*)").unwrap());
+static RE_BLOCKQUOTE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\s*>\s?)(.*)").unwrap());
 
-// Tokenizer & Helpers
-static RE_TOKENIZER: OnceLock<Regex> = OnceLock::new();
-static RE_LINK: OnceLock<Regex> = OnceLock::new();
-static RE_ANSI: OnceLock<Regex> = OnceLock::new();
-static RE_SPLIT_ANSI: OnceLock<Regex> = OnceLock::new();
-static RE_ANSI_PARTS: OnceLock<Regex> = OnceLock::new();
+static RE_TABLE_ROW: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*\|(.*)\|\s*$").unwrap());
+static RE_TABLE_SEP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\s\|\-\:]+$").unwrap());
 
-fn get_re(re: &'static OnceLock<Regex>) -> &'static Regex {
-    re.get().expect("Regex not initialized")
-}
+static RE_MATH_BLOCK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*\$\$\s*$").unwrap());
 
-fn init_statics() {
-    SYNTAX_SET.get_or_init(SyntaxSet::load_defaults_newlines);
-    THEME.get_or_init(|| {
-        let ts = ThemeSet::load_defaults();
-        ts.themes
-            .get("base16-ocean.dark")
-            .or_else(|| ts.themes.values().next())
-            .expect("No themes found")
-            .clone()
-    });
+static RE_TOKENIZER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(\$[^\$\s](?:[^\$\n]*?[^\$\s])?\$|~~|\*\*\*|___|\*\*|__|\*|_|`+|\$|[^~*_`$]+)")
+        .unwrap()
+});
 
-    RE_CODE_FENCE.get_or_init(|| Regex::new(r"^(\s*)`{3,5}(\w*)\s*$").unwrap());
-    RE_HEADER.get_or_init(|| Regex::new(r"^(#{1,6})\s+(.*)").unwrap());
-    RE_HR.get_or_init(|| Regex::new(r"^(\s*[-*_]){3,}\s*$").unwrap());
-    RE_LIST.get_or_init(|| Regex::new(r"^(\s*)([-*+]|\d+\.)\s+(.*)").unwrap());
-    // Matches ONE level of blockquote: " > " or ">"
-    RE_BLOCKQUOTE.get_or_init(|| Regex::new(r"^(\s*>\s?)(.*)").unwrap());
+static RE_LINK: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\[([^\]]+)\]\(([^\)]+)\)").unwrap());
+static RE_ANSI: LazyLock<Regex> = LazyLock::new(|| Regex::new(ANSI_REGEX_PATTERN).unwrap());
 
-    // Table Regexes
-    RE_TABLE_ROW.get_or_init(|| Regex::new(r"^\s*\|(.*)\|\s*$").unwrap());
-    RE_TABLE_SEP.get_or_init(|| Regex::new(r"^[\s\|\-\:]+$").unwrap());
-
-    // Math Regexes
-    RE_MATH_BLOCK.get_or_init(|| Regex::new(r"^\s*\$\$\s*$").unwrap());
-
-    RE_TOKENIZER.get_or_init(|| {
-        Regex::new(r"(\$[^\$\s](?:[^\$\n]*?[^\$\s])?\$|~~|\*\*\*|___|\*\*|__|\*|_|`+|\$|[^~*_`$]+)")
-            .unwrap()
-    });
-
-    RE_LINK.get_or_init(|| Regex::new(r"\[([^\]]+)\]\(([^\)]+)\)").unwrap());
-    RE_ANSI.get_or_init(|| Regex::new(ANSI_REGEX_PATTERN).unwrap());
-
-    // Splits text into: ANSI codes, Spaces, or Words (non-space non-ansi)
-    RE_SPLIT_ANSI.get_or_init(|| {
-        let pattern = format!("({}|\\s+|[^\\s\\x1b]+)", ANSI_REGEX_PATTERN);
-        Regex::new(&pattern).unwrap()
-    });
-    // Parsing helper for ANSI state tracking
-    RE_ANSI_PARTS.get_or_init(|| Regex::new(r"\x1b\[([0-9;]*)m").unwrap());
-}
+static RE_SPLIT_ANSI: LazyLock<Regex> = LazyLock::new(|| {
+    let pattern = format!("({}|\\s+|[^\\s\\x1b]+)", ANSI_REGEX_PATTERN);
+    Regex::new(&pattern).unwrap()
+});
+static RE_ANSI_PARTS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\x1b\[([0-9;]*)m").unwrap());
 
 pub struct MarkdownStreamer {
     // Code State
@@ -106,6 +79,9 @@ pub struct MarkdownStreamer {
 
     // Configuration
     manual_width: Option<usize>,
+
+    // Reusable buffer
+    scratch_buffer: String,
 }
 
 // Theme Constants
@@ -133,7 +109,6 @@ impl Default for MarkdownStreamer {
 
 impl MarkdownStreamer {
     pub fn new() -> Self {
-        init_statics();
         Self {
             in_code_block: false,
             code_lang: "bash".to_string(),
@@ -147,6 +122,7 @@ impl MarkdownStreamer {
             blockquote_depth: 0,
             list_stack: Vec::new(),
             manual_width: None,
+            scratch_buffer: String::with_capacity(1024),
         }
     }
 
@@ -169,7 +145,7 @@ impl MarkdownStreamer {
     }
 
     fn visible_width(&self, text: &str) -> usize {
-        let stripped = get_re(&RE_ANSI).replace_all(text, "");
+        let stripped = RE_ANSI.replace_all(text, "");
         UnicodeWidthStr::width(stripped.as_ref())
     }
 
@@ -202,7 +178,7 @@ impl MarkdownStreamer {
         let trimmed = expanded.trim_end();
 
         // --- 1. CODE BLOCK HANDLING ---
-        if let Some(caps) = get_re(&RE_CODE_FENCE).captures(trimmed) {
+        if let Some(caps) = RE_CODE_FENCE.captures(trimmed) {
             if self.in_code_block {
                 self.in_code_block = false;
                 queue!(w, ResetColor, Print("\n"))?;
@@ -226,7 +202,7 @@ impl MarkdownStreamer {
 
         // --- 1.5. MATH BLOCK HANDLING ---
         // Check for block toggle '$$'
-        if get_re(&RE_MATH_BLOCK).is_match(trimmed) {
+        if RE_MATH_BLOCK.is_match(trimmed) {
             if self.in_math_block {
                 // Closing Math Block
                 self.in_math_block = false;
@@ -272,12 +248,12 @@ impl MarkdownStreamer {
 
         // --- 2. TABLE HANDLING ---
         // Detect Separator Row
-        if self.in_table && get_re(&RE_TABLE_SEP).is_match(trimmed) {
+        if self.in_table && RE_TABLE_SEP.is_match(trimmed) {
             self.table_header_printed = true;
             return Ok(());
         }
 
-        if get_re(&RE_TABLE_ROW).is_match(trimmed) {
+        if RE_TABLE_ROW.is_match(trimmed) {
             self.in_table = true;
             self.list_stack.clear();
             return self.render_stream_table_row(w, trimmed);
@@ -289,9 +265,8 @@ impl MarkdownStreamer {
         // --- 3. BLOCKQUOTE & PREFIX CALCULATION ---
         let mut content = raw_line;
         let mut line_depth = 0;
-        let re_bq = get_re(&RE_BLOCKQUOTE);
 
-        while let Some(caps) = re_bq.captures(content) {
+        while let Some(caps) = RE_BLOCKQUOTE.captures(content) {
             line_depth += 1;
             if let Some(m) = caps.get(2) {
                 content = m.as_str();
@@ -320,7 +295,7 @@ impl MarkdownStreamer {
         let clean_content = content.trim_end();
 
         // --- 4. HEADER HANDLING ---
-        if let Some(caps) = get_re(&RE_HEADER).captures(clean_content) {
+        if let Some(caps) = RE_HEADER.captures(clean_content) {
             let level_str = caps.get(1).map_or("", |m| m.as_str());
             let text = caps.get(2).map_or("", |m| m.as_str());
             let level = level_str.len();
@@ -330,8 +305,9 @@ impl MarkdownStreamer {
                 1 => {
                     queue!(w, Print(&prefix), Print("\n"))?;
 
-                    let styled_text = self.render_inline_to_string(text, None, Some("\x1b[1m"));
-                    let lines = self.wrap_ansi(&styled_text, available_width);
+                    self.scratch_buffer.clear();
+                    Self::render_inline(text, &mut self.scratch_buffer, None, Some("\x1b[1m"));
+                    let lines = self.wrap_ansi(&self.scratch_buffer, available_width);
 
                     for line in lines {
                         let text_len = self.visible_width(&line);
@@ -351,8 +327,9 @@ impl MarkdownStreamer {
                 2 => {
                     queue!(w, Print(&prefix), Print("\n"))?;
 
-                    let styled_text = self.render_inline_to_string(text, None, Some("\x1b[1;94m"));
-                    let lines = self.wrap_ansi(&styled_text, available_width);
+                    self.scratch_buffer.clear();
+                    Self::render_inline(text, &mut self.scratch_buffer, None, Some("\x1b[1;94m"));
+                    let lines = self.wrap_ansi(&self.scratch_buffer, available_width);
 
                     for line in lines {
                         let text_len = self.visible_width(&line);
@@ -372,24 +349,29 @@ impl MarkdownStreamer {
                 _ => {}
             }
 
-            let (style_str, styled_text) = match level {
-                3 => (
-                    "\x1b[1;36m",
-                    self.render_inline_to_string(text, None, Some("\x1b[1;36m")),
-                ),
-                _ => (
-                    "\x1b[1;33m",
-                    self.render_inline_to_string(text, None, Some("\x1b[1;33m")),
-                ),
-            };
-
             queue!(w, Print(&prefix))?;
-            queue!(w, Print(style_str), Print(styled_text), Print("\x1b[0m\n"))?;
+            self.scratch_buffer.clear();
+            let style_str = match level {
+                3 => {
+                    Self::render_inline(text, &mut self.scratch_buffer, None, Some("\x1b[1;36m"));
+                    "\x1b[1;36m"
+                }
+                _ => {
+                    Self::render_inline(text, &mut self.scratch_buffer, None, Some("\x1b[1;33m"));
+                    "\x1b[1;33m"
+                }
+            };
+            queue!(
+                w,
+                Print(style_str),
+                Print(&self.scratch_buffer),
+                Print("\x1b[0m\n")
+            )?;
             return Ok(());
         }
 
         // --- 5. LIST HANDLING ---
-        if let Some(caps) = get_re(&RE_LIST).captures(clean_content) {
+        if let Some(caps) = RE_LIST.captures(clean_content) {
             let raw_indent = caps.get(1).map_or("", |m| m.as_str());
             let bullet = caps.get(2).map_or("-", |m| m.as_str());
             let text_part = caps.get(3).map_or("", |m| m.as_str());
@@ -437,11 +419,12 @@ impl MarkdownStreamer {
             let hang_indent_str = " ".repeat((nesting_level * 2) + bullet_vis_width);
 
             // 1. Render Styles First
-            let styled_text = self.render_inline_to_string(text_part, None, None);
+            self.scratch_buffer.clear();
+            Self::render_inline(text_part, &mut self.scratch_buffer, None, None);
 
             // 2. Wrap using ANSI-aware logic. We wrap the content only, manually prepending and bullets/indent.
             let content_width = available_width.saturating_sub(hang_indent_str.len());
-            let lines = self.wrap_ansi(&styled_text, content_width);
+            let lines = self.wrap_ansi(&self.scratch_buffer, content_width);
 
             // Print Line 1: Manually print Prefix + Normalized Indent + Display Bullet
             queue!(
@@ -470,7 +453,7 @@ impl MarkdownStreamer {
         }
 
         // --- 6. HORIZONTAL RULE ---
-        if get_re(&RE_HR).is_match(clean_content) {
+        if RE_HR.is_match(clean_content) {
             queue!(
                 w,
                 Print(&prefix),
@@ -492,8 +475,9 @@ impl MarkdownStreamer {
             }
         } else {
             // Apply inline formatting FIRST, then wrap preserving ANSI
-            let styled_text = self.render_inline_to_string(clean_content, None, None);
-            let lines = self.wrap_ansi(&styled_text, available_width);
+            self.scratch_buffer.clear();
+            Self::render_inline(clean_content, &mut self.scratch_buffer, None, None);
+            let lines = self.wrap_ansi(&self.scratch_buffer, available_width);
 
             for line in lines {
                 queue!(w, ResetColor, SetAttribute(Attribute::Reset))?;
@@ -515,7 +499,7 @@ impl MarkdownStreamer {
         // Active ANSI codes stack (to avoid bloat)
         let mut active_codes: Vec<String> = Vec::new();
 
-        for caps in get_re(&RE_SPLIT_ANSI).captures_iter(text) {
+        for caps in RE_SPLIT_ANSI.captures_iter(text) {
             let token = caps.get(1).unwrap().as_str();
 
             if token.starts_with("\x1b") {
@@ -585,7 +569,7 @@ impl MarkdownStreamer {
     }
 
     fn update_ansi_state(&self, state: &mut Vec<String>, code: &str) {
-        let caps = get_re(&RE_ANSI_PARTS).captures(code);
+        let caps = RE_ANSI_PARTS.captures(code);
         if caps.is_none() {
             return;
         }
@@ -615,7 +599,7 @@ impl MarkdownStreamer {
 
         if category != "other" {
             state.retain(|existing| {
-                let c_caps = get_re(&RE_ANSI_PARTS).captures(existing);
+                let c_caps = RE_ANSI_PARTS.captures(existing);
                 if let Some(cc) = c_caps {
                     let c_content = cc.get(1).map_or("", |m| m.as_str());
                     let c_num: i32 = c_content
@@ -683,17 +667,22 @@ impl MarkdownStreamer {
             let width = std::cmp::max(1, my_width);
 
             // 1. Render style FIRST (preserves Markdown across wraps)
-            let styled_text = if !self.table_header_printed {
-                format!(
-                    "\x1b[1;33m{}\x1b[0m",
-                    self.render_inline_to_string(clean_cell, Some(bg_color), Some("\x1b[1;33m"))
-                )
+            self.scratch_buffer.clear();
+            if !self.table_header_printed {
+                self.scratch_buffer.push_str("\x1b[1;33m");
+                Self::render_inline(
+                    clean_cell,
+                    &mut self.scratch_buffer,
+                    Some(bg_color),
+                    Some("\x1b[1;33m"),
+                );
+                self.scratch_buffer.push_str("\x1b[0m");
             } else {
-                self.render_inline_to_string(clean_cell, Some(bg_color), None)
-            };
+                Self::render_inline(clean_cell, &mut self.scratch_buffer, Some(bg_color), None);
+            }
 
             // 2. Wrap using ANSI-aware logic
-            let lines = self.wrap_ansi(&styled_text, width);
+            let lines = self.wrap_ansi(&self.scratch_buffer, width);
 
             if lines.len() > max_height {
                 max_height = lines.len();
@@ -775,7 +764,7 @@ impl MarkdownStreamer {
 
         let mut highlighted_spans = Vec::new();
         if let Some(h) = &mut self.highlighter {
-            if let Ok(ranges) = h.highlight_line(line_content, SYNTAX_SET.get().unwrap()) {
+            if let Ok(ranges) = h.highlight_line(line_content, &SYNTAX_SET) {
                 highlighted_spans = ranges;
             } else {
                 highlighted_spans.push((syntect::highlighting::Style::default(), line_content));
@@ -834,16 +823,13 @@ impl MarkdownStreamer {
         Ok(())
     }
 
-    pub fn render_inline_to_string(
-        &self,
+    pub fn render_inline(
         text: &str,
+        out: &mut String,
         default_bg: Option<Color>,
         restore_fg: Option<&str>,
-    ) -> String {
-        let re_link = get_re(&RE_LINK);
-        let re_tok = get_re(&RE_TOKENIZER);
-
-        let text_linked = re_link.replace_all(text, |caps: &regex::Captures| {
+    ) {
+        let text_linked = RE_LINK.replace_all(text, |caps: &regex::Captures| {
             let link_text = caps.get(1).map_or("", |m| m.as_str());
             let link_url = caps.get(2).map_or("", |m| m.as_str());
             format!(
@@ -852,14 +838,13 @@ impl MarkdownStreamer {
             )
         });
 
-        let mut out = String::new();
         let mut in_bold = false;
         let mut in_italic = false;
         let mut in_strike = false;
         let mut in_code = false;
         let mut in_underline = false;
 
-        for caps in re_tok.captures_iter(&text_linked) {
+        for caps in RE_TOKENIZER.captures_iter(&text_linked) {
             let token_match = match caps.get(1) {
                 Some(m) => m,
                 None => continue,
@@ -876,7 +861,7 @@ impl MarkdownStreamer {
                             Color::Rgb { r, g, b } => (r, g, b),
                             _ => (0, 0, 0),
                         };
-                        out.push_str(&format!("\x1b[48;2;{};{};{}m", r, g, b));
+                        let _ = write!(out, "\x1b[48;2;{};{};{}m", r, g, b);
                     } else {
                         out.push_str("\x1b[49m");
                     }
@@ -937,14 +922,13 @@ impl MarkdownStreamer {
                 }
             }
         }
-        out
     }
 
     fn start_highlighter(&mut self, lang: &str) {
-        let ss = SYNTAX_SET.get().unwrap();
+        let ss = &*SYNTAX_SET;
         let syntax = ss
             .find_syntax_by_token(lang)
             .unwrap_or_else(|| ss.find_syntax_plain_text());
-        self.highlighter = Some(HighlightLines::new(syntax, THEME.get().unwrap()));
+        self.highlighter = Some(HighlightLines::new(syntax, &THEME));
     }
 }

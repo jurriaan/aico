@@ -4,6 +4,7 @@ use crate::models::{StreamYieldItem, UnparsedBlock};
 use regex::Regex;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::LazyLock;
 
 pub struct StreamParser<'a> {
     buffer: String,
@@ -71,15 +72,13 @@ impl<'a> StreamParser<'a> {
     }
 }
 
+static FILE_HEADER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^(?P<line>[ \t]*File:[ \t]*(?P<path>.*?)\r?\n)").unwrap());
+
 impl<'a> Iterator for StreamParser<'a> {
     type Item = StreamYieldItem;
 
     fn next(&mut self) -> Option<Self::Item> {
-        static FILE_HEADER_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-        let file_header_re = FILE_HEADER_RE.get_or_init(|| {
-            Regex::new(r"(?m)^(?P<line>[ \t]*File:[ \t]*(?P<path>.*?)\r?\n)").unwrap()
-        });
-
         loop {
             // 1. First, drain the pre-parsed queue
             if let Some(item) = self.yield_queue.pop_front() {
@@ -92,7 +91,7 @@ impl<'a> Iterator for StreamParser<'a> {
 
             // 2. If we are currently "inside" a file's content section
             if let Some(llm_file_path) = self.current_file.clone() {
-                let next_header_idx = file_header_re
+                let next_header_idx = FILE_HEADER_RE
                     .find(&self.buffer)
                     .map(|m| m.start())
                     .unwrap_or(self.buffer.len());
@@ -124,7 +123,7 @@ impl<'a> Iterator for StreamParser<'a> {
             }
 
             // 3. Look for Global File Headers
-            if let Some(caps) = file_header_re.captures(&self.buffer) {
+            if let Some(caps) = FILE_HEADER_RE.captures(&self.buffer) {
                 let mat = caps.get(0).unwrap();
                 if mat.start() > 0 {
                     let text = self.buffer[..mat.start()].to_string();
@@ -151,7 +150,7 @@ impl<'a> Iterator for StreamParser<'a> {
             let mut stable_len = text.len();
 
             if self.is_incomplete(text) {
-                if let Some(m) = file_header_re.find(text) {
+                if let Some(m) = FILE_HEADER_RE.find(text) {
                     stable_len = m.start();
                 } else if let Some(search_idx) = text.find("<<<<<<< SEARCH") {
                     stable_len = text[..search_idx].rfind('\n').map(|i| i + 1).unwrap_or(0);
@@ -226,10 +225,10 @@ impl<'a> StreamParser<'a> {
 
             // Capture indentation from the start of the line up to the marker
             let line_start = chunk[..search_idx].rfind('\n').map(|i| i + 1).unwrap_or(0);
-            let indent = chunk[line_start..search_idx].to_string();
+            let indent_slice = &chunk[line_start..search_idx];
 
             // Verify indent consists only of whitespace
-            if !indent.chars().all(|c| c.is_whitespace()) {
+            if !indent_slice.chars().all(|c| c.is_whitespace()) {
                 // If it's not a marker at the start of a line, skip it
                 items.push(StreamYieldItem::Text(
                     chunk[cursor..search_idx + 1].to_string(),
@@ -243,7 +242,8 @@ impl<'a> StreamParser<'a> {
                 block_search_start + consume_line_ending(&chunk[block_search_start..]);
 
             let (sep_line_start, sep_line_end) =
-                match find_marker_with_indent(chunk, sep_pattern, block_search_start, &indent) {
+                match find_marker_with_indent(chunk, sep_pattern, block_search_start, indent_slice)
+                {
                     Some(pair) => pair,
                     None => {
                         if search_idx > cursor {
@@ -258,7 +258,7 @@ impl<'a> StreamParser<'a> {
                 sep_line_end + consume_line_ending(&chunk[sep_line_end..]);
 
             let (replace_line_start, _replace_line_end) =
-                match find_marker_with_indent(chunk, replace_pattern, sep_line_end, &indent) {
+                match find_marker_with_indent(chunk, replace_pattern, sep_line_end, indent_slice) {
                     Some(pair) => pair,
                     None => {
                         if search_idx > cursor {
@@ -273,7 +273,7 @@ impl<'a> StreamParser<'a> {
                 items.push(StreamYieldItem::Text(chunk[cursor..search_idx].to_string()));
             }
 
-            let final_end = replace_line_start + indent.len() + replace_pattern.len();
+            let final_end = replace_line_start + indent_slice.len() + replace_pattern.len();
 
             let search_content = &chunk[block_search_start_content..sep_line_start];
             let replace_content = &chunk[block_replace_start_content..replace_line_start];
@@ -282,7 +282,7 @@ impl<'a> StreamParser<'a> {
                 llm_file_path: llm_path.to_string(),
                 search_content: search_content.to_string(),
                 replace_content: replace_content.to_string(),
-                indent: indent.clone(),
+                indent: indent_slice.to_string(),
                 raw_block: chunk[search_idx..final_end].to_string(),
             }));
 
@@ -343,11 +343,11 @@ impl<'a> StreamParser<'a> {
                     warnings,
                 )
             } else {
-                let msg = format!(
+                warnings.push(format!(
                     "The SEARCH block from the AI could not be found in '{}'. Patch skipped.",
                     path
-                );
-                warnings.push(msg.clone());
+                ));
+
                 (
                     Some(StreamYieldItem::Unparsed(crate::models::UnparsedBlock {
                         text: patch.raw_block.clone(),
@@ -356,11 +356,11 @@ impl<'a> StreamParser<'a> {
                 )
             }
         } else {
-            let msg = format!(
+            warnings.push(format!(
                 "File '{}' from the AI does not match any file in context. Patch skipped.",
                 patch.llm_file_path
-            );
-            warnings.push(msg.clone());
+            ));
+
             (
                 Some(StreamYieldItem::Unparsed(crate::models::UnparsedBlock {
                     text: patch.raw_block.clone(),
@@ -442,13 +442,11 @@ impl<'a> StreamParser<'a> {
 
     pub fn build_final_unified_diff(&self) -> String {
         let mut diffs = String::new();
-        let mut keys: Vec<&String> = self
+        let keys: std::collections::BTreeSet<_> = self
             .discovered_baseline
             .keys()
             .chain(self.overlay.keys())
             .collect();
-        keys.sort();
-        keys.dedup();
 
         for k in keys {
             let old = self

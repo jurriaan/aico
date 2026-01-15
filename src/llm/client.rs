@@ -32,47 +32,36 @@ impl ModelSpec {
             }
         };
 
-        let mut map = serde_json::Map::new();
+        let mut extra_map: Option<serde_json::Map<String, serde_json::Value>> = None;
+
         if provider == "openrouter" {
-            map.insert("usage".to_string(), serde_json::json!({ "include": true }));
+            extra_map
+                .get_or_insert_default()
+                .insert("usage".to_string(), serde_json::json!({ "include": true }));
         }
 
         if !params_part.is_empty() {
             for param in params_part.split('+') {
+                let m = extra_map.get_or_insert_default();
                 if let Some((k, v)) = param.split_once('=') {
-                    let val = if let Ok(i) = v.parse::<i64>() {
-                        serde_json::Value::Number(i.into())
-                    } else if let Ok(f) = v.parse::<f64>() {
-                        serde_json::Number::from_f64(f)
-                            .map(serde_json::Value::Number)
-                            .unwrap_or_else(|| serde_json::Value::String(v.to_string()))
-                    } else if v.to_lowercase() == "true" {
-                        serde_json::Value::Bool(true)
-                    } else if v.to_lowercase() == "false" {
-                        serde_json::Value::Bool(false)
-                    } else {
-                        serde_json::Value::String(v.to_string())
-                    };
+                    let val = serde_json::from_str::<serde_json::Value>(v)
+                        .unwrap_or_else(|_| serde_json::Value::String(v.to_string()));
 
                     if provider == "openrouter" && k == "reasoning_effort" {
-                        map.insert(
+                        m.insert(
                             "reasoning".to_string(),
                             serde_json::json!({ "effort": val }),
                         );
                     } else {
-                        map.insert(k.to_string(), val);
+                        m.insert(k.to_string(), val);
                     }
                 } else {
-                    map.insert(param.to_string(), serde_json::Value::Bool(true));
+                    m.insert(param.to_string(), serde_json::Value::Bool(true));
                 }
             }
         }
 
-        let extra_params = if map.is_empty() {
-            None
-        } else {
-            Some(serde_json::Value::Object(map))
-        };
+        let extra_params = extra_map.map(serde_json::Value::Object);
 
         Ok(Self {
             api_key_env,
@@ -123,19 +112,12 @@ impl LlmClient {
     ) -> Result<reqwest::Response, AicoError> {
         let url = format!("{}/chat/completions", self.base_url);
 
-        let mut request_builder = self
+        let request_builder = self
             .http
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
             .json(&req);
-
-        // OpenRouter specific headers
-        if self.base_url.contains("openrouter") {
-            request_builder = request_builder
-                .header("HTTP-Referer", "https://github.com/jurriaan/aico")
-                .header("X-Title", "aico-rs");
-        }
 
         let response = request_builder
             .send()

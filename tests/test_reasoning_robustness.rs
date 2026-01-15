@@ -1,6 +1,7 @@
 mod common;
 use crate::common::setup_session;
-use aico::llm::executor::{extract_reasoning_header, resolve_reasoning_delta};
+use aico::llm::api_models::{ChunkDelta, ReasoningDetail};
+use aico::llm::executor::{append_reasoning_delta, extract_reasoning_header};
 use assert_cmd::cargo::cargo_bin_cmd;
 use mockito::Server;
 
@@ -73,13 +74,13 @@ fn test_extract_reasoning_header_incremental_bold() {
     buffer.push_str(chunks[5]);
     assert_eq!(
         extract_reasoning_header(&buffer),
-        Some("Refining Markdown Header Processing".to_string()),
+        Some("Refining Markdown Header Processing"),
         "Failed to match complete bold header"
     );
 }
 
-#[tokio::test]
-async fn test_reasoning_double_accumulation_regression() {
+#[test]
+fn test_reasoning_double_accumulation_regression() {
     // Regression test: Ensure we don't double-accumulate if a provider sends
     // both direct reasoning content and structured reasoning details.
     let chunk_json = serde_json::json!({
@@ -98,7 +99,8 @@ async fn test_reasoning_double_accumulation_regression() {
         serde_json::from_value(chunk_json).unwrap();
     let choice = &parsed.choices[0];
 
-    let reasoning_delta = resolve_reasoning_delta(&choice.delta);
+    let mut reasoning_delta = String::new();
+    append_reasoning_delta(&mut reasoning_delta, &choice.delta);
 
     let header = extract_reasoning_header(&reasoning_delta);
 
@@ -107,9 +109,6 @@ async fn test_reasoning_double_accumulation_regression() {
 
 #[test]
 fn test_reasoning_fallback_when_content_is_present_but_empty() {
-    use aico::llm::api_models::{ChunkDelta, ReasoningDetail};
-    use aico::llm::executor::resolve_reasoning_delta;
-
     let delta = ChunkDelta {
         content: None,
         reasoning_content: Some("".to_string()),
@@ -118,11 +117,9 @@ fn test_reasoning_fallback_when_content_is_present_but_empty() {
         }]),
     };
 
-    let result = resolve_reasoning_delta(&delta);
-    assert_eq!(
-        extract_reasoning_header(&result),
-        Some("Real Plan".to_string())
-    );
+    let mut result = String::new();
+    append_reasoning_delta(&mut result, &delta);
+    assert_eq!(extract_reasoning_header(&result), Some("Real Plan"));
 }
 
 #[tokio::test]

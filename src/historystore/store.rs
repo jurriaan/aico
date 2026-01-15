@@ -57,10 +57,6 @@ impl HistoryStore {
         let index = state.last_base + state.count;
         let shard_path = self.shard_path(state.last_base);
 
-        // 2. Serialize to single line
-        let json_line = serde_json::to_string(record)?;
-
-        // 3. Append
         if let Some(parent) = shard_path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -76,7 +72,8 @@ impl HistoryStore {
 
         let mut file = options.open(&shard_path)?;
 
-        writeln!(file, "{}", json_line)?;
+        serde_json::to_writer(&mut file, record)?;
+        writeln!(file)?;
 
         state.count += 1;
         self.state = Some(state);

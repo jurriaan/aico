@@ -15,8 +15,8 @@ pub fn run(file_paths: Vec<PathBuf>) -> Result<(), AicoError> {
         if session.view.context_files.contains(&rel) {
             println!("File already in context: {}", rel);
         } else {
-            session.view.context_files.push(rel.clone());
             println!("Added file to context: {}", rel);
+            session.view.context_files.push(rel);
             changed = true;
         }
     }

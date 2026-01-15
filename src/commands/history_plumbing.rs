@@ -41,11 +41,10 @@ pub fn run(user_id: usize, assistant_id: usize, at_index: usize) -> Result<(), A
         )));
     }
 
-    session.view.message_indices.insert(target_pos, user_id);
     session
         .view
         .message_indices
-        .insert(target_pos + 1, assistant_id);
+        .splice(target_pos..target_pos, [user_id, assistant_id]);
 
     // 3. Shift metadata
     if session.view.history_start_pair >= at_index {

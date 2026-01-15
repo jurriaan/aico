@@ -6,6 +6,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::fs::atomic_write_json;
+
 const CACHE_TTL_DAYS: i64 = 14;
 
 fn get_litellm_url() -> String {
@@ -152,8 +154,7 @@ async fn update_registry(path: PathBuf) -> Result<(), Box<dyn std::error::Error>
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let json = serde_json::to_string_pretty(&registry)?;
-    crate::fs::atomic_write_text(path, &json)?;
+    atomic_write_json(&path, &registry)?;
 
     Ok(())
 }

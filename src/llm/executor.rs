@@ -9,29 +9,37 @@ use crate::session::Session;
 use futures_util::TryStreamExt;
 use std::time::Instant;
 
-pub fn resolve_reasoning_delta(delta: &crate::llm::api_models::ChunkDelta) -> String {
+pub fn append_reasoning_delta(
+    buffer: &mut String,
+    delta: &crate::llm::api_models::ChunkDelta,
+) -> bool {
+    let start_len = buffer.len();
+
+    // Priority 1: Direct reasoning_content
     if let Some(ref r) = delta.reasoning_content
         && !r.is_empty()
     {
-        return r.clone();
+        buffer.push_str(r);
+        return true;
     }
 
-    let mut result = String::new();
+    // Priority 2: Structured reasoning_details
     if let Some(ref details) = delta.reasoning_details {
         for detail in details {
             match detail {
-                crate::llm::api_models::ReasoningDetail::Text { text } => result.push_str(text),
+                crate::llm::api_models::ReasoningDetail::Text { text } => buffer.push_str(text),
                 crate::llm::api_models::ReasoningDetail::Summary { summary } => {
-                    result.push_str(summary)
+                    buffer.push_str(summary)
                 }
                 _ => {}
             }
         }
     }
-    result
+
+    buffer.len() > start_len
 }
 
-pub fn extract_reasoning_header(reasoning_buffer: &str) -> Option<String> {
+pub fn extract_reasoning_header(reasoning_buffer: &str) -> Option<&str> {
     static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         regex::Regex::new(r"(?m)(?:^#{1,6}\s+(?P<header>.+?)[\r\n])|(?:^[*]{2}(?P<bold>.+?)[*]{2})")
             .unwrap()
@@ -42,7 +50,7 @@ pub fn extract_reasoning_header(reasoning_buffer: &str) -> Option<String> {
         .and_then(|cap| {
             cap.name("header")
                 .or_else(|| cap.name("bold"))
-                .map(|m| m.as_str().trim().to_string())
+                .map(|m| m.as_str().trim())
         })
         .filter(|s| !s.is_empty())
 }
@@ -77,16 +85,27 @@ pub async fn build_request(
     build_request_with_piped(&client, session, system_prompt, user_prompt, &None, &config).await
 }
 
-fn format_file_block(mut files: Vec<(String, String)>, intro: &str, anchor: &str) -> Vec<Message> {
+pub fn append_file_context_xml(buffer: &mut String, path: &str, content: &str) {
+    use std::fmt::Write;
+    // write! handles the formatting directly into the buffer
+    let _ = writeln!(buffer, "  <file path=\"{}\">", path);
+    buffer.push_str(content);
+    if !content.ends_with('\n') {
+        buffer.push('\n');
+    }
+    buffer.push_str("  </file>\n");
+}
+
+fn format_file_block(mut files: Vec<(&str, &str)>, intro: &str, anchor: &str) -> Vec<Message> {
     if files.is_empty() {
         return vec![];
     }
     // Ensure deterministic ordering (alphabetical by path)
-    files.sort_by(|a, b| a.0.cmp(&b.0));
+    files.sort_by(|a, b| a.0.cmp(b.0));
 
     let mut block = "<context>\n".to_string();
     for (path, content) in files {
-        block.push_str(&crate::models::format_file_context_xml(&path, &content));
+        append_file_context_xml(&mut block, path, content);
     }
     block.push_str("</context>");
 
@@ -162,17 +181,15 @@ pub async fn execute_interaction(
     {
         if let Some(parsed) = parse_sse_line(&line) {
             if let Some(choice) = parsed.choices.first() {
-                let reasoning_delta = resolve_reasoning_delta(&choice.delta);
+                let did_update = append_reasoning_delta(&mut reasoning_buffer, &choice.delta);
 
-                if !reasoning_delta.is_empty() {
-                    reasoning_buffer.push_str(&reasoning_delta);
-                    if let Some(ref mut ld) = live_display
-                        && full_response.is_empty()
-                    {
-                        let status = extract_reasoning_header(&reasoning_buffer)
-                            .unwrap_or_else(|| "Thinking...".to_string());
-                        ld.update_status(&status);
-                    }
+                if did_update
+                    && let Some(ref mut ld) = live_display
+                    && full_response.is_empty()
+                {
+                    let status =
+                        extract_reasoning_header(&reasoning_buffer).unwrap_or("Thinking...");
+                    ld.update_status(status);
                 }
 
                 if let Some(ref content) = choice.delta.content {

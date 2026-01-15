@@ -71,8 +71,8 @@ fn test_aico_session_file_env_var_fails_for_nonexistent_file() {
 fn test_count_tokens_for_messages() {
     let messages = vec!["hello", "world"];
     let token_count = aico::llm::tokens::count_tokens_for_messages(&messages);
-    // (5 + 5) / 4 = 2 (standard heuristic)
-    assert_eq!(token_count, 2);
+    // (5 + 5) divceil 4 = 3 (standard heuristic)
+    assert_eq!(token_count, 3);
 }
 
 #[test]

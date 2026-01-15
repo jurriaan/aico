@@ -23,9 +23,9 @@ fn get_cache_dir() -> PathBuf {
     let base = env::var("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
-            env::var("HOME")
-                .map(|h| PathBuf::from(h).join(".cache"))
-                .unwrap_or_else(|_| PathBuf::from("."))
+            env::home_dir()
+                .map(|h| h.join(".cache"))
+                .unwrap_or_else(|| PathBuf::from("."))
         });
     let dir = base.join("aico").join("bundled_addons");
     let _ = fs::create_dir_all(&dir);
@@ -157,18 +157,20 @@ pub fn discover_addons() -> Vec<AddonInfo> {
 }
 
 fn is_executable_file(path: &Path) -> bool {
-    if !path.is_file() {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        if let Ok(meta) = fs::metadata(path) {
+    if let Ok(meta) = fs::metadata(path) {
+        if !meta.is_file() {
+            return false;
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
             return meta.permissions().mode() & 0o111 != 0;
         }
-    }
-    #[cfg(windows)]
-    {
-        return true;
+        #[cfg(windows)]
+        {
+            return true;
+        }
     }
     false
 }
@@ -189,14 +191,18 @@ pub fn execute_addon(addon: &AddonInfo, args: Vec<String>) -> Result<(), AicoErr
     if let Ok(current_exe) = env::current_exe()
         && let Some(bin_dir) = current_exe.parent()
     {
-        let old_path = env::var_os("PATH").unwrap_or_default();
-        let mut new_path = bin_dir.to_path_buf().into_os_string();
-        #[cfg(unix)]
-        new_path.push(":");
-        #[cfg(windows)]
-        new_path.push(";");
-        new_path.push(old_path);
-        cmd.env("PATH", new_path);
+        let existing_path = env::var_os("PATH");
+
+        let mut paths = match existing_path {
+            Some(p) => env::split_paths(&p).collect::<Vec<_>>(),
+            None => Vec::new(),
+        };
+
+        paths.insert(0, bin_dir.to_path_buf());
+
+        if let Ok(new_path) = env::join_paths(paths) {
+            cmd.env("PATH", new_path);
+        }
     }
 
     // Replace current process with addon
