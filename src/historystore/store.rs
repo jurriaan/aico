@@ -14,7 +14,7 @@ pub struct HistoryStore {
     state: Option<StoreState>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 struct StoreState {
     last_base: usize,
     count: usize,
@@ -44,18 +44,18 @@ impl HistoryStore {
             self.refresh_state()?;
         }
 
-        let mut state = self.state.unwrap_or(StoreState {
-            last_base: 0,
-            count: 0,
-        });
+        let (index, last_base) = {
+            let state = self.state.get_or_insert_default();
 
-        if state.count >= self.shard_size {
-            state.last_base += self.shard_size;
-            state.count = 0;
-        }
+            if state.count >= self.shard_size {
+                state.last_base += self.shard_size;
+                state.count = 0;
+            }
 
-        let index = state.last_base + state.count;
-        let shard_path = self.shard_path(state.last_base);
+            (state.last_base + state.count, state.last_base)
+        };
+
+        let shard_path = self.shard_path(last_base);
 
         if let Some(parent) = shard_path.parent() {
             fs::create_dir_all(parent)?;
@@ -77,18 +77,15 @@ impl HistoryStore {
         writeln!(writer)?;
         writer.flush()?;
 
-        state.count += 1;
-        self.state = Some(state);
+        if let Some(state) = self.state.as_mut() {
+            state.count += 1;
+        }
 
         Ok(index)
     }
 
-    pub fn read_many(&self, indices: &[usize]) -> Result<Vec<HistoryRecord>, AicoError> {
-        if indices.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        // 1. Sort requests by (Shard Base, Offset) to enable sequential scan
+    /// Returns a lazy iterator that yields records in disk order (by global ID).
+    pub fn stream_many<'a>(&'a self, indices: &[usize]) -> HistoryStream<'a> {
         let mut sorted_reqs: Vec<(usize, usize, usize)> = indices
             .iter()
             .map(|&global_id| {
@@ -101,42 +98,28 @@ impl HistoryStore {
             .collect();
 
         sorted_reqs.sort_unstable();
+        sorted_reqs.dedup();
 
-        let mut records_map: HashMap<usize, HistoryRecord> = HashMap::new();
+        HistoryStream {
+            store: self,
+            sorted_reqs: sorted_reqs.into_iter(),
+            current_reader: None,
+            current_shard_base: None,
+            current_line_in_shard: 0,
+        }
+    }
 
-        // 2. Process by shard using chunks
-        for shard_group in sorted_reqs.chunk_by(|a, b| a.0 == b.0) {
-            let base = shard_group[0].0;
-            let path = self.shard_path(base);
-            if !path.exists() {
-                return Err(AicoError::Session(format!("Shard missing: {:?}", path)));
-            }
-
-            let file = fs::File::open(path)?;
-            let mut reader = BufReader::with_capacity(64 * 1024, file);
-            let mut buffer = Vec::new();
-            let mut current_line = 0;
-
-            for &(_, target_offset, global_id) in shard_group {
-                while current_line < target_offset {
-                    if reader.skip_until(b'\n')? == 0 {
-                        break;
-                    }
-                    current_line += 1;
-                }
-
-                if current_line == target_offset {
-                    buffer.clear();
-                    if reader.read_until(b'\n', &mut buffer)? > 0 {
-                        let record: HistoryRecord = serde_json::from_slice(&buffer)?;
-                        records_map.insert(global_id, record);
-                        current_line += 1;
-                    }
-                }
-            }
+    pub fn read_many(&self, indices: &[usize]) -> Result<Vec<HistoryRecord>, AicoError> {
+        if indices.is_empty() {
+            return Ok(Vec::new());
         }
 
-        // 3. Reassemble in order (handles potential duplicate IDs in original indices)
+        let mut records_map = HashMap::with_capacity(indices.len());
+        for result in self.stream_many(indices) {
+            let (id, record) = result?;
+            records_map.insert(id, record);
+        }
+
         let mut results = Vec::with_capacity(indices.len());
         for &idx in indices {
             if let Some(rec) = records_map.get(&idx) {
@@ -198,5 +181,81 @@ impl HistoryStore {
             count,
         });
         Ok(())
+    }
+}
+
+pub struct HistoryStream<'a> {
+    store: &'a HistoryStore,
+    sorted_reqs: std::vec::IntoIter<(usize, usize, usize)>,
+    current_reader: Option<BufReader<fs::File>>,
+    current_shard_base: Option<usize>,
+    current_line_in_shard: usize,
+}
+
+impl<'a> Iterator for HistoryStream<'a> {
+    type Item = Result<(usize, HistoryRecord), AicoError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (shard_base, target_offset, global_id) = self.sorted_reqs.next()?;
+
+        // 1. Ensure correct shard file is open
+        if self.current_shard_base != Some(shard_base) {
+            let path = self.store.shard_path(shard_base);
+            if !path.exists() {
+                return Some(Err(AicoError::Session(format!(
+                    "Shard missing: {:?}",
+                    path
+                ))));
+            }
+            match fs::File::open(&path) {
+                Ok(f) => {
+                    self.current_reader = Some(BufReader::with_capacity(64 * 1024, f));
+                    self.current_shard_base = Some(shard_base);
+                    self.current_line_in_shard = 0;
+                }
+                Err(e) => return Some(Err(AicoError::Io(e))),
+            }
+        }
+
+        let reader = self.current_reader.as_mut()?;
+
+        // 2. Seek to target line
+        while self.current_line_in_shard < target_offset {
+            match reader.skip_until(b'\n') {
+                Ok(0) => {
+                    return Some(Err(AicoError::Session(format!(
+                        "Record ID {} not found",
+                        global_id
+                    ))));
+                }
+                Ok(_) => self.current_line_in_shard += 1,
+                Err(e) => return Some(Err(AicoError::Io(e))),
+            }
+        }
+
+        // 3. Read and Deserialize
+        let mut buffer = Vec::new();
+        match reader.read_until(b'\n', &mut buffer) {
+            Ok(0) => Some(Err(AicoError::Session(format!(
+                "Record ID {} not found",
+                global_id
+            )))),
+            Ok(_) => {
+                self.current_line_in_shard += 1;
+                // Resilience: Handle deserialization failure gracefully
+                match serde_json::from_slice::<HistoryRecord>(&buffer) {
+                    Ok(record) => Some(Ok((global_id, record))),
+                    Err(e) => {
+                        eprintln!(
+                            "[WARN] Failed to parse history record ID {}: {}. Skipping.",
+                            global_id, e
+                        );
+                        // Recursively try next item
+                        self.next()
+                    }
+                }
+            }
+            Err(e) => Some(Err(AicoError::Io(e))),
+        }
     }
 }
