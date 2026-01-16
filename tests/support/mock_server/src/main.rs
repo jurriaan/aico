@@ -148,6 +148,9 @@ fn generate_response_text(body: &Value) -> String {
             "Implementing Solution B using recursion.\n",
         ),
         ("Say hello to World", "Hello, World! I am an addon.\n"),
+        ("Turn 1", "Response 1\n"),
+        ("Turn 2", "Response 2\n"),
+        ("Turn 3", "Response 3\n"),
     ];
 
     for (trigger, text) in responses {
