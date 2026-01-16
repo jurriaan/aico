@@ -735,3 +735,86 @@ async fn test_prompt_with_excluded_history_omits_messages() {
 
     mock.assert_async().await;
 }
+
+#[test]
+fn test_ask_recovers_from_stream_interruption() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::{Shutdown, TcpListener};
+    use std::thread;
+    use std::time::Duration;
+
+    let temp = tempdir().unwrap();
+    let root = temp.path();
+    setup_session(root);
+
+    // 1. Bind a standard synchronous TCP listener
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let mock_url = format!("http://127.0.0.1:{}", port);
+
+    // 2. Spawn server in a background thread
+    thread::spawn(move || {
+        // Accept the connection from 'aico'
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+
+        // Drain headers (naive loop is fine for test)
+        let mut line = String::new();
+        while let Ok(n) = reader.read_line(&mut line) {
+            if n == 0 || line == "\r\n" {
+                break;
+            }
+            line.clear();
+        }
+
+        // Send Headers
+        // Note: Transfer-Encoding: chunked is key here
+        let response_headers = "HTTP/1.1 200 OK\r\n\
+                                Content-Type: text/event-stream\r\n\
+                                Transfer-Encoding: chunked\r\n\r\n";
+        stream.write_all(response_headers.as_bytes()).unwrap();
+
+        // Send ONE valid chunk containing partial JSON
+        // Format: <HexLength>\r\n<Data>\r\n
+        let json_payload =
+            "data: {\"choices\": [{\"delta\": {\"content\": \"This is a partial \"}}]}\n\n";
+        let chunk = format!("{:x}\r\n{}\r\n", json_payload.len(), json_payload);
+        stream.write_all(chunk.as_bytes()).unwrap();
+        stream.flush().unwrap();
+
+        // CRITICAL: Sleep briefly to ensure 'aico' (reqwest) actually reads the bytes
+        // from the OS buffer before we kill the connection.
+        thread::sleep(Duration::from_millis(10));
+
+        // Hard Kill: Shutdown Both to force a TCP FIN/RST.
+        // We purposefully DO NOT send the "0\r\n\r\n" terminating chunk.
+        // This forces reqwest to throw "error decoding response body" / "premature EOF".
+        let _ = stream.shutdown(Shutdown::Both);
+    });
+
+    // 3. Run aico
+    // It should succeed (exit 0) because we implemented partial recovery
+    cargo_bin_cmd!("aico")
+        .current_dir(root)
+        .env("OPENAI_API_KEY", "sk-test")
+        .env("OPENAI_BASE_URL", mock_url)
+        .args(["ask", "trigger error"])
+        .assert()
+        .success()
+        // Verify we caught the error and printed a warning
+        .stderr(predicate::str::contains("[WARN] Stream interrupted:"))
+        // Verify we printed what we received so far
+        .stdout(predicate::str::contains("This is a partial "));
+
+    // 4. Verify Persistence
+    // The partial message should be saved in the history file
+    let history_path = root.join(".aico/history/0.jsonl");
+    let history_content = fs::read_to_string(history_path).expect("History file not created");
+
+    let assistant_record = history_content
+        .lines()
+        .find(|l| l.contains("\"role\":\"assistant\""))
+        .expect("Assistant record missing from history");
+
+    assert!(assistant_record.contains("This is a partial "));
+}

@@ -174,73 +174,82 @@ pub async fn execute_interaction(
     let reader = tokio_util::io::StreamReader::new(stream);
     let mut lines = tokio::io::BufReader::new(reader).lines();
 
-    while let Some(line) = lines
-        .next_line()
-        .await
-        .map_err(|e| AicoError::Provider(format!("Stream error: {}", e)))?
-    {
-        if let Some(parsed) = parse_sse_line(&line) {
-            if let Some(choice) = parsed.choices.first() {
-                let did_update = append_reasoning_delta(&mut reasoning_buffer, &choice.delta);
+    loop {
+        match lines.next_line().await {
+            Ok(Some(line)) => {
+                if let Some(parsed) = parse_sse_line(&line) {
+                    if let Some(choice) = parsed.choices.first() {
+                        let did_update =
+                            append_reasoning_delta(&mut reasoning_buffer, &choice.delta);
 
-                if did_update
-                    && let Some(ref mut ld) = live_display
-                    && full_response.is_empty()
-                {
-                    let status =
-                        extract_reasoning_header(&reasoning_buffer).unwrap_or("Thinking...");
-                    ld.update_status(status);
-                }
-
-                if let Some(ref content) = choice.delta.content {
-                    full_response.push_str(content);
-
-                    let yields = parser.parse_and_resolve(content, &session.root);
-
-                    if let Some(ref mut ld) = live_display {
-                        let mut ui_items: Vec<DisplayItem> = yields
-                            .iter()
-                            .cloned()
-                            .filter_map(|i| i.to_display_item(false))
-                            .collect();
-
-                        let pending = parser.get_pending_content();
-                        // Only show pending content if it doesn't look like we're about to switch
-                        // to a FileHeader or a Search block, to avoid double-printing markers.
-                        if !pending.is_empty() {
-                            let maybe_header = pending.trim_start().starts_with("File:");
-                            let maybe_marker = pending.trim_start().starts_with("<<<");
-                            if !maybe_header && !maybe_marker {
-                                ui_items.push(DisplayItem::Markdown(pending));
-                            }
+                        if did_update
+                            && let Some(ref mut ld) = live_display
+                            && full_response.is_empty()
+                        {
+                            let status = extract_reasoning_header(&reasoning_buffer)
+                                .unwrap_or("Thinking...");
+                            ld.update_status(status);
                         }
 
-                        if !ui_items.is_empty() {
-                            ld.render(&ui_items);
+                        if let Some(ref content) = choice.delta.content {
+                            full_response.push_str(content);
+
+                            let yields = parser.parse_and_resolve(content, &session.root);
+
+                            if let Some(ref mut ld) = live_display {
+                                let mut ui_items: Vec<DisplayItem> = yields
+                                    .iter()
+                                    .cloned()
+                                    .filter_map(|i| i.to_display_item(false))
+                                    .collect();
+
+                                let pending = parser.get_pending_content();
+                                if !pending.is_empty() {
+                                    let maybe_header = pending.trim_start().starts_with("File:");
+                                    let maybe_marker = pending.trim_start().starts_with("<<<");
+                                    if !maybe_header && !maybe_marker {
+                                        ui_items.push(DisplayItem::Markdown(pending.to_string()));
+                                    }
+                                }
+
+                                if !ui_items.is_empty() {
+                                    ld.render(&ui_items);
+                                }
+                            }
+                            cumulative_yields.extend(yields);
                         }
                     }
-                    cumulative_yields.extend(yields);
+                    if let Some(u) = parsed.usage {
+                        let cached = u
+                            .prompt_tokens_details
+                            .and_then(|d| d.cached_tokens)
+                            .or(u.cached_tokens);
+                        let reasoning = u
+                            .completion_tokens_details
+                            .and_then(|d| d.reasoning_tokens)
+                            .or(u.reasoning_tokens);
+                        usage_data = Some(TokenUsage {
+                            prompt_tokens: u.prompt_tokens,
+                            completion_tokens: u.completion_tokens,
+                            total_tokens: u.total_tokens,
+                            cached_tokens: cached,
+                            reasoning_tokens: reasoning,
+                            cost: u.cost,
+                        });
+                    }
                 }
             }
-            if let Some(u) = parsed.usage {
-                let cached = u
-                    .prompt_tokens_details
-                    .and_then(|d| d.cached_tokens)
-                    .or(u.cached_tokens);
-
-                let reasoning = u
-                    .completion_tokens_details
-                    .and_then(|d| d.reasoning_tokens)
-                    .or(u.reasoning_tokens);
-
-                usage_data = Some(TokenUsage {
-                    prompt_tokens: u.prompt_tokens,
-                    completion_tokens: u.completion_tokens,
-                    total_tokens: u.total_tokens,
-                    cached_tokens: cached,
-                    reasoning_tokens: reasoning,
-                    cost: u.cost,
-                });
+            Ok(None) => break,
+            Err(e) => {
+                if !full_response.is_empty() {
+                    eprintln!(
+                        "\n[WARN] Stream interrupted: {}. Saving partial response.",
+                        e
+                    );
+                    break;
+                } else {
+                    return Err(AicoError::Provider(format!("Stream error: {}", e)));
+                }
             }
         }
     }
