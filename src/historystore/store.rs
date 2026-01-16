@@ -1,8 +1,8 @@
 use crate::exceptions::AicoError;
 use crate::models::HistoryRecord;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
 
 pub const SHARD_SIZE: usize = 10_000;
@@ -70,10 +70,12 @@ impl HistoryStore {
             options.mode(0o600);
         }
 
-        let mut file = options.open(&shard_path)?;
+        let file = options.open(&shard_path)?;
+        let mut writer = BufWriter::new(file);
 
-        serde_json::to_writer(&mut file, record)?;
-        writeln!(file)?;
+        serde_json::to_writer(&mut writer, record)?;
+        writeln!(writer)?;
+        writer.flush()?;
 
         state.count += 1;
         self.state = Some(state);
@@ -86,17 +88,25 @@ impl HistoryStore {
             return Ok(Vec::new());
         }
 
-        // Group by shard
-        let mut by_shard: HashMap<usize, HashSet<usize>> = HashMap::new();
-        for &idx in indices {
-            let base = (idx / self.shard_size) * self.shard_size;
-            let offset = idx % self.shard_size;
-            by_shard.entry(base).or_default().insert(offset);
-        }
+        // 1. Sort requests by (Shard Base, Offset) to enable sequential scan
+        let mut sorted_reqs: Vec<(usize, usize, usize)> = indices
+            .iter()
+            .map(|&global_id| {
+                (
+                    (global_id / self.shard_size) * self.shard_size,
+                    global_id % self.shard_size,
+                    global_id,
+                )
+            })
+            .collect();
+
+        sorted_reqs.sort_unstable();
 
         let mut records_map: HashMap<usize, HistoryRecord> = HashMap::new();
 
-        for (base, offsets) in by_shard {
+        // 2. Process by shard using chunks
+        for shard_group in sorted_reqs.chunk_by(|a, b| a.0 == b.0) {
+            let base = shard_group[0].0;
             let path = self.shard_path(base);
             if !path.exists() {
                 return Err(AicoError::Session(format!("Shard missing: {:?}", path)));
@@ -105,34 +115,30 @@ impl HistoryStore {
             let file = fs::File::open(path)?;
             let mut reader = BufReader::with_capacity(64 * 1024, file);
             let mut buffer = Vec::new();
-
-            let max_needed = *offsets.iter().max().unwrap_or(&0);
             let mut current_line = 0;
 
-            loop {
-                if offsets.contains(&current_line) {
-                    buffer.clear();
-                    let bytes_read = reader.read_until(b'\n', &mut buffer)?;
-                    if bytes_read == 0 {
+            for &(_, target_offset, global_id) in shard_group {
+                while current_line < target_offset {
+                    if reader.skip_until(b'\n')? == 0 {
                         break;
                     }
-                    let record: HistoryRecord = serde_json::from_slice(&buffer)?;
-                    records_map.insert(base + current_line, record);
-                } else if reader.skip_until(b'\n')? == 0 {
-                    break;
+                    current_line += 1;
                 }
 
-                if current_line >= max_needed {
-                    break;
+                if current_line == target_offset {
+                    buffer.clear();
+                    if reader.read_until(b'\n', &mut buffer)? > 0 {
+                        let record: HistoryRecord = serde_json::from_slice(&buffer)?;
+                        records_map.insert(global_id, record);
+                        current_line += 1;
+                    }
                 }
-                current_line += 1;
             }
         }
 
-        // Reassemble in order
-        let mut results = Vec::new();
+        // 3. Reassemble in order (handles potential duplicate IDs in original indices)
+        let mut results = Vec::with_capacity(indices.len());
         for &idx in indices {
-            // Use .get() instead of .remove() to allow duplicate IDs in the same request
             if let Some(rec) = records_map.get(&idx) {
                 results.push(rec.clone());
             } else {

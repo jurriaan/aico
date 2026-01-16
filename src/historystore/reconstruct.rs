@@ -7,22 +7,27 @@ pub fn reconstruct_history(
     view: &SessionView,
     include_excluded: bool,
 ) -> Result<Vec<MessageWithContext>, AicoError> {
-    let records = store.read_many(&view.message_indices)?;
-    let mut active_history_vec = Vec::new();
+    let start_offset = view.history_start_pair * 2;
+    if start_offset >= view.message_indices.len() {
+        return Ok(Vec::new());
+    }
+
+    let active_indices = &view.message_indices[start_offset..];
+    let records = store.read_many(active_indices)?;
+    let mut active_history_vec = Vec::with_capacity(records.len());
 
     for (i, record) in records.into_iter().enumerate() {
-        let pair_idx = i / 2;
+        let abs_index = start_offset + i;
+        let pair_idx = abs_index / 2;
         let is_excluded = view.excluded_pairs.contains(&pair_idx);
-        let in_window = pair_idx >= view.history_start_pair;
 
-        if in_window && (include_excluded || !is_excluded) {
-            let item = MessageWithContext {
+        if include_excluded || !is_excluded {
+            active_history_vec.push(MessageWithContext {
                 record,
-                global_index: view.message_indices[i],
+                global_index: view.message_indices[abs_index],
                 pair_index: pair_idx,
                 is_excluded,
-            };
-            active_history_vec.push(item);
+            });
         }
     }
 
