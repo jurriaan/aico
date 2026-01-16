@@ -83,9 +83,9 @@ impl LiveDisplay {
                     self.last_rendered_tail = m.clone();
                 }
                 DisplayItem::Diff(d) => {
-                    let _ = self.engine.print_chunk(&mut stdout, "\n`````diff\n");
+                    let _ = self.engine.print_chunk(&mut stdout, "\n~~~~~diff\n");
                     let _ = self.engine.print_chunk(&mut stdout, d);
-                    let _ = self.engine.print_chunk(&mut stdout, "\n`````\n");
+                    let _ = self.engine.print_chunk(&mut stdout, "\n~~~~~\n");
                     // A diff block breaks the text overlap chain
                     self.last_rendered_tail.clear();
                 }

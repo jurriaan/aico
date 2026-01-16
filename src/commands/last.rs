@@ -104,9 +104,9 @@ pub fn run(
                     let _ = engine.print_chunk(&mut stdout, m);
                 }
                 DisplayItem::Diff(d) => {
-                    let _ = engine.print_chunk(&mut stdout, "\n`````diff\n");
+                    let _ = engine.print_chunk(&mut stdout, "\n~~~~~diff\n");
                     let _ = engine.print_chunk(&mut stdout, d);
-                    let _ = engine.print_chunk(&mut stdout, "\n`````\n");
+                    let _ = engine.print_chunk(&mut stdout, "\n~~~~~\n");
                 }
             }
         }
