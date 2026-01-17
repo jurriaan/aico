@@ -163,22 +163,37 @@ fn get_info_from_registry(model_id: &str, registry: &ModelRegistry) -> Option<Mo
     // Pre-process: Strip any flags (everything after first +)
     let base_model = model_id.split('+').next().unwrap_or(model_id);
 
-    // 1. Exact Match
-    if let Some(info) = registry.models.get(base_model) {
-        return Some(info.clone());
+    // Helper to check a specific key
+    let check_key = |key: &str| -> Option<ModelInfo> {
+        // 1. Exact match
+        if let Some(info) = registry.models.get(key) {
+            return Some(info.clone());
+        }
+        // 2. Fallback: Strip modifiers like :online (openai/gpt-4o:online -> openai/gpt-4o)
+        if let Some((simple, _)) = key.split_once(':')
+            && let Some(info) = registry.models.get(simple)
+        {
+            return Some(info.clone());
+        }
+        None
+    };
+
+    // 1. Try full base model (e.g. "openai/gpt-4o:online")
+    if let Some(info) = check_key(base_model) {
+        return Some(info);
     }
 
     // 2. Strip Provider Prefix (openai/gpt-4 -> gpt-4)
     if let Some((_, stripped)) = base_model.split_once('/') {
-        if let Some(info) = registry.models.get(stripped) {
-            return Some(info.clone());
+        if let Some(info) = check_key(stripped) {
+            return Some(info);
         }
 
         // 3. Strip Vendor (google/gemini -> gemini)
         if let Some((_, bare)) = stripped.split_once('/')
-            && let Some(info) = registry.models.get(bare)
+            && let Some(info) = check_key(bare)
         {
-            return Some(info.clone());
+            return Some(info);
         }
     }
 

@@ -14,7 +14,9 @@ fn test_get_model_info_lookup_strategies() {
         "last_fetched": "2023-01-01T00:00:00Z",
         "models": {
             "gpt-4o": { "max_input_tokens": 100 },
-            "google/gemini-pro": { "max_input_tokens": 200 }
+            "gpt-5.2": { "max_input_tokens": 101 },
+            "google/gemini-pro": { "max_input_tokens": 200 },
+            "openrouter/openai/gpt-4o": { "max_input_tokens": 150 }
         }
     }"#;
     let cache_path = cache_dir.join("models.json");
@@ -27,8 +29,29 @@ fn test_get_model_info_lookup_strategies() {
     assert_eq!(stripped.unwrap().max_input_tokens, Some(100));
 
     // 3. Match with +flags
-    let avec_flags = get_model_info_at("openai/gpt-4o+reasoning_effort=medium", cache_path);
-    assert_eq!(avec_flags.unwrap().max_input_tokens, Some(100));
+    let with_flags = get_model_info_at("openai/gpt-4o+reasoning_effort=medium", cache_path.clone());
+    assert_eq!(with_flags.unwrap().max_input_tokens, Some(100));
+
+    // 4. Match with :modifiers (fallback to partially qualified name)
+    // This handles cases like openrouter/openai/gpt-4o:online -> openrouter/openai/gpt-4o
+    let with_modifier = get_model_info_at("openrouter/openai/gpt-4o:online", cache_path.clone());
+    assert_eq!(
+        with_modifier
+            .expect("Should find info for model with modifier")
+            .max_input_tokens,
+        Some(150),
+        "Should prioritize openrouter/openai/gpt-4o over the root gpt-4o entry"
+    );
+
+    // 5. Deep fallback: if modifier stripping on full name fails, it should still find gpt-4o
+    let with_modifier_stripped = get_model_info_at("openrouter/openai/gpt-5.2:online", cache_path);
+    assert_eq!(
+        with_modifier_stripped
+            .expect("Should find info for model with modifier")
+            .max_input_tokens,
+        Some(101),
+        "Should fall back to 'gpt-5.2' after stripping provider prefix and modifier"
+    );
 }
 
 #[test]
