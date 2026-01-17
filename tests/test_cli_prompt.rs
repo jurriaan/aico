@@ -818,3 +818,48 @@ fn test_ask_recovers_from_stream_interruption() {
 
     assert!(assistant_record.contains("This is a partial "));
 }
+
+#[tokio::test]
+async fn test_calculate_cost_prioritizes_api_reported_cost() {
+    let temp = tempdir().unwrap();
+    let root = temp.path();
+    setup_session(root);
+
+    let mut server = Server::new_async().await;
+
+    // GIVEN an API response with a specific cost field
+    let chunk = json!({
+        "choices": [{"delta": {"content": "Response"}, "index": 0}],
+        "usage": {
+            "prompt_tokens": 100,
+            "completion_tokens": 50,
+            "total_tokens": 150,
+            "cost": 0.999
+        }
+    });
+
+    let mock = server
+        .mock("POST", "/chat/completions")
+        .with_status(200)
+        .with_header("content-type", "text/event-stream")
+        .with_body(format!("data: {}\n\ndata: [DONE]\n\n", chunk))
+        .create_async()
+        .await;
+
+    // WHEN running aico ask
+    cargo_bin_cmd!("aico")
+        .current_dir(root)
+        .env("OPENAI_API_KEY", "sk-test")
+        .env("OPENAI_BASE_URL", server.url())
+        .args(["ask", "test cost priority"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("Cost: $1.00"));
+
+    mock.assert_async().await;
+
+    // THEN verify the exact cost is preserved in the history store
+    let history_path = root.join(".aico/history/0.jsonl");
+    let content = fs::read_to_string(history_path).unwrap();
+    assert!(content.contains("\"cost\":0.999"));
+}

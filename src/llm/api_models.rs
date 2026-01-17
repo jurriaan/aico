@@ -106,6 +106,19 @@ mod tests {
     }
 
     #[test]
+    fn test_deserialize_usage_with_cost() {
+        let json = r#"{
+            "prompt_tokens": 100,
+            "completion_tokens": 50,
+            "total_tokens": 150,
+            "cost": 0.00123
+        }"#;
+        let usage: ApiUsage = serde_json::from_str(json).unwrap();
+        assert_eq!(usage.prompt_tokens, 100);
+        assert_eq!(usage.cost, Some(0.00123));
+    }
+
+    #[test]
     fn test_deserialize_reasoning_details() {
         let json = r#"{
             "content": null,

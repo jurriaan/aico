@@ -4,6 +4,9 @@ use crate::consts::*;
 use crate::models::TokenUsage;
 
 pub async fn calculate_cost(model_id: &str, usage: &TokenUsage) -> Option<f64> {
+    if let Some(cost) = usage.cost {
+        return Some(cost);
+    }
     let info = get_model_info(model_id).await?;
     calculate_cost_prefetched(&info, usage)
 }
@@ -79,6 +82,21 @@ mod tests {
     fn test_count_heuristic() {
         assert_eq!(count_heuristic("abcd"), 1);
         assert_eq!(count_heuristic("abcdefgh"), 2);
+    }
+
+    #[tokio::test]
+    async fn test_calculate_cost_priority() {
+        let usage = TokenUsage {
+            prompt_tokens: 10,
+            completion_tokens: 10,
+            total_tokens: 20,
+            cached_tokens: None,
+            reasoning_tokens: None,
+            cost: Some(1.234),
+        };
+
+        let cost = calculate_cost("non-existent-model", &usage).await;
+        assert_eq!(cost, Some(1.234));
     }
 }
 
