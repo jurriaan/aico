@@ -14,7 +14,7 @@ Initialized session file: .ai_session.json
 $
 ```
 
-## 2. Create the "Mistake"
+## 2. Create the "mistake"
 
 First, we generate a response that we intend to refine later. We'll use a specific prompt that the Mock LLM recognizes.
 
@@ -36,7 +36,7 @@ $ aico log
 $
 ```
 
-## 3. Refine the Response
+## 3. Refine the response
 
 Now, we use `aico refine` to change the output. We instruct the model to be more specific.
 

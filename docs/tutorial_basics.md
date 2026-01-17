@@ -1,4 +1,4 @@
-# Getting Started
+# Getting started
 
 This tutorial walks you through the core workflow of `aico`: planning, implementing, and refining code with an LLM.
 
@@ -12,7 +12,7 @@ Initialized session file: .ai_session.json
 $
 ```
 
-## 2. Context & Understanding
+## 2. Context & understanding
 
 Start by defining the context boundary. We add a file and verify the model understands it.
 
@@ -26,7 +26,17 @@ Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.02
 $
 ```
 
-## 3. Directed Execution (Generating Diff)
+**How context works**
+When you add a file, `aico` tracks its path, not its content. Every time you run `ask` or `gen`, the tool reads the current state of the file from disk.
+
+It structures this context based on modification times:
+
+* **Ground Truth**: Files unmodified since the start of the session are placed at the beginning of the prompt to establish a baseline.
+* **Chronological Updates**: Files modified during the session are spliced into the history log at the point they were changed.
+
+This ensures the LLM sees the code exactly as it exists on your disk right now, preserving the chronological flow of changes.
+
+## 3. Generating diffs
 
 Now, we direct the model to modify the source. We use `gen` to produce a standard Unified Diff.
 
@@ -42,7 +52,7 @@ Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.04
 $
 ```
 
-## 4. Manual Corrections (The Learning Loop)
+## 4. Manual corrections
 
 Sometimes the model makes a small mistake, or you simply change your mind. Instead of just fixing the file, you should fix the **history**. This ensures the model "remembers" your correction for future turns.
 
@@ -66,7 +76,8 @@ def calc_sum(a: int, b: int) -> int:
 $
 ```
 
-## 5. Transparency and Status
+## 5. Checking the context
+
 Verify context files and token usage with the `status` command.
 
 ```console
@@ -102,7 +113,8 @@ $ aico status
 $
 ```
 
-## 6. History Management (Undo/Redo)
+## 6. History management (undo/redo)
+
 `aico` uses a "soft-delete" approach to history. You can exclude messages from the next prompt without losing them from the log.
 
 ```console
@@ -120,11 +132,18 @@ Re-included pair at index 1 in context.
 $
 ```
 
-## 7. Archiving and Resetting (Summarize)
+## 7. Archiving and resetting (summarize)
+
 The `summarize` addon archives the history and resets the active window.
 
 ```console
-$ aico summarize #=> --regex .*Archived summary.*
+$ aico summarize #=> --regex Archived summary
+### Comprehensive Project Summary
+A collection of utilities including math functions.
+
+History context cleared.
+Added file to context: PROJECT_SUMMARY.md
+Archived summary to $TIMESTAMP_PROJECT_SUMMARY.md and reset active history
 $ aico status
 ╭─────────────────────────────── Session 'main' ───────────────────────────────╮
 │                              openai/test-model                               │
@@ -151,5 +170,4 @@ $ cat PROJECT_SUMMARY.md
 ### Comprehensive Project Summary
 A collection of utilities including math functions.
 $
-```
 ```

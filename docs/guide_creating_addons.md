@@ -1,4 +1,4 @@
-# Guide: Creating Custom Addons
+# Guide: Creating custom addons
 
 `aico` is designed to be extended via scripts. You don't need to learn a complex plugin API; if you can write an executable script (Shell, Python, Ruby, etc.), you can extend the tool.
 
@@ -14,7 +14,7 @@ The tool communicates with your script via environment variables:
 - `AICO_SESSION_FILE`: The full path to the active `.ai_session.json`.
 - `PYTHONPATH`: Automatically set so you can `import aico` if writing in Python. (Note: The internal Python API is currently considered unstable).
 
-### Design Patterns for Addons
+### Design patterns for addons
 
 For complex scripting, we recommend two main patterns:
 1. **Delegation**: Most addons should delegate the heavy lifting to `aico`'s built-in commands like `ask`, `gen`, or `dump-history`.
@@ -32,7 +32,7 @@ Initialized session file: .ai_session.json
 $
 ```
 
-## 2. Writing the Script
+## 2. Writing the addon
 
 Addons are simply executable files placed in `.aico/addons/`.
 

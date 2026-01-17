@@ -1,4 +1,4 @@
-# Guide: Advanced History Management
+# Guide: Advanced history management
 
 As a session grows, you may want to manage token usage by controlling the "active window" of history. While `undo` excludes specific pairs, `set-history` allows you to slide the start of the window forward, effectively "forgetting" older turns without deleting them from the logs.
 
@@ -21,7 +21,7 @@ Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.06
 $
 ```
 
-## 2. Sliding the Window
+## 2. Sliding the window
 
 We have 3 pairs (IDs 0, 1, 2). Let's say we want to focus only on the most recent turn. We set the history start index to `2`.
 
@@ -42,7 +42,7 @@ $ aico log
 $
 ```
 
-## 3. Accessing "Hidden" History
+## 3. Accessing "hidden" history
 
 Even though the history window has moved, you can still access older messages using `aico last` if you know the index.
 
@@ -52,7 +52,7 @@ Response 1
 $
 ```
 
-## 4. Resetting the Window
+## 4. Resetting the window
 
 You can restore the full history by setting the index back to 0.
 
@@ -71,7 +71,7 @@ $ aico log
 $
 ```
 
-## 5. Clearing Context Completely
+## 5. Clearing context completely
 
 If you want to start a fresh topic without creating a new session branch, you can clear the history window entirely.
 

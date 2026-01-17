@@ -1,4 +1,4 @@
-# Guide: Session Branching
+# Guide: Session branching
 
 `aico` supports Git-like branching for conversations. This allows you to fork a session to experiment with a solution. If it fails, you can switch back to the main branch and try a different approach, keeping your history clean.
 
@@ -17,7 +17,7 @@ Tokens: 10 sent, 5 received. Cost: $0.02, current chat: $0.02
 $
 ```
 
-## 2. Forking a Session
+## 2. Forking a session
 
 We want to experiment with "Solution A". We fork the session so we don't pollute the `main` history.
 
@@ -40,7 +40,7 @@ Available sessions:
 $
 ```
 
-## 3. Switching Branches
+## 3. Switching branches
 
 "Solution A" didn't work out. We switch back to `main`.
 
@@ -58,7 +58,7 @@ This code is a Python script.
 $
 ```
 
-## 4. Forking for Solution B
+## 4. Forking for solution B
 
 Now we try "Solution B" from the clean state of `main`.
 

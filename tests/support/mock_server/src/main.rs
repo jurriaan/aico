@@ -123,6 +123,10 @@ fn generate_response_text(body: &Value) -> String {
 
     let responses = [
         (
+            "Your task is to create a commit message",
+            "feat: add hello print to main.py\n",
+        ),
+        (
             "Output the complete markdown document",
             "### Recent Developments\n- Refactored `math.py` to use type hints.\n### Comprehensive Project Summary\nA collection of utilities including math functions.\n",
         ),
