@@ -32,7 +32,7 @@ static RE_CODE_FENCE: LazyLock<Regex> =
 static RE_HEADER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(#{1,6})\s+(.*)").unwrap());
 static RE_HR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\s*[-*_]){3,}\s*$").unwrap());
 static RE_LIST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(\s*)([-*+]|\d+\.)(?:\s+(.*)|$)").unwrap());
+    LazyLock::new(|| Regex::new(r"^(\s*)([-*+]|\d+\.)(?:(\s+)(.*)|$)").unwrap());
 static RE_BLOCKQUOTE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\s*>\s?)(.*)").unwrap());
 
 static RE_TABLE_ROW: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*\|(.*)\|\s*$").unwrap());
@@ -54,8 +54,8 @@ static RE_OSC8: LazyLock<Regex> = LazyLock::new(|| Regex::new(OSC8_PATTERN).unwr
 
 static RE_TOKENIZER: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
-        r"({}|\\[\s\S]|\$[^\$\s](?:[^\$\n]*?[^\$\s])?\$|~~|~|\*\*\*|___|\*\*|__|\*|_|`+|\$|[^~*_`$\\\x1b]+)",
-        OSC8_PATTERN
+        r"({}|{}|`+|\\[\s\S]|\$[^\$\s](?:[^\$\n]*?[^\$\s])?\$|~~|~|\*\*\*|___|\*\*|__|\*|_|\$|[^~*_`$\\\x1b]+)",
+        OSC8_PATTERN, ANSI_REGEX_PATTERN
     ))
     .unwrap()
 });
@@ -121,7 +121,7 @@ pub struct MarkdownStreamer {
     // Layout State
     margin: usize,
     blockquote_depth: usize,
-    list_stack: Vec<(usize, bool, usize)>, // (indent_len, is_ordered, counter)
+    list_stack: Vec<(usize, bool, usize, usize)>, // (indent_len, is_ordered, counter, marker_width)
 
     // Configuration
     manual_width: Option<usize>,
@@ -298,7 +298,7 @@ impl MarkdownStreamer {
                 while self
                     .list_stack
                     .last()
-                    .is_some_and(|(d, _, _)| *d > indent_len)
+                    .is_some_and(|(d, _, _, _)| *d > indent_len)
                 {
                     self.list_stack.pop();
                 }
@@ -428,7 +428,8 @@ impl MarkdownStreamer {
         if let Some(caps) = RE_LIST.captures(clean) {
             let indent = caps.get(1).map_or(0, |m| m.len());
             let bullet = caps.get(2).map_or("-", |m| m.as_str());
-            let text = caps.get(3).map_or("", |m| m.as_str());
+            let separator = caps.get(3).map_or(" ", |m| m.as_str());
+            let text = caps.get(4).map_or("", |m| m.as_str());
 
             // Heuristic: Strict CommonMark compliance.
             // A line like "* a *" should be literal emphasis, not a list item.
@@ -438,31 +439,47 @@ impl MarkdownStreamer {
             }
 
             let is_ord = bullet.chars().any(|c| c.is_numeric());
+            let disp_bullet = if is_ord { bullet } else { "•" };
+            let marker_width = self.visible_width(disp_bullet) + separator.len();
 
-            let last_indent = self.list_stack.last().map(|(d, _, _)| *d).unwrap_or(0);
+            let last_indent = self.list_stack.last().map(|(d, _, _, _)| *d).unwrap_or(0);
             if self.list_stack.is_empty() || indent > last_indent {
-                self.list_stack.push((indent, is_ord, 0));
+                self.list_stack.push((indent, is_ord, 0, marker_width));
             } else if indent < last_indent {
-                while self.list_stack.last().is_some_and(|(d, _, _)| *d > indent) {
+                while self
+                    .list_stack
+                    .last()
+                    .is_some_and(|(d, _, _, _)| *d > indent)
+                {
                     self.list_stack.pop();
                 }
-                if self.list_stack.last().is_some_and(|(d, _, _)| *d != indent) {
-                    self.list_stack.push((indent, is_ord, 0));
+                if self
+                    .list_stack
+                    .last()
+                    .is_some_and(|(d, _, _, _)| *d != indent)
+                {
+                    self.list_stack.push((indent, is_ord, 0, marker_width));
+                }
+            } else {
+                // Same level: update width in case marker size changed (e.g. 9. -> 10.)
+                if let Some(last) = self.list_stack.last_mut() {
+                    last.3 = marker_width;
                 }
             }
 
-            let nesting = self.list_stack.len().saturating_sub(1);
-            let disp_bullet = if is_ord { bullet } else { "•" };
-            let hang_indent = " ".repeat((nesting * 2) + self.visible_width(disp_bullet) + 1);
-            let content_width = avail.saturating_sub(hang_indent.len());
+            let full_stack_width: usize = self.list_stack.iter().map(|(_, _, _, w)| *w).sum();
+            let parent_width = full_stack_width.saturating_sub(marker_width);
+
+            let hang_indent = " ".repeat(full_stack_width);
+            let content_width = avail.saturating_sub(full_stack_width);
 
             queue!(
                 w,
                 Print(prefix),
-                Print(" ".repeat(nesting * 2)),
+                Print(" ".repeat(parent_width)),
                 SetForegroundColor(Color::Yellow),
                 Print(disp_bullet),
-                Print(" "),
+                Print(separator),
                 ResetColor
             )?;
 
@@ -536,8 +553,9 @@ impl MarkdownStreamer {
         prefix: &str,
         avail: usize,
     ) -> io::Result<()> {
-        let line_content = content.trim_end_matches(['\n', '\r']);
+        let mut line_content = content.trim_end_matches(['\n', '\r']);
         if line_content.trim().is_empty() && content.ends_with('\n') {
+            self.reset_block_context();
             queue!(
                 w,
                 Print(if self.blockquote_depth > 0 {
@@ -555,15 +573,26 @@ impl MarkdownStreamer {
             if !self.list_stack.is_empty() {
                 let current_indent = line_content.chars().take_while(|c| *c == ' ').count();
                 if current_indent == 0 {
-                    eff_prefix.push_str(&" ".repeat(self.list_stack.len() * 2));
+                    self.list_stack.clear();
                 } else {
                     while self
                         .list_stack
                         .last()
-                        .is_some_and(|(d, _, _)| *d > current_indent)
+                        .is_some_and(|(d, _, _, _)| *d > current_indent)
                     {
                         self.list_stack.pop();
                     }
+                }
+
+                if !self.list_stack.is_empty() {
+                    let structural_indent: usize =
+                        self.list_stack.iter().map(|(_, _, _, w)| *w).sum();
+                    eff_prefix.push_str(&" ".repeat(structural_indent));
+
+                    // To avoid double-indenting, we skip the source indentation that matches
+                    // the structural indentation we just applied via eff_prefix.
+                    let skip = current_indent.min(structural_indent);
+                    line_content = &line_content[skip..];
                 }
             }
 
@@ -731,7 +760,8 @@ impl MarkdownStreamer {
 
         let mut prefix = " ".repeat(self.margin);
         if !self.list_stack.is_empty() {
-            prefix.push_str(&" ".repeat(self.list_stack.len() * 2));
+            let indent_width: usize = self.list_stack.iter().map(|(_, _, _, w)| *w).sum();
+            prefix.push_str(&" ".repeat(indent_width));
         }
 
         let avail_width = self.get_width().saturating_sub(prefix.len() + self.margin);
@@ -747,43 +777,55 @@ impl MarkdownStreamer {
             spans.push((syntect::highlighting::Style::default(), line_content));
         }
 
-        // Merge same-style spans
-        let mut merged_spans: Vec<(syntect::highlighting::Style, String)> = Vec::new();
+        // 1. Build the full colored line in memory first
+        self.scratch_buffer.clear();
         for (style, text) in spans {
-            if let Some((last_style, last_text)) = merged_spans.last_mut()
-                && *last_style == style
-            {
-                last_text.push_str(text);
-                continue;
-            }
-            merged_spans.push((style, text.to_string()));
+            let _ = write!(
+                self.scratch_buffer,
+                "\x1b[38;2;{};{};{}m{}",
+                style.foreground.r, style.foreground.g, style.foreground.b, text
+            );
         }
 
-        queue!(
-            w,
-            Print(&prefix), // Indentation on default background
-            SetBackgroundColor(Color::Rgb {
-                r: 30,
-                g: 30,
-                b: 30
-            })
-        )?;
+        // 2. Wrap the colored string manually
+        let wrapped_lines = self.wrap_ansi(&self.scratch_buffer, avail_width);
 
-        let mut len = 0;
-        for (style, text) in merged_spans {
-            len += self.visible_width(&text);
+        // 3. Render each wrapped segment with consistent background
+        if wrapped_lines.is_empty() {
             queue!(
                 w,
-                SetForegroundColor(Color::Rgb {
-                    r: style.foreground.r,
-                    g: style.foreground.g,
-                    b: style.foreground.b
+                Print(&prefix),
+                SetBackgroundColor(Color::Rgb {
+                    r: 30,
+                    g: 30,
+                    b: 30
                 }),
-                Print(text)
+                Print(" ".repeat(avail_width)),
+                ResetColor,
+                Print("\n")
             )?;
+        } else {
+            for line in wrapped_lines {
+                let vis_len = self.visible_width(&line);
+                let pad = avail_width.saturating_sub(vis_len);
+
+                queue!(
+                    w,
+                    Print(&prefix),
+                    SetBackgroundColor(Color::Rgb {
+                        r: 30,
+                        g: 30,
+                        b: 30
+                    }),
+                    Print(&line),
+                    Print(" ".repeat(pad)), // Fill remaining width with bg color
+                    ResetColor,
+                    Print("\n")
+                )?;
+            }
         }
-        let pad = avail_width.saturating_sub(len);
-        queue!(w, Print(" ".repeat(pad)), ResetColor, Print("\n"))
+
+        Ok(())
     }
 
     fn render_stream_table_row<W: Write>(&mut self, w: &mut W, row_str: &str) -> io::Result<()> {

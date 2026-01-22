@@ -131,14 +131,14 @@ fn test_list_integrity_and_empty_item_spacing() {
     assert_eq!(lines[0].trim(), "1.", "List item 1 should be isolated.");
 
     // Verification 2: Code content is indented (stack preserved)
-    // Expect 2 spaces (Margin 0 + List Depth 1 * 2 spaces)
+    // Expect 3 spaces (Margin 0 + Marker '1. ' width 3)
     let code_line = lines
         .iter()
         .find(|l| l.contains("indented content"))
         .expect("Code content missing");
     assert!(
-        code_line.starts_with("  indented"),
-        "Code content indent failed. Got: '{}'",
+        code_line.starts_with("   indented"),
+        "Code content indent failed. Expected 3 spaces (matching '1. '). Got: '{}'",
         code_line
     );
 
@@ -368,12 +368,14 @@ fn test_tilde_fence_support() {
         .expect("Write failed");
     streamer.flush(&mut sink).expect("Flush failed");
 
-    let output = String::from_utf8_lossy(&sink);
-    // If working correctly, the backticks are preserved as text inside the tilde block
-    assert!(output.contains("```"));
+    let raw_output = String::from_utf8_lossy(&sink);
     // The closing tildes should have triggered a ResetColor (end of block)
     // ANSI code for reset is \x1b[0m
-    assert!(output.contains("\x1b[0m"));
+    assert!(raw_output.contains("\x1b[0m"));
+
+    let cleaned = strip_ansi_codes(&raw_output);
+    // If working correctly, the backticks are preserved as text inside the tilde block
+    assert!(cleaned.contains("```"));
 }
 
 #[test]
@@ -605,9 +607,9 @@ fn test_list_alignment_and_nesting_comprehensive() {
 
     let input = concat!(
         "- Bullet Item\n",
-        "  Indented Continuation\n", // Case A: Explicit Indent (PASSES currently)
+        "  Indented Continuation\n", // Case A: Explicit Indent
         "- Lazy Parent\n",
-        "Lazy Continuation\n" // Case B: Lazy/No Indent (FAILS currently)
+        "Lazy Continuation\n" // Case B: No Indent (Should exit list)
     );
 
     streamer
@@ -618,25 +620,21 @@ fn test_list_alignment_and_nesting_comprehensive() {
     let raw_output = aico::console::strip_ansi_codes(&String::from_utf8_lossy(&sink));
     let lines: Vec<&str> = raw_output.lines().collect();
 
-    // Case A: Explicit Indent (Green)
+    // Case A: Explicit Indent (Should still work)
     let indented_cont = lines.get(1).expect("Missing indented line");
     assert!(
         indented_cont.starts_with("  Indented"),
-        "Explicit Indent Failed."
+        "Explicit Indent Failed: Indented text should stay inside the list."
     );
 
-    // Case B: Lazy Continuation (Red)
-    // CommonMark: "Lazy Continuation" should wrap/align with "Lazy Parent".
-    // Current Streamer: Renders at margin (0 spaces).
+    // Case B: Lazy Continuation (UPDATED EXPECTATION)
+    // We intentionally disable CommonMark Lazy Continuation to allow users
+    // to exit lists by typing at the start of the line.
     let lazy_cont = lines.get(3).expect("Missing lazy line");
 
-    // We expect the renderer to handle wrapping/alignment logic,
-    // effectively treating this as part of the bullet item.
-    // NOTE: Since the current implementation treats this as a separate paragraph block,
-    // checking that it starts with "  " (2 spaces) will fail.
     assert!(
-        lazy_cont.starts_with("  Lazy"),
-        "Lazy Continuation Failed: Text without indent should align with list item.\nActual: '{:?}'",
+        !lazy_cont.starts_with(" "),
+        "Lazy Continuation / List Exit Failed: Text without indent should exit the list context.\nActual: '{:?}'",
         lazy_cont
     );
 }
@@ -953,5 +951,409 @@ fn test_list_with_same_line_code_fence() {
     assert!(
         !clean.ends_with("```ruby"),
         "Should not dump buffer at the end"
+    );
+}
+
+#[test]
+fn test_repro_bug_01_sticky_list_indentation() {
+    // BUG REPRODUCTION: Sticky List State
+    // Spec Reference: CommonMark Example 289 (Lists)
+    // "A list item can contain a block quote." -> implication: exiting list resets context.
+    //
+    // Case: A paragraph following a list must NOT be indented.
+    // Current Behavior: The 'list_stack' is not popped, causing 'Paragraph' to inherit indentation.
+
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0); // Use 0 margin to make detection easy (expecting NO leading spaces)
+    let mut sink = Vec::new();
+
+    let input = concat!(
+        "- Item 1\n",
+        "- Item 2\n",
+        "\n",
+        "Paragraph should be root.\n"
+    );
+
+    streamer
+        .print_chunk(&mut sink, input)
+        .expect("Write failed");
+    streamer.flush(&mut sink).expect("Flush failed");
+
+    let raw_output = String::from_utf8_lossy(&sink);
+    let clean_output = strip_ansi_codes(&raw_output);
+    let lines: Vec<&str> = clean_output.lines().collect();
+
+    let paragraph_line = lines.last().expect("Output was empty");
+
+    // Assertion: The paragraph must NOT start with spaces.
+    // If the bug is present, this will likely start with "  " (inherited from list).
+    assert!(
+        !paragraph_line.starts_with(" "),
+        "Sticky List Bug Detected: Root paragraph following a list retained indentation.\nActual: '{}'",
+        paragraph_line
+    );
+}
+
+#[test]
+fn test_repro_bug_02_blockquote_links_and_leaking() {
+    // BUG REPRODUCTION: Blockquote Leaks & Link Tokenization
+    // Spec Reference: CommonMark Example 228 (Block quotes) + Example 494 (Links)
+    //
+    // Issue A: Blockquote context ('│ ') leaks to subsequent paragraphs.
+    // Issue B: Links inside blockquotes are tokenized incorrectly, showing raw ANSI codes.
+
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0);
+    let mut sink = Vec::new();
+
+    let input = concat!(
+        "> [Link](https://example.com)\n",
+        "\n",
+        "Post-quote paragraph.\n"
+    );
+
+    streamer
+        .print_chunk(&mut sink, input)
+        .expect("Write failed");
+    streamer.flush(&mut sink).expect("Flush failed");
+
+    let raw_output = String::from_utf8_lossy(&sink);
+    let clean_output = strip_ansi_codes(&raw_output);
+    let lines: Vec<&str> = clean_output.lines().collect();
+
+    // --- Sub-test A: Indentation/Context Leak ---
+    let last_line = lines.last().expect("Missing last line");
+    assert!(
+        !last_line.contains("│"),
+        "Blockquote Leak Detected: The blockquote border '│' persisted to the next paragraph."
+    );
+    assert!(
+        !last_line.starts_with(" "),
+        "Blockquote Indent Leak Detected: The paragraph retained blockquote/list indentation."
+    );
+
+    // --- Sub-test B: Link Tokenization ---
+    // We look for broken ANSI sequences in the raw output.
+    // A broken sequence manifests as literal text without the escape char (\x1b).
+    let link_line_index = raw_output.lines().position(|l| l.contains("Link")).unwrap();
+    let link_line_raw = raw_output.lines().nth(link_line_index).unwrap();
+
+    // 1. Check for broken ANSI literals (bracket/numbers without leading ESC)
+    let broken_fg = "[33;4m";
+    let broken_reset = "[24;39m";
+
+    let has_broken =
+        |raw: &str, target: &str| raw.contains(target) && !raw.contains(&format!("\x1b{}", target));
+
+    assert!(
+        !has_broken(link_line_raw, broken_fg) && !has_broken(link_line_raw, broken_reset),
+        "Link Tokenization Bug Detected: Found literal ANSI codes without escape characters.\nRaw Line: {:?}",
+        link_line_raw
+    );
+
+    // 2. Check for presence of OSC 8 Hyperlink sequence (Success case)
+    // The sequence is \x1b]8;;
+    assert!(
+        link_line_raw.contains("\x1b]8;;"),
+        "Link Rendering Failed: OSC 8 hyperlink sequence is missing."
+    );
+}
+
+#[test]
+fn test_repro_bug_03_nested_list_indentation() {
+    // BUG REPRODUCTION: Nested List Alignment
+    // Spec Reference: CommonMark Example 266 (Nested Lists)
+    //
+    // Issue: The streamer calculates indentation using strict multiplication (depth * 2)
+    // rather than observing the relative indentation of the input.
+    // This causes misalignment or excessive indentation for nested items.
+
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0);
+    let mut sink = Vec::new();
+
+    // Standard 3-level nesting
+    let input = concat!("1. Level 1\n", "   1. Level 2\n", "      1. Level 3\n");
+
+    streamer
+        .print_chunk(&mut sink, input)
+        .expect("Write failed");
+    streamer.flush(&mut sink).expect("Flush failed");
+
+    let raw_output = strip_ansi_codes(&String::from_utf8_lossy(&sink));
+    let lines: Vec<&str> = raw_output.lines().collect();
+
+    let get_indent = |s: &str| s.chars().take_while(|c| *c == ' ').count();
+
+    let indent_1 = get_indent(lines[0]); // Level 1
+    let indent_2 = get_indent(lines[1]); // Level 2
+    let indent_3 = get_indent(lines[2]); // Level 3
+
+    assert!(
+        indent_2 > indent_1,
+        "Level 2 should be indented more than Level 1"
+    );
+    assert!(
+        indent_3 > indent_2,
+        "Level 3 should be indented more than Level 2"
+    );
+
+    // Specific check for the bug:
+    // If logic is broken, Level 2 might be treated as a continuation of Level 1 (indent_2 == indent_1)
+    // or the multiplier might be wrong.
+    // We expect roughly 2-3 spaces difference per level.
+    let delta_1_2 = indent_2 - indent_1;
+    let delta_2_3 = indent_3 - indent_2;
+
+    assert!(
+        delta_1_2 >= 2 && delta_1_2 <= 4,
+        "Nested Indentation Bug: Level 2 indentation delta is suspicious ({} spaces). Expected 2-4.",
+        delta_1_2
+    );
+    assert!(
+        delta_2_3 >= 2 && delta_2_3 <= 4,
+        "Nested Indentation Bug: Level 3 indentation delta is suspicious ({} spaces). Expected 2-4.",
+        delta_2_3
+    );
+}
+
+#[test]
+fn test_repro_bug_04_code_block_wrapping_background() {
+    // BUG REPRODUCTION: Code Block Background on Wrap
+    // Spec Reference: CommonMark Example 88 (Fenced Code Blocks)
+    //
+    // Issue: When a code line exceeds terminal width, the wrapping is handled by the terminal
+    // (or not at all), breaking the background color block. The renderer must manually wrap.
+
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_width(20); // Force aggressive wrapping
+    let mut sink = Vec::new();
+
+    let input = "```text\nAAAAABBBBBCCCCCDDDDD\n```\n";
+    // Length 20. With margin (default 2), available width is 18.
+    // This MUST wrap.
+
+    streamer
+        .print_chunk(&mut sink, input)
+        .expect("Write failed");
+    streamer.flush(&mut sink).expect("Flush failed");
+
+    let raw_output = String::from_utf8_lossy(&sink);
+    let lines: Vec<&str> = raw_output.lines().collect();
+
+    // Skip the opening/closing fence lines if they exist in output (implementation dependent)
+    // We look for the content lines.
+    let content_lines: Vec<&&str> = lines
+        .iter()
+        .filter(|l| l.contains('A') || l.contains('B') || l.contains('C') || l.contains('D'))
+        .collect();
+
+    assert!(
+        content_lines.len() >= 2,
+        "Code Block Wrapping Bug: Long line did not wrap despite set_width(20). Found {} content lines.",
+        content_lines.len()
+    );
+
+    // Verify Background Color Persistence
+    // The dark gray background is \x1b[48;2;30;30;30m
+    let bg_seq = "48;2;30;30;30m";
+
+    for (i, line) in content_lines.iter().enumerate() {
+        assert!(
+            line.contains(bg_seq),
+            "Code Block Background Bug: Wrapped line {} lost its background color.\nLine content: {:?}",
+            i + 1,
+            line
+        );
+    }
+}
+
+#[test]
+fn test_repro_bug_05_ordered_list_alignment() {
+    // BUG REPRODUCTION: Ordered List Marker Width
+    // Spec Principle: Content should align with the text of the list item,
+    // taking the marker width into account.
+    //
+    // "1. " is 3 chars wide.
+    // Current Implementation: Hardcodes 2 spaces per level.
+    // Result:
+    //   1. Start
+    //     Continuation (2 spaces, misaligned)
+    //
+    // Expected:
+    //   1. Text
+    //      Continuation (3 spaces, aligned)
+
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0);
+    let mut sink = Vec::new();
+
+    let input = concat!(
+        "1. Start\n",
+        "   Continuation\n", // Input has 3 spaces
+        "   * Nested\n"      // Nested item should also align to column 3
+    );
+
+    streamer
+        .print_chunk(&mut sink, input)
+        .expect("Write failed");
+    streamer.flush(&mut sink).expect("Flush failed");
+
+    let raw_output = aico::console::strip_ansi_codes(&String::from_utf8_lossy(&sink));
+    let lines: Vec<&str> = raw_output.lines().collect();
+
+    // Line 1: "1. Start"
+    // Marker width = 3 chars ("1. ")
+
+    // Line 2: Continuation
+    // Should be indented by 3 spaces to align with "Start"
+    let cont_line = lines.get(1).expect("Missing continuation line");
+    let cont_indent = cont_line.chars().take_while(|c| *c == ' ').count();
+
+    assert_eq!(
+        cont_indent, 3,
+        "Ordered list continuation was under-indented. Expected 3 spaces (matching '1. '), got {}.",
+        cont_indent
+    );
+
+    // Line 3: Nested Item
+    // Should be indented by 3 spaces to align with parent text
+    let nested_line = lines.get(2).expect("Missing nested line");
+    let nested_indent = nested_line.chars().take_while(|c| *c == ' ').count();
+
+    assert_eq!(
+        nested_indent, 3,
+        "Nested list item was under-indented. Expected 3 spaces (aligning with parent '1. '), got {}.",
+        nested_indent
+    );
+}
+
+#[test]
+fn test_repro_bug_06_spec_alignment_compliance() {
+    // BUG REPRODUCTION: Variable Marker Spacing (Spec Rule 1 violation)
+    // Spec Reference: CommonMark Spec "List items", Rule 1 [cite: 387-388]
+    // See also Example 394.
+    //
+    // Principle: "The position of the text after the list marker determines
+    // how much indentation is needed."
+    //
+    // Input Case:
+    // "1.  Text"
+    //  ^   ^
+    //  |---|
+    //  Marker "1." (Width W=2) + Spacing (N=2) = Total Indent 4.
+    //
+    // If the renderer collapses this to "1. Text" (Indent 3), it violates the spec
+    // because the "structural indent" of the block should remain 4.
+
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0);
+    let mut sink = Vec::new();
+
+    let input = concat!(
+        "1.  Header\n",       // W=2, N=2 -> Indent 4
+        "    Continuation\n"  // Indent 4. Matches header text column.
+    );
+
+    streamer
+        .print_chunk(&mut sink, input)
+        .expect("Write failed");
+    streamer.flush(&mut sink).expect("Flush failed");
+
+    let raw_output = aico::console::strip_ansi_codes(&String::from_utf8_lossy(&sink));
+    let lines: Vec<&str> = raw_output.lines().collect();
+
+    // Check 1: Header Line Preservation
+    // The renderer must preserve the visual gap (2 spaces) or equivalent structural alignment.
+    // Current bug: Collapses to "1. Header" (1 space).
+    let header_line = lines[0];
+    assert!(
+        header_line.contains("1.  Header"),
+        "Spec Violation: Renderer altered the defining spacing of the list item.\nExpected '1.  Header', got '{}'",
+        header_line
+    );
+
+    // Check 2: Continuation Alignment
+    // The continuation line provided 4 spaces. The renderer should strip exactly 4 spaces
+    // (the W+N calculated from line 1).
+    //
+    // If it calculated W+N=3 (the bug), it will strip 3 spaces and leave 1 space visible.
+    let continuation_line = lines[1];
+
+    // We expect NO leading spaces on the content "Continuation" because they should
+    // all be consumed by the list indentation logic.
+    let indent_count = continuation_line.chars().take_while(|c| *c == ' ').count();
+
+    assert_eq!(
+        indent_count, 4,
+        "Spec Violation: Continuation alignment mismatch.\nExpected 4 spaces (matching '1.  '), got {}.\nLine: '{}'",
+        indent_count, continuation_line
+    );
+}
+
+#[test]
+fn test_sticky_list_exit_behavior() {
+    // BUG REPRODUCTION: Sticky List State
+    // A root-level paragraph (0 indent) should force the list to close.
+    // Currently, the 'if current_indent > 0' guard prevents this.
+
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0);
+    let mut sink = Vec::new();
+
+    let input = concat!(
+        "- Item 1\n",
+        "  - Nested\n",
+        "Root Paragraph\n" // 0 indent -> Should exit list context
+    );
+
+    streamer
+        .print_chunk(&mut sink, input)
+        .expect("Write failed");
+    streamer.flush(&mut sink).expect("Flush failed");
+
+    let raw_output = aico::console::strip_ansi_codes(&String::from_utf8_lossy(&sink));
+    let lines: Vec<&str> = raw_output.lines().collect();
+
+    let root_line = lines.last().expect("Missing root line");
+
+    // If the bug exists, this line will be indented (e.g., "  Root Paragraph")
+    assert!(
+        !root_line.starts_with(" "),
+        "Sticky List Bug: Root paragraph failed to exit list context.\nActual: '{:?}'",
+        root_line
+    );
+}
+
+#[test]
+fn test_tokenizer_priority_code_vs_math() {
+    // BUG REPRODUCTION: Tokenizer Priority
+    // Spec Reference: CommonMark 5.1/6.1 "Code span backticks have higher precedence..."
+    // Current behavior: Math regex ($...$) runs before Code, mangling shell scripts.
+
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0);
+    let mut sink = Vec::new();
+
+    // A string that looks like math if you ignore backticks: "$VAR" ... "$VAR"
+    let input = "Code: `echo \"$VAR\" and \"$VAR\"` end.\n";
+
+    streamer
+        .print_chunk(&mut sink, input)
+        .expect("Write failed");
+    streamer.flush(&mut sink).expect("Flush failed");
+
+    let raw_output = String::from_utf8_lossy(&sink);
+
+    // 1. Verify content preservation
+    assert!(
+        raw_output.contains("$VAR"),
+        "Tokenizer Bug: variable '$VAR' was consumed/altered by Math parser."
+    );
+
+    // 2. Verify no Math styling (Italic \x1b[3m) leaked in
+    assert!(
+        !raw_output.contains("\x1b[3m"),
+        "Tokenizer Bug: Detected Math styling inside a code block."
     );
 }
