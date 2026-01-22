@@ -5,11 +5,11 @@ description = "Scriptable control over LLMs from the terminal"
 readme = "README.md"
 homepage = "https://github.com/jurriaan/aico"
 repository = "https://github.com/jurriaan/aico"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 license = "MIT"
 categories = ["command-line-utilities", "text-processing"]
-rust-version = "1.92"
+rust-version = "1.93"
 default-run = "aico"
 exclude = [
     "mise.toml",
