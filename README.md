@@ -92,13 +92,28 @@ MDG is an alternative syntax for Cucumber that allows you to embed executable te
 
 ## Installation
 
-Install `aico` from source using `cargo`:
+### Option 1: Pre-compiled binaries
+
+Download the latest binary for your platform from the [Releases](https://github.com/jurriaan/aico/releases) page.
+
+1.  **Download** the binary (e.g., `aico-linux-x86_64`).
+2.  **Make it executable** and move it to your path:
 
 ```bash
-cargo install --git https://github.com/jurriaan/aico.git
+chmod +x aico-linux-x86_64
+sudo mv aico-linux-x86_64 /usr/local/bin/aico
+```
+
+### Option 2: Build from source
+
+If you have the Rust toolchain installed, you can build and install the `aico-cli` crate:
+
+```bash
+cargo install aico-cli
 ```
 
 Ensure that `$HOME/.cargo/bin` is in your `PATH`.
+
 
 ## Configuration
 
