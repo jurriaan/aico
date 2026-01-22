@@ -31,7 +31,7 @@ backend = "aqua:jqlang/jq"
 "platforms.windows-x64" = { checksum = "sha256:23cb60a1354eed6bcc8d9b9735e8c7b388cd1fdcb75726b93bc299ef22dd9334", url = "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-windows-amd64.exe"}
 
 [[tools.rust]]
-version = "1.92.0"
+version = "1.93.0"
 backend = "core:rust"
 
 [[tools.rust-analyzer]]

@@ -43,7 +43,7 @@ jobs:
           rustflags: ''
       - uses: jdx/mise-action@e53f0d17e7bc32c896a495315e0b17812356bc68
         with:
-          version: 2026.1.1
+          version: 2026.1.5
           add_shims_to_path: false
       - run: script/setup
       - run: script/build
@@ -72,7 +72,7 @@ jobs:
           components: 'cargo, rust-std, rustc, rustfmt, clippy'
       - uses: jdx/mise-action@e53f0d17e7bc32c896a495315e0b17812356bc68
         with:
-          version: 2026.1.1
+          version: 2026.1.5
           add_shims_to_path: false
       - run: script/lint
       - run: script/test
