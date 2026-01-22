@@ -431,13 +431,6 @@ impl MarkdownStreamer {
             let separator = caps.get(3).map_or(" ", |m| m.as_str());
             let text = caps.get(4).map_or("", |m| m.as_str());
 
-            // Heuristic: Strict CommonMark compliance.
-            // A line like "* a *" should be literal emphasis, not a list item.
-            // If the bullet is '*' and the text ends with '*' treat as text.
-            if bullet == "*" && text.trim_end().ends_with('*') && text.len() < 20 {
-                return Ok(false);
-            }
-
             let is_ord = bullet.chars().any(|c| c.is_numeric());
             let disp_bullet = if is_ord { bullet } else { "•" };
             let marker_width = self.visible_width(disp_bullet) + separator.len();

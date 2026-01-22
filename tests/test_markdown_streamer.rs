@@ -642,21 +642,30 @@ fn test_list_alignment_and_nesting_comprehensive() {
 #[test]
 fn test_rule_01_asterisk_open() {
     // Rule 1: A single * character can open emphasis iff it is part of a left-flanking delimiter run.
+    // The key condition is: If followed by whitespace, it is NOT emphasis.
 
     // Example 1: Basic valid emphasis
+    // "*" followed by "f" (not whitespace) -> Emphasis
     check(
         "*foo bar*",
         format!("{}foo bar{}", ITALIC, ITALIC_OFF).as_str(),
     );
 
     // Example 2: Followed by whitespace (Not left-flanking) -> Literal
+    // Input: "a * foo bar*"
+    // The first "*" is followed by a space. Rule 1 says it remains literal.
     check("a * foo bar*", "a * foo bar*");
 
     // Example 3: Preceded by alphanum, followed by punct (Not left-flanking) -> Literal
     check("a*\"foo\"*", "a*\"foo\"*");
 
     // Example 4: Surrounded by spaces -> Literal
-    check("* a *", "* a *");
+    // Input: "x * a *"
+    // IMPORTANT: We place 'x' at the start.
+    // If we used "* a *", the Block Parser would seize it as a List Item.
+    // By using "x * a *", we force it to be a Paragraph, letting us verify
+    // that the Inline Parser sees "* " and correctly leaves it as literal text.
+    check("x * a *", "x * a *");
 
     // Example 5: Intraword emphasis (Allowed for *)
     check(
@@ -1355,5 +1364,54 @@ fn test_tokenizer_priority_code_vs_math() {
     assert!(
         !raw_output.contains("\x1b[3m"),
         "Tokenizer Bug: Detected Math styling inside a code block."
+    );
+}
+
+#[test]
+fn test_spec_compliance_block_precedence_list_vs_emphasis() {
+    // Spec Reference: CommonMark Section 6.1 (Blocks and inlines - Precedence)
+    // "Indicators of block structure always take precedence over indicators of inline structure."
+
+    use aico::console::strip_ansi_codes;
+
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0);
+    let mut sink = Vec::new();
+
+    // Case 1: Canonical Spec Example
+    // Input: "* a *"
+    // This MUST be a list item. The current engine logic explicitly forbids this
+    // due to the incorrect heuristic in try_handle_list.
+    let input_canonical = "* a *\n";
+    streamer
+        .print_chunk(&mut sink, input_canonical)
+        .expect("Write 1 failed");
+
+    // Case 2: User Reported Bug
+    // Input: "* **Title:**"
+    // This fails for the same reason: the line ends with '*', so the engine treats it as text.
+    let input_user = "* **Title:**\n";
+    streamer
+        .print_chunk(&mut sink, input_user)
+        .expect("Write 2 failed");
+
+    streamer.flush(&mut sink).expect("Flush failed");
+
+    let raw_output = String::from_utf8_lossy(&sink);
+    let clean_output = strip_ansi_codes(&raw_output);
+
+    // VERIFICATION
+    // Both lines should be rendered as List Items (•).
+
+    assert!(
+        clean_output.contains("• a *"),
+        "Canonical Precedence Bug: '* a *' was not parsed as a list item.\nOutput: {:?}",
+        clean_output
+    );
+
+    assert!(
+        clean_output.contains("• Title:"),
+        "User Bug: '* **Title:**' was not parsed as a list item.\nOutput: {:?}",
+        clean_output
     );
 }
