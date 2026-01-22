@@ -96,6 +96,19 @@ pub fn append_file_context_xml(buffer: &mut String, path: &str, content: &str) {
     buffer.push_str("  </file>\n");
 }
 
+fn merge_display_items(items: Vec<DisplayItem>) -> Vec<DisplayItem> {
+    let mut merged = Vec::with_capacity(items.len());
+    for item in items {
+        match (merged.last_mut(), item) {
+            (Some(DisplayItem::Markdown(last)), DisplayItem::Markdown(next)) => {
+                last.push_str(&next);
+            }
+            (_, item) => merged.push(item),
+        }
+    }
+    merged
+}
+
 fn format_file_block(mut files: Vec<(&str, &str)>, intro: &str, anchor: &str) -> Vec<Message> {
     if files.is_empty() {
         return vec![];
@@ -270,11 +283,13 @@ pub async fn execute_interaction(
     all_warnings.extend(final_warnings);
 
     // Merge incremental yields with final resolution items
-    let mut all_display_items: Vec<DisplayItem> = cumulative_yields
+    let mut raw_display_items: Vec<DisplayItem> = cumulative_yields
         .into_iter()
         .filter_map(|i| i.to_display_item(true))
         .collect();
-    all_display_items.append(&mut final_display_items);
+    raw_display_items.append(&mut final_display_items);
+
+    let all_display_items = merge_display_items(raw_display_items);
 
     if !all_warnings.is_empty() {
         eprintln!("\nWarnings:");
@@ -451,4 +466,39 @@ pub async fn build_request_with_piped(
         }),
         extra_body: client.get_extra_params(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::DisplayItem;
+
+    #[test]
+    fn test_merge_display_items_collapses_consecutive_markdown() {
+        let items = vec![
+            DisplayItem::Markdown("Hello ".into()),
+            DisplayItem::Markdown("World".into()),
+            DisplayItem::Diff("diff1".into()),
+            DisplayItem::Markdown("Part 1".into()),
+            DisplayItem::Markdown("Part 2".into()),
+            DisplayItem::Diff("diff2".into()),
+        ];
+
+        let merged = merge_display_items(items);
+
+        assert_eq!(merged.len(), 4);
+        assert_eq!(merged[0], DisplayItem::Markdown("Hello World".into()));
+        assert_eq!(merged[1], DisplayItem::Diff("diff1".into()));
+        assert_eq!(merged[2], DisplayItem::Markdown("Part 1Part 2".into()));
+        assert_eq!(merged[3], DisplayItem::Diff("diff2".into()));
+    }
+
+    #[test]
+    fn test_merge_display_items_handles_empty_or_single() {
+        let items: Vec<DisplayItem> = vec![];
+        assert_eq!(merge_display_items(items).len(), 0);
+
+        let items = vec![DisplayItem::Markdown("one".into())];
+        assert_eq!(merge_display_items(items).len(), 1);
+    }
 }

@@ -863,3 +863,62 @@ async fn test_calculate_cost_prioritizes_api_reported_cost() {
     let content = fs::read_to_string(history_path).unwrap();
     assert!(content.contains("\"cost\":0.999"));
 }
+
+#[tokio::test]
+async fn test_ask_merges_fragmented_display_items_in_history() {
+    let temp = tempdir().unwrap();
+    let root = temp.path();
+    setup_session(root);
+
+    let mut server = Server::new_async().await;
+
+    // GIVEN a fragmented response from the LLM
+    let chunk1 = json!({ "choices": [{"delta": {"content": "I am "}, "index": 0}] });
+    let chunk2 = json!({ "choices": [{"delta": {"content": "split "}, "index": 0}] });
+    let chunk3 = json!({ "choices": [{"delta": {"content": "across chunks."}, "index": 0}] });
+
+    let mock = server
+        .mock("POST", "/chat/completions")
+        .with_status(200)
+        .with_header("content-type", "text/event-stream")
+        .with_body(format!(
+            "data: {}\n\ndata: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
+            chunk1, chunk2, chunk3
+        ))
+        .create_async()
+        .await;
+
+    // WHEN running ask
+    cargo_bin_cmd!("aico")
+        .current_dir(root)
+        .env("OPENAI_API_KEY", "sk-test")
+        .env("OPENAI_BASE_URL", server.url())
+        .args(["ask", "fragmentation test"])
+        .assert()
+        .success();
+
+    mock.assert_async().await;
+
+    // THEN verify the history store has merged the items into a single Markdown block
+    let history_path = root.join(".aico/history/0.jsonl");
+    let content = fs::read_to_string(history_path).unwrap();
+
+    let asst_msg: serde_json::Value = content
+        .lines()
+        .find(|l| l.contains("\"role\":\"assistant\""))
+        .and_then(|l| serde_json::from_str(l).ok())
+        .expect("Assistant message should be in history");
+
+    let display_items = asst_msg["derived"]["display_content"]
+        .as_array()
+        .expect("display_content should be an array");
+
+    assert_eq!(
+        display_items.len(),
+        1,
+        "Display items should be merged. Got: {:?}",
+        display_items
+    );
+    assert_eq!(display_items[0]["type"], "markdown");
+    assert_eq!(display_items[0]["content"], "I am split across chunks.");
+}
