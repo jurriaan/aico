@@ -64,30 +64,30 @@ pub fn run(
 
     // 1. Resolve structured content
     // We parse if recompute is requested OR if derived content is missing (fallback for legacy or broken history)
-    let (unified_diff, display_items, warnings) = if recompute || asst_rec.derived.is_none() {
-        use crate::diffing::parser::StreamParser;
-
-        let mut parser = StreamParser::new(&session.context_content);
-        let gated_content = if asst_rec.content.ends_with('\n') {
-            asst_rec.content.clone()
-        } else {
-            format!("{}\n", asst_rec.content)
-        };
-        parser.feed(&gated_content);
-
-        let (diff, items, warnings) = parser.final_resolve(&session.root);
-
-        (Some(diff), items, warnings)
-    } else {
-        let derived = asst_rec.derived.as_ref().unwrap();
-        (
+    let (unified_diff, display_items, warnings) = match (&asst_rec.derived, recompute) {
+        (Some(derived), false) => (
             derived.unified_diff.clone(),
             derived
                 .display_content
                 .clone()
                 .unwrap_or_else(|| vec![DisplayItem::Markdown(asst_rec.content.clone())]),
             vec![],
-        )
+        ),
+        _ => {
+            use crate::diffing::parser::StreamParser;
+
+            let mut parser = StreamParser::new(&session.context_content);
+            let gated_content = if asst_rec.content.ends_with('\n') {
+                asst_rec.content.clone()
+            } else {
+                format!("{}\n", asst_rec.content)
+            };
+            parser.feed(&gated_content);
+
+            let (diff, items, warnings) = parser.final_resolve(&session.root);
+
+            (Some(diff), items, warnings)
+        }
     };
 
     // 2. Render based on TTY and intent
