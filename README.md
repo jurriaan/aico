@@ -1,8 +1,94 @@
 # aico
 
-`aico` provides scriptable control over Large Language Models from the terminal. It is a **structured interface to the LLM**, treating it as a command-line utility rather than an agent.
+`aico` is an LLM client designed for the software engineering lifecycle. It treats the Large Language Model as a subordinate implementation engine, empowering you to focus on the **Architect** role.
 
-Manage context by `add`ing and `drop`ping files, control history, and receive output as standard text or unified diffs, ready for piping into `patch`, `delta`, or scripts. Built on the philosophy that the developer is in command, `aico` is a transparent and composable part of the toolchain.
+Unlike agents that try to take over, `aico` is a "hands-on" tool. You explicitly manage the context window to define architectural boundaries, plan changes in natural language, and generate standard unified diffs that you review and apply.
+
+## Philosophy
+
+`aico` is built on three core pillars that prioritize correctness and maintainability over raw speed.
+
+- **It's a tool, not an agent.** `aico` does not execute code or edit files autonomously. It reads input and produces patches. This ensures you remain the gatekeeper of your codebase.
+
+- **Unix philosophy.** `aico` is composable. It outputs clean, machine-readable data to `stdout`, ready to be piped into standard tools like `patch` or `delta`.
+
+- **Architectural control.** By explicitly `add`ing and `drop`ping files from the session, you force the model to focus on the specific problem space, reducing hallucinations and preventing "spaghetti code" suggestions that ignore your project's structure.
+
+## The workflow: specification-driven development
+
+`aico` is unopinionated, but it shines when you use a disciplined, specification-first workflow. This example demonstrates building an "Apply Voucher" feature by defining behavior before implementation.
+
+### 1. Alignment (`ask`)
+
+Don't jump straight to code. First, establish context and align on the design.
+
+```bash
+# Define the architectural boundary
+aico add app/services/cart.py app/models/voucher.py
+
+# Plan the feature without writing code
+aico ask "We need a robust 'Apply Voucher' method. It must validate dates and check usage limits. Discuss the edge cases."
+```
+
+### 2. Specification (`gen`)
+
+Generate a failing test case (the specification) to codify the requirements. This ensures the implementation will meet your standards.
+
+```bash
+aico gen "Generate a high-level unit test for the happy path and the expired voucher case." > tests/voucher_test.py
+```
+
+### 3. Implementation (`gen`)
+
+Now, instruct `aico` to write the minimal code to satisfy the spec.
+
+```bash
+# Add the test to context so the model sees the goal
+aico add tests/voucher_test.py
+
+# Generate the implementation patch
+aico gen "Implement the apply_voucher method to pass the test."
+```
+
+### 4. Review and apply (`last`)
+
+Review the generated diff. If it looks correct, apply it.
+
+```bash
+# Apply to disk
+aico last | patch -p1
+```
+
+### Why this works
+
+- **Review-first:** `aico` forces you to review changes before they exist. By generating diffs (`gen`) that must be manually applied (`patch`), you are never surprised by an edit. You remain the gatekeeper of your codebase.
+- **Plan vs Execute:** The distinction between `ask` (discussion) and `gen` (code) is intentional. It encourages you to fully resolve the design in natural language during the `ask` phase before committing to syntax in the `gen` phase.
+- **Focused context:** Manually `add`ing and `drop`ping files ensures the LLM focuses only on relevant code, keeping token costs low and reasoning sharp.
+- **Correcting the brain:** By using `aico edit` to fix mistakes in the history rather than the file, we prevent the model from spiraling into bad patterns.
+
+### Optimization: "Prompt Engineering" via conventions
+
+Once you settle on a workflow, typing verbose prompts becomes tedious. You can teach `aico` your vocabulary by adding a `CONVENTIONS.md` file to your project root. Because `aico` sees this file in its context (once you've `aico add`ed it), it "learns" your shorthand instantly.
+
+Here is the cheat sheet we use to speed up the workflow above:
+
+| Command | Phase | Instruction to AI |
+| -- | -- | -- |
+| **`brst`** | Planning | **Brainstorm.** Do not write code yet. Read the request, summarize your understanding, and ask numbered questions to clarify ambiguity. |
+| **`cnfrm`** | Planning | **Confirm.** "Yes, the plan is correct." Output the final plan. If you still have doubts, ask more questions. |
+| **`mkgold`** | Spec | **Make Golden.** Generate a "Golden Path" test case that describes the feature's successful behavior. |
+| **`mkgreen`** | Exec | **Make Green.** Write the minimal implementation code required to make the spec pass. |
+| **`mkcurl`** | Verify | **Make Curl.** Provide a one-line `curl` command to test this endpoint on localhost. |
+
+The trick is to make your abbreviations distinct from regular words, so the model doesn't confuse them with normal language.
+
+### Optimization: use natural language for architectural specifications
+
+While Unit Tests are familiar, they force you to decide on implementation details very early in the process. This can lead to brittleness if you change your mind during the implementation phase.
+
+For complex features, we recommend [Markdown with Gherkin (MDG)](https://github.com/cucumber/gherkin/blob/main/MARKDOWN_WITH_GHERKIN.md).
+
+MDG is an alternative syntax for Cucumber that allows you to embed executable tests directly in Markdown. Because it relies on natural language, it lets you define the behavior (the "what") without locking yourself into specific implementation choices (the "how") too early. In this workflow, the Markdown file *is* the test.
 
 ## Installation
 
@@ -20,11 +106,11 @@ Ensure that `$HOME/.cargo/bin` is in your `PATH`.
 
 For example:
 
--   For OpenAI models (like `openai/gpt-4o`):
+-   For OpenAI models:
     ```bash
     export OPENAI_API_KEY="sk-..."
     ```
--   For non-OpenAI models via OpenRouter (like `openrouter/anthropic/claude-3.5-sonnet` or `openrouter/google/gemini-flash-1.5`):
+-   For non-OpenAI models via OpenRouter:
     ```bash
     export OPENROUTER_API_KEY="sk-..."
     ```
@@ -35,145 +121,23 @@ You specify which model to use when you initialize a session. Use the `openai/` 
 aico init --model "openrouter/google/gemini-3-pro-preview"
 ```
 
-**Note:** All models must use the explicit provider prefix (`openai/<model>` or `openrouter/<model>`). OpenRouter provides access to models from Anthropic, Google, Meta, and many others.
+**Note:** All models must use the explicit provider prefix (`openai/<model>` or `openrouter/<model>`).
 
-## Philosophy
+## Essential commands
 
-`aico` is guided by a few core principles that differentiate it from chat-based assistants.
+This is a focused list of the core lifecycle commands. Run `aico --help` for the full reference.
 
-- **It's a Tool, Not an Agent.** It is a command-line utility that transforms text. It takes files and instructions as input and produces diffs or raw text as output. Its behavior is designed to be as predictable as `grep` or `sed`.
+- `aico init`: Initialize a new session in the current directory.
+- `aico add <files...>`: Add files to the context window.
+- `aico ask "<text>"`: Discuss and plan without generating code blocks.
+- `aico gen "<text>"`: Generate code changes (output as Unified Diff).
+- `aico last`: View the last output (use `| patch -p1` to apply).
+- `aico undo`: Exclude the last turn from history.
 
-- **Built for Composition.** `aico` outputs standard unified diffs to `stdout`. These pipe into other command-line tools.
+## Advanced features
 
-  ```bash
-  # Generate a diff and pipe it directly to patch to apply it
-  aico gen "Implement Increment 1 of the plan" | patch -p1
-
-  # Or review the last generated diff with a modern diffing tool like delta
-  aico last | delta
-  ```
-
-- **Transparent State.** There is no hidden state or magic. `aico` uses a transparent storage architecture: a tiny pointer file (`.ai_session.json`) references a lightweight session view (`.aico/sessions/*.json`) and a sharded, append-only history log (`.aico/history/`). This enables git-like branching via views while keeping all data inspectable and versionable.
-
-- **Focused on Code Modification.** The `aico gen` (`generate-patch`) command is optimized to produce standard unified diffs, making it ideal for refactoring, adding features, or fixing bugs directly from your terminal.
-
-## Features
-
-- **Streaming Output:** See the AI's response in real-time. With the `gen` command, watch as diffs are generated and rendered in-place.
-- **Branching Workflows:** Fork conversations to try different solutions without duplicating history data. Switch between session branches seamlessly to manage different tasks or experiments.
-- **Context Management:** Explicitly `add` and `drop` files to control exactly what the AI sees.
-- **History Control:** Easily manage how much of the conversation history is included in the next prompt to balance context-awareness with cost.
-- **Cost and Token Tracking:** See token usage and estimated cost for each interaction.
-- **Standard Tooling:** Includes built-in commands for `commit` generation, session `summarize`ation, and interactive context management.
-- **Editor-Agnostic:** Because it's a CLI tool, `aico` works with any code editor, from Vim to VSCode.
-
-## Branching and Sessions
-
-`aico` uses a pointer-based architecture to support branching workflows. Commands, including mutating ones (e.g., `ask`, `gen`, `edit`, `undo/redo`, `set-history`, and context/model updates), work across branches. Fork conversations to try solutions without duplicating history data. Switch branches to manage tasks or experiments.
-
-## Basic Workflow: Plan and Execute
-
-*Note: For a guide on `aico` in production, see [the example workflows](EXAMPLE_WORKFLOWS.md) document.*
-
-One way to use `aico` is to first prompt the model for a plan, then request execution for each step.
-
-These are common steps in such a workflow:
-
-1. **Initialize a session in your project root.**
-
-   ```bash
-   aico init --model "openrouter/google/gemini-3-pro-preview"
-   ```
-
-2. **Define the context boundary.** Add relevant files to the AI's context. Keep it focused: `drop` files when they are no longer needed to prevent hallucinations and reduce token costs.
-
-   ```bash
-   aico add src/utils.py src/main.py
-   ```
-
-3. **(Optional) Check the context size and cost.** Before sending a complex prompt, you can see how large the context will be and the estimated cost.
-
-   ```bash
-   aico status
-   ```
-
-4. **Plan the work. Prompt the model for a plan.**
-
-   ```bash
-   aico ask "Propose a multi-increment, test-driven plan to refactor the 'hello' function in main.py. It should accept a 'name' argument and print a greeting."
-   ```
-
-   The model streams a numbered plan. This begins a history of messages.
-
-5. **Execute one step. Request code for the first increment.**
-
-   ```bash
-   aico gen "Implement Increment 1 of the plan."
-   ```
-
-   `aico` streams the response, including the diff.
-
-6. **Review, Apply, and Correct.**
-
-   ```bash
-   # Review the diff from the last command with a tool like delta
-   aico last | delta
-
-   # If the patch is correct, apply it
-   aico last | patch -p1
-
-   # Small mistake (e.g., naming error)? Fix the history directly so the AI "learns".
-   aico edit
-
-   # Wrong approach? Undo the last interaction and re-prompt.
-   aico undo
-   ```
-
-Repeat steps 5 and 6 for each increment of the plan.
-
-**Finished the feature?**
-Use the [`summarize`](#standard-addons) addon to archive your current history and reset the context for the next task:
-```bash
-aico summarize
-```
-
-For more detailed usage examples and tutorials, see the [docs/](docs/) directory.
-
-## Commands Overview
-
-- `aico init`: Creates a `.ai_session.json` pointer and initializes the session directory.
-- `aico add <files...>`: Adds one or more files to the session context.
-- `aico drop <files...>`: Removes one or more files from the context.
-- `aico manage-context`: Interactive context management using `git ls-files` and `fzf`. (addon)
-- `aico ask "<instruction>"`: Have a conversation with the AI for planning and discussion.
-- `aico gen | generate-patch "<instruction>"`: Generate code modifications as a unified diff.
-- `aico refine [index] "<instruction>"`: Regenerate a previous response based on a specific critique. (addon)
-- `aico prompt "<instruction>"`: A power-user command for sending unformatted prompts. Primarily intended for scripting or addons. Prefer `ask` or `gen` for general use.
-- `aico dump-history`: Exports the active chat history to `stdout` in a machine-readable format. Useful for scripting and addons.
-- `aico last [index]`: Shows the response from the message pair at the given index (e.g., `0` for the first pair, `-1` for the last). Defaults to `-1`.
-  - `--prompt`: Shows the user's prompt message instead of the AI's response.
-  - `--recompute`: Re-applies the original instruction to the current file state. Useful for retrying a command after adding/changing context.
-  - `--verbatim`: Prints the original, unprocessed response from the AI.
-- `aico edit [index]`: Open the content of a message in your default editor (`$EDITOR`) to make manual corrections. Use `--prompt` to edit the user prompt instead of the assistant response.
-- `aico undo [indices...]`: Marks message pairs as excluded. Supports single indices (`0`), lists (`0 1`), and inclusive ranges (`0..2` or `-3..-1`). Defaults to `-1`.
-- `aico redo [indices...]`: Re-includes previously excluded message pairs. Supports single indices, lists, and ranges (e.g., `aico redo 0..2`).
-- `aico status`: Shows a comprehensive summary of the session status, including token usage, estimated cost, and chat history configuration.
-- `aico log`: Show a compact `git log`-style view of the active conversation context.
-- `aico set-history <index>`: Set which message pair the active history starts from. For example, `aico set-history 0` makes the full history active.
-- `aico completions <shell>`: Generates shell completion scripts (e.g., for `bash`, `zsh`, `fish`) to `stdout`.
-- `aico commit`: Generates a Conventional Commit message for staged changes. (addon)
-- `aico summarize`: Archives history and resets the active window via `PROJECT_SUMMARY.md`. (addon)
-- `aico session-list`: List available session branches.
-- `aico session-switch <name>`: Switch the active branch.
-- `aico session-fork <name>`: Create a new branch from the current one.
-- `aico session-new <name>`: Create a new, empty session branch.
-- `aico trust [path]`: Whitelists a project directory to enable the execution of local addons found in `.aico/addons/`.
-
-## Addons: Extending aico
-
-`aico` is extended via **Addon Scripts**. There is no complex plugin API—subcommands are simply executable files that interact with `aico` via environment variables and standard I/O. Commands marked `(addon)` in the overview above are bundled with `aico` but operate as independent scripts.
-
-For a detailed walkthrough on creating, trusting, and overriding addons, see the [Guide: Creating Custom Addons](docs/guide_creating_addons.md).
+- **Branching:** Use `aico session-fork` to experiment with different solutions on parallel history branches without duplicating data.
+- **Addons:** Extend `aico` with scripts in `.aico/addons/`. Includes built-in support for commit message generation (`aico commit`) and summarization (`aico summarize`).
 
 ## Contributing
 
@@ -182,6 +146,9 @@ This is a tool I use personally; PRs are welcome but feature requests may be dec
 ### Development
 
 ```bash
+# Setup your development environment
+./script/setup
+
 # Run linting and type checking
 ./script/lint
 
