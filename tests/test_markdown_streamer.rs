@@ -1335,6 +1335,96 @@ fn test_sticky_list_exit_behavior() {
 }
 
 #[test]
+fn test_spec_ex_43_hr_precedence() {
+    // Spec Section 4.1, Example 43:
+    // "When both a thematic break and a list item are possible interpretations
+    // of a line, the thematic break takes precedence."
+    //
+    // Input:
+    //   - Foo
+    //   - * * *
+    //
+    // Expected: A list item "Foo", followed by a Horizontal Rule.
+    // Current Bug: "* * *" is interpreted as a nested list item because
+    // try_handle_list runs before try_handle_hr.
+
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0);
+    let mut sink = Vec::new();
+
+    let input = "- Foo\n- * * *\n";
+
+    streamer
+        .print_chunk(&mut sink, input)
+        .expect("Write failed");
+    streamer.flush(&mut sink).expect("Flush failed");
+
+    let raw_output = String::from_utf8_lossy(&sink);
+    let clean_output = aico::console::strip_ansi_codes(&raw_output);
+
+    // We expect the horizontal rule drawing character "─"
+    assert!(
+        clean_output.contains("─"),
+        "Spec Ex 43: Failed to render thematic break. Output:\n{}",
+        clean_output
+    );
+
+    // We should NOT see a second bullet for "* * *"
+    let bullet_count = clean_output.matches("•").count();
+    assert_eq!(
+        bullet_count, 1,
+        "Spec Ex 43: '* * *' was incorrectly rendered as a list item instead of HR."
+    );
+}
+
+#[test]
+fn test_spec_ex_330_block_precedence() {
+    // Spec Section 6.1, Example 330:
+    // "Indicators of block structure always take precedence over indicators of inline structure."
+    //
+    // Input:
+    //   - `one
+    //   - two`
+    //
+    // Expected: Two list items. The backticks are literal text.
+    // Current Bug: The first backtick opens an inline code span, and the guard
+    // `if self.inline_code_ticks.is_none()` prevents the second line from being
+    // recognized as a list item.
+
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0);
+    let mut sink = Vec::new();
+
+    let input = "- `one\n- two`\n";
+
+    streamer
+        .print_chunk(&mut sink, input)
+        .expect("Write failed");
+    streamer.flush(&mut sink).expect("Flush failed");
+
+    let raw_output = String::from_utf8_lossy(&sink);
+    let clean_output = aico::console::strip_ansi_codes(&raw_output);
+
+    // We expect TWO bullets
+    let bullet_count = clean_output.matches("•").count();
+    assert_eq!(
+        bullet_count, 2,
+        "Spec Ex 330: Inline code span incorrectly suppressed the second list item. Output:\n{}",
+        clean_output
+    );
+
+    // Verify both list items are present as text
+    assert!(
+        clean_output.contains("`one"),
+        "Spec Ex 330: First list item content missing."
+    );
+    assert!(
+        clean_output.contains("two`"),
+        "Spec Ex 330: Second list item content missing."
+    );
+}
+
+#[test]
 fn test_tokenizer_priority_code_vs_math() {
     // BUG REPRODUCTION: Tokenizer Priority
     // Spec Reference: CommonMark 5.1/6.1 "Code span backticks have higher precedence..."

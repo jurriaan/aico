@@ -122,6 +122,7 @@ pub struct MarkdownStreamer {
     margin: usize,
     blockquote_depth: usize,
     list_stack: Vec<(usize, bool, usize, usize)>, // (indent_len, is_ordered, counter, marker_width)
+    pending_newline: bool,
 
     // Configuration
     manual_width: Option<usize>,
@@ -152,6 +153,7 @@ impl MarkdownStreamer {
             margin: 2,
             blockquote_depth: 0,
             list_stack: Vec::new(),
+            pending_newline: false,
             manual_width: None,
             scratch_buffer: String::with_capacity(1024),
         }
@@ -194,7 +196,20 @@ impl MarkdownStreamer {
             self.process_line(writer, &line)?;
         }
 
-        // Handle unclosed inline code at EOF
+        self.flush_pending_inline(writer)?;
+        self.commit_newline(writer)?;
+        writer.flush()
+    }
+
+    fn commit_newline<W: Write>(&mut self, writer: &mut W) -> io::Result<()> {
+        if self.pending_newline {
+            queue!(writer, Print("\n"))?;
+            self.pending_newline = false;
+        }
+        Ok(())
+    }
+
+    fn flush_pending_inline<W: Write>(&mut self, writer: &mut W) -> io::Result<()> {
         if let Some(ticks) = self.inline_code_ticks {
             // Print the opening ticks
             queue!(writer, Print("`".repeat(ticks)))?;
@@ -203,8 +218,7 @@ impl MarkdownStreamer {
             self.inline_code_ticks = None;
             self.inline_code_buffer.clear();
         }
-
-        writer.flush()
+        Ok(())
     }
 
     // --- Pipeline Controller ---
@@ -245,17 +259,17 @@ impl MarkdownStreamer {
         let avail_width = term_width.saturating_sub(prefix_width + self.margin);
 
         // 3. Block Start Handlers
-        if self.inline_code_ticks.is_none() {
-            let clean = content.trim_end();
-            if self.try_handle_header(w, clean, &prefix, avail_width)? {
-                return Ok(());
-            }
-            if self.try_handle_list(w, clean, &prefix, avail_width)? {
-                return Ok(());
-            }
-            if self.try_handle_hr(w, clean, &prefix, avail_width)? {
-                return Ok(());
-            }
+        // Note: Block handlers must now check for pending inline code and flush it
+        // if the block structure interrupts the inline span (Spec 6.1).
+        let clean = content.trim_end();
+        if self.try_handle_header(w, clean, &prefix, avail_width)? {
+            return Ok(());
+        }
+        if self.try_handle_hr(w, clean, &prefix, avail_width)? {
+            return Ok(());
+        }
+        if self.try_handle_list(w, clean, &prefix, avail_width)? {
+            return Ok(());
         }
 
         // 4. Standard Text / Lazy Continuation
@@ -279,7 +293,9 @@ impl MarkdownStreamer {
                 if fence.starts_with(f_char) && fence.len() >= min_len && caps[3].trim().is_empty()
                 {
                     self.active_fence = None;
-                    queue!(w, ResetColor, Print("\n"))?;
+                    self.commit_newline(w)?;
+                    queue!(w, ResetColor)?;
+                    self.pending_newline = true;
                     return Ok(true);
                 }
             }
@@ -295,6 +311,8 @@ impl MarkdownStreamer {
             if let Some(f_char) = fence.chars().next()
                 && (f_char != '`' || !info.contains('`'))
             {
+                self.flush_pending_inline(w)?;
+                self.commit_newline(w)?;
                 while self
                     .list_stack
                     .last()
@@ -321,6 +339,7 @@ impl MarkdownStreamer {
                 let avail = self.get_width().saturating_sub(p_width + self.margin);
                 let padding = avail.saturating_sub(self.visible_width(&converted)) / 2;
 
+                self.commit_newline(w)?;
                 queue!(
                     w,
                     Print(" ".repeat(self.margin + padding)),
@@ -328,11 +347,13 @@ impl MarkdownStreamer {
                     SetAttribute(Attribute::Italic),
                     Print(converted),
                     ResetColor,
-                    SetAttribute(Attribute::Reset),
-                    Print("\n")
+                    SetAttribute(Attribute::Reset)
                 )?;
+                self.pending_newline = true;
                 self.math_buffer.clear();
             } else {
+                self.flush_pending_inline(w)?;
+                self.commit_newline(w)?;
                 self.reset_block_context();
                 self.in_math_block = true;
             }
@@ -353,6 +374,8 @@ impl MarkdownStreamer {
         }
         if RE_TABLE_ROW.is_match(trimmed) {
             if !self.in_table {
+                self.flush_pending_inline(w)?;
+                self.commit_newline(w)?;
                 self.reset_block_context();
                 self.in_table = true;
             }
@@ -372,6 +395,8 @@ impl MarkdownStreamer {
         avail: usize,
     ) -> io::Result<bool> {
         if let Some(caps) = RE_HEADER.captures(clean) {
+            self.flush_pending_inline(w)?;
+            self.commit_newline(w)?;
             let level = caps.get(1).map_or(0, |m| m.len());
             let text = caps.get(2).map_or("", |m| m.as_str());
             self.reset_block_context();
@@ -410,8 +435,9 @@ impl MarkdownStreamer {
                     w,
                     Print(style),
                     Print(&self.scratch_buffer),
-                    Print("\x1b[0m\n")
+                    Print("\x1b[0m")
                 )?;
+                self.pending_newline = true;
             }
             return Ok(true);
         }
@@ -426,6 +452,8 @@ impl MarkdownStreamer {
         avail: usize,
     ) -> io::Result<bool> {
         if let Some(caps) = RE_LIST.captures(clean) {
+            self.flush_pending_inline(w)?;
+            self.commit_newline(w)?;
             let indent = caps.get(1).map_or(0, |m| m.len());
             let bullet = caps.get(2).map_or("-", |m| m.as_str());
             let separator = caps.get(3).map_or(" ", |m| m.as_str());
@@ -498,19 +526,15 @@ impl MarkdownStreamer {
             let lines = self.wrap_ansi(&self.scratch_buffer, content_width);
 
             if lines.is_empty() {
-                queue!(w, Print("\n"))?;
-            } else if let Some(first) = lines.first() {
-                queue!(w, Print(first), ResetColor, Print("\n"))?;
-            }
-            for line in lines.iter().skip(1) {
-                queue!(
-                    w,
-                    Print(prefix),
-                    Print(&hang_indent),
-                    Print(line),
-                    ResetColor,
-                    Print("\n")
-                )?;
+                self.pending_newline = true;
+            } else {
+                for (i, line) in lines.iter().enumerate() {
+                    if i > 0 {
+                        queue!(w, Print("\n"), Print(prefix), Print(&hang_indent))?;
+                    }
+                    queue!(w, Print(line), ResetColor)?;
+                }
+                self.pending_newline = true;
             }
             return Ok(true);
         }
@@ -525,14 +549,16 @@ impl MarkdownStreamer {
         avail: usize,
     ) -> io::Result<bool> {
         if RE_HR.is_match(clean) {
+            self.flush_pending_inline(w)?;
+            self.commit_newline(w)?;
             queue!(
                 w,
                 Print(prefix),
                 SetForegroundColor(Color::DarkGrey),
                 Print("─".repeat(avail)),
-                ResetColor,
-                Print("\n")
+                ResetColor
             )?;
+            self.pending_newline = true;
             self.reset_block_context();
             return Ok(true);
         }
@@ -546,18 +572,14 @@ impl MarkdownStreamer {
         prefix: &str,
         avail: usize,
     ) -> io::Result<()> {
+        self.commit_newline(w)?;
         let mut line_content = content.trim_end_matches(['\n', '\r']);
         if line_content.trim().is_empty() && content.ends_with('\n') {
             self.reset_block_context();
-            queue!(
-                w,
-                Print(if self.blockquote_depth > 0 {
-                    prefix
-                } else {
-                    ""
-                }),
-                Print("\n")
-            )?;
+            if self.blockquote_depth > 0 {
+                queue!(w, Print(prefix))?;
+            }
+            self.pending_newline = true;
             return Ok(());
         }
 
@@ -596,16 +618,21 @@ impl MarkdownStreamer {
             }
 
             let lines = self.wrap_ansi(&self.scratch_buffer, avail);
-            for line in lines {
+            for (i, line) in lines.iter().enumerate() {
+                if i > 0 {
+                    queue!(w, Print("\n"))?;
+                }
                 queue!(
                     w,
                     ResetColor,
                     SetAttribute(Attribute::Reset),
                     Print(&eff_prefix),
-                    Print(&line),
-                    ResetColor,
-                    Print("\n")
+                    Print(line),
+                    ResetColor
                 )?;
+            }
+            if !lines.is_empty() {
+                self.pending_newline = true;
             }
         }
         Ok(())
@@ -733,6 +760,7 @@ impl MarkdownStreamer {
     }
 
     fn render_code_line<W: Write>(&mut self, w: &mut W, line: &str) -> io::Result<()> {
+        self.commit_newline(w)?;
         let raw_line = line.trim_end_matches(&['\r', '\n'][..]);
 
         let fence_indent = self.active_fence.map(|(_, _, i)| i).unwrap_or(0);
@@ -794,12 +822,14 @@ impl MarkdownStreamer {
                     b: 30
                 }),
                 Print(" ".repeat(avail_width)),
-                ResetColor,
-                Print("\n")
+                ResetColor
             )?;
         } else {
-            for line in wrapped_lines {
-                let vis_len = self.visible_width(&line);
+            for (i, line) in wrapped_lines.iter().enumerate() {
+                if i > 0 {
+                    queue!(w, Print("\n"))?;
+                }
+                let vis_len = self.visible_width(line);
                 let pad = avail_width.saturating_sub(vis_len);
 
                 queue!(
@@ -810,18 +840,18 @@ impl MarkdownStreamer {
                         g: 30,
                         b: 30
                     }),
-                    Print(&line),
+                    Print(line),
                     Print(" ".repeat(pad)), // Fill remaining width with bg color
-                    ResetColor,
-                    Print("\n")
+                    ResetColor
                 )?;
             }
         }
-
+        self.pending_newline = true;
         Ok(())
     }
 
     fn render_stream_table_row<W: Write>(&mut self, w: &mut W, row_str: &str) -> io::Result<()> {
+        self.commit_newline(w)?;
         let term_width = self.get_width();
         let cells: Vec<&str> = row_str.trim().trim_matches('|').split('|').collect();
         if cells.is_empty() {
@@ -895,6 +925,9 @@ impl MarkdownStreamer {
         }
 
         for i in 0..max_h {
+            if i > 0 {
+                queue!(w, Print("\n"))?;
+            }
             queue!(w, Print(&prefix))?;
             for (col, (lines, width)) in wrapped_cells.iter().enumerate() {
                 let text = lines.get(i).map(|s| s.as_str()).unwrap_or("");
@@ -918,8 +951,8 @@ impl MarkdownStreamer {
                     )?;
                 }
             }
-            queue!(w, Print("\n"))?;
         }
+        self.pending_newline = true;
         self.table_header_printed = true;
         Ok(())
     }
