@@ -246,7 +246,7 @@ fn test_edit_message_can_clear_optional_fields() {
     });
     asst_rec.derived = Some(DerivedContent {
         unified_diff: Some("diff".to_string()),
-        display_content: None,
+        display_content: vec![],
     });
 
     let idx = store.append(&asst_rec).unwrap();

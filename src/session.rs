@@ -17,7 +17,6 @@ pub struct Session {
     pub view: SessionView,
     pub store: HistoryStore,
     pub context_content: std::collections::HashMap<String, String>,
-    pub history: std::collections::HashMap<usize, crate::models::MessageWithContext>,
 }
 
 impl Session {
@@ -100,8 +99,6 @@ impl Session {
             })
             .collect();
 
-        let history = std::collections::HashMap::new();
-
         Ok(Self {
             file_path: session_file,
             root,
@@ -109,7 +106,6 @@ impl Session {
             view,
             store,
             context_content,
-            history,
         })
     }
 
@@ -227,11 +223,6 @@ impl Session {
         let max = if allow_past_end {
             num_pairs
         } else {
-            if num_pairs == 0 {
-                return Err(AicoError::InvalidInput(
-                    "No message pairs found in history.".into(),
-                ));
-            }
             num_pairs - 1
         };
 
@@ -291,21 +282,6 @@ impl Session {
         let new_global_idx = self.store.append(&new_record)?;
         self.view.message_indices[message_index] = new_global_idx;
 
-        // Synchronize in-memory history map for this specific message
-        if let Some(msg) = self.history.get_mut(&original_global_idx) {
-            msg.record = new_record.clone();
-            msg.global_index = new_global_idx;
-        }
-        self.history.insert(
-            new_global_idx,
-            crate::models::MessageWithContext {
-                record: new_record,
-                global_index: new_global_idx,
-                pair_index: message_index / 2,
-                is_excluded: self.view.excluded_pairs.contains(&(message_index / 2)),
-            },
-        );
-
         self.save_view()?;
         Ok(())
     }
@@ -314,13 +290,7 @@ impl Session {
         use crate::diffing::parser::StreamParser;
 
         let mut parser = StreamParser::new(&self.context_content);
-        // Ensure content ends with a newline to trigger complete parsing of the final block
-        let gated_content = if content.ends_with('\n') {
-            content.to_string()
-        } else {
-            format!("{}\n", content)
-        };
-        parser.feed(&gated_content);
+        parser.feed_complete(content);
 
         let (diff, display_items, _warnings) = parser.final_resolve(&self.root);
 
@@ -335,7 +305,7 @@ impl Session {
         if has_structural_diversity {
             Some(crate::models::DerivedContent {
                 unified_diff: if diff.is_empty() { None } else { Some(diff) },
-                display_content: Some(display_items),
+                display_content: display_items,
             })
         } else {
             None
@@ -428,19 +398,6 @@ impl Session {
         let u_global = self.view.message_indices[u_abs];
         let a_global = self.view.message_indices[a_abs];
 
-        // 1. Memory Strategy: Use HashMap for O(1) lookup
-        if let (Some(u_msg), Some(a_msg)) =
-            (self.history.get(&u_global), self.history.get(&a_global))
-        {
-            return Ok((
-                u_msg.record.clone(),
-                a_msg.record.clone(),
-                u_global,
-                a_global,
-            ));
-        }
-
-        // 2. Fallback Strategy: Hit the store surgically
         let records = self.store.read_many(&[u_global, a_global])?;
         if records.len() != 2 {
             return Err(AicoError::SessionIntegrity(
@@ -452,20 +409,8 @@ impl Session {
     }
 
     pub fn append_record_to_view(&mut self, record: HistoryRecord) -> Result<(), AicoError> {
-        let pair_index = self.view.message_indices.len() / 2;
         let global_idx = self.store.append(&record)?;
         self.view.message_indices.push(global_idx);
-
-        // Update in-memory map lazily
-        self.history.insert(
-            global_idx,
-            crate::models::MessageWithContext {
-                record,
-                global_index: global_idx,
-                pair_index,
-                is_excluded: self.view.excluded_pairs.contains(&pair_index),
-            },
-        );
 
         Ok(())
     }

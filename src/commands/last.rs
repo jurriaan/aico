@@ -5,14 +5,14 @@ use crate::session::Session;
 use std::io::Write;
 
 pub fn run(
-    index_str: String,
+    index_str: &str,
     prompt: bool,
     verbatim: bool,
     recompute: bool,
     json: bool,
 ) -> Result<(), AicoError> {
     let session = Session::load_active()?;
-    let resolved_idx = session.resolve_pair_index(&index_str)?;
+    let resolved_idx = session.resolve_pair_index(index_str)?;
 
     let (user_rec, asst_rec, user_id, asst_id) = session.fetch_pair(resolved_idx)?;
 
@@ -65,24 +65,19 @@ pub fn run(
     // 1. Resolve structured content
     // We parse if recompute is requested OR if derived content is missing (fallback for legacy or broken history)
     let (unified_diff, display_items, warnings) = match (&asst_rec.derived, recompute) {
-        (Some(derived), false) => (
-            derived.unified_diff.clone(),
-            derived
-                .display_content
-                .clone()
-                .unwrap_or_else(|| vec![DisplayItem::Markdown(asst_rec.content.clone())]),
-            vec![],
-        ),
+        (Some(derived), false) => {
+            let items = if derived.display_content.is_empty() {
+                vec![DisplayItem::Markdown(asst_rec.content.clone())]
+            } else {
+                derived.display_content.clone()
+            };
+            (derived.unified_diff.clone(), items, vec![])
+        }
         _ => {
             use crate::diffing::parser::StreamParser;
 
             let mut parser = StreamParser::new(&session.context_content);
-            let gated_content = if asst_rec.content.ends_with('\n') {
-                asst_rec.content.clone()
-            } else {
-                format!("{}\n", asst_rec.content)
-            };
-            parser.feed(&gated_content);
+            parser.feed_complete(&asst_rec.content);
 
             let (diff, items, warnings) = parser.final_resolve(&session.root);
 

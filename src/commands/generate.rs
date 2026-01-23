@@ -10,8 +10,8 @@ pub async fn run(
 ) -> Result<(), AicoError> {
     crate::commands::llm_shared::run_llm_flow(
         cli_prompt,
-        model,
-        system_prompt,
+        model.as_deref(),
+        &system_prompt,
         no_history,
         passthrough,
         Mode::Diff,

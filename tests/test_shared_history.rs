@@ -23,7 +23,7 @@ fn test_load_from_shared_history_restores_all_fields() {
 
     let asst_derived = DerivedContent {
         unified_diff: Some("diff_content".to_string()),
-        display_content: Some(vec![DisplayItem::Markdown("display_text".to_string())]),
+        display_content: vec![DisplayItem::Markdown("display_text".to_string())],
     };
 
     let u_idx = store
@@ -199,7 +199,7 @@ fn test_last_on_shared_session_diff() {
             duration_ms: None,
             derived: Some(DerivedContent {
                 unified_diff: Some(diff_text.into()),
-                display_content: Some(vec![DisplayItem::Diff(diff_text.into())]),
+                display_content: vec![DisplayItem::Diff(diff_text.into())],
             }),
             edit_of: None,
         })
@@ -331,4 +331,80 @@ fn test_mutating_commands_succeed_on_shared_session() {
 
     let view_redone = common::load_view(root);
     assert!(!view_redone.excluded_pairs.contains(&0));
+}
+
+#[test]
+fn test_derived_content_serialization_backwards_compatibility() {
+    // 1. Test missing field deserializes to empty Vec
+    let json_missing = r#"{"unified_diff": "diff"}"#;
+    let dc1: DerivedContent = serde_json::from_str(json_missing).unwrap();
+    assert!(dc1.display_content.is_empty());
+    assert_eq!(dc1.unified_diff, Some("diff".to_string()));
+
+    // 2. Test explicit null deserializes to empty Vec
+    let json_null = r#"{"unified_diff": null, "display_content": null}"#;
+    let dc2: DerivedContent = serde_json::from_str(json_null).unwrap();
+    assert!(dc2.display_content.is_empty());
+    assert!(dc2.unified_diff.is_none());
+
+    // 3. Test empty array deserializes to empty Vec
+    let json_empty = r#"{"display_content": []}"#;
+    let dc3: DerivedContent = serde_json::from_str(json_empty).unwrap();
+    assert!(dc3.display_content.is_empty());
+
+    // 4. Test populated array deserializes correctly
+    let json_populated = r#"{"display_content": [{"type": "text", "content": "foo"}]}"#;
+    let dc4: DerivedContent = serde_json::from_str(json_populated).unwrap();
+    assert_eq!(dc4.display_content.len(), 1);
+    match &dc4.display_content[0] {
+        DisplayItem::Markdown(s) => assert_eq!(s, "foo"),
+        _ => panic!("Expected Markdown"),
+    }
+
+    // 5. Test serialization omits empty field
+    let dc_empty = DerivedContent {
+        unified_diff: None,
+        display_content: vec![],
+    };
+    let json_out = serde_json::to_string(&dc_empty).unwrap();
+    assert_eq!(json_out, "{}");
+
+    // 6. Test serialization includes populated field
+    let dc_pop = DerivedContent {
+        unified_diff: None,
+        display_content: vec![DisplayItem::Markdown("bar".into())],
+    };
+    let json_out_pop = serde_json::to_string(&dc_pop).unwrap();
+    assert!(json_out_pop.contains(r#""content":"bar""#));
+}
+
+#[test]
+fn test_edit_message_without_cache() {
+    let temp = tempdir().unwrap();
+    let root = temp.path();
+
+    // GIVEN a session with one pair
+    common::init_session_with_history(root, vec![("p0", "r0")]);
+    let ptr_path = root.join(".ai_session.json");
+    let mut session = Session::load(ptr_path.clone()).unwrap();
+
+    // Capture original global ID
+    let original_id = session.view.message_indices[0];
+
+    // WHEN we edit the user message (index 0)
+    session
+        .edit_message(0, "p0_edited".to_string())
+        .expect("Edit should succeed");
+
+    // THEN the view should point to a new global ID
+    let new_session = Session::load(ptr_path).unwrap();
+    let new_id = new_session.view.message_indices[0];
+    assert_ne!(new_id, original_id, "Global ID should have changed");
+
+    // AND the content in store should be updated
+    let records = new_session.store.read_many(&[new_id]).unwrap();
+    assert_eq!(records[0].content, "p0_edited");
+
+    // AND the edit lineage should be preserved
+    assert_eq!(records[0].edit_of, Some(original_id));
 }

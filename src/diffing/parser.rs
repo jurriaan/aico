@@ -41,6 +41,14 @@ impl<'a> StreamParser<'a> {
         self.buffer.push_str(chunk);
     }
 
+    /// Feeds content ensuring a trailing newline for correct parsing of final blocks.
+    pub fn feed_complete(&mut self, content: &str) {
+        self.feed(content);
+        if !content.ends_with('\n') {
+            self.feed("\n");
+        }
+    }
+
     /// Convenience method to feed content and return resolved yields in one go.
     pub fn parse_and_resolve(&mut self, chunk: &str, session_root: &Path) -> Vec<StreamYieldItem> {
         self.feed(chunk);

@@ -311,7 +311,7 @@ fn test_edit_response_and_invalidate_derived_content() {
 
     rec.derived = Some(aico::models::DerivedContent {
         unified_diff: Some("some diff".to_string()),
-        display_content: None,
+        display_content: Vec::new(),
     });
 
     let updated_line = serde_json::to_string(&rec).unwrap();

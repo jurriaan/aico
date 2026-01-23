@@ -28,7 +28,6 @@ async fn test_interleaved_chronology() {
         },
         store: aico::historystore::store::HistoryStore::new(root.join(".aico/history")),
         context_content: std::collections::HashMap::new(),
-        history: std::collections::HashMap::new(),
     };
     fs::create_dir_all(root.join(".aico/sessions")).unwrap();
     fs::create_dir_all(root.join(".aico/history")).unwrap();
@@ -206,7 +205,6 @@ async fn test_fresh_session_behavior() {
         },
         store: aico::historystore::store::HistoryStore::new(root.join(".aico/history")),
         context_content: std::collections::HashMap::new(),
-        history: std::collections::HashMap::new(),
     };
     fs::create_dir_all(root.join(".aico/sessions")).unwrap();
     fs::create_dir_all(root.join(".aico/history")).unwrap();
@@ -263,7 +261,6 @@ async fn test_fresh_session_baseline() {
         },
         store: aico::historystore::store::HistoryStore::new(root.join(".aico/history")),
         context_content: std::collections::HashMap::new(),
-        history: std::collections::HashMap::new(),
     };
     fs::create_dir_all(root.join(".aico/sessions")).unwrap();
     fs::create_dir_all(root.join(".aico/history")).unwrap();
@@ -319,7 +316,6 @@ async fn test_static_context_baseline() {
         },
         store: aico::historystore::store::HistoryStore::new(root.join(".aico/history")),
         context_content: std::collections::HashMap::new(),
-        history: std::collections::HashMap::new(),
     };
     fs::create_dir_all(root.join(".aico/sessions")).unwrap();
     fs::create_dir_all(root.join(".aico/history")).unwrap();
@@ -425,7 +421,6 @@ async fn test_floating_context_splicing() {
         },
         store: aico::historystore::store::HistoryStore::new(root.join(".aico/history")),
         context_content: std::collections::HashMap::new(),
-        history: std::collections::HashMap::new(),
     };
     fs::create_dir_all(root.join(".aico/sessions")).unwrap();
     fs::create_dir_all(root.join(".aico/history")).unwrap();
@@ -575,7 +570,6 @@ async fn test_shifting_horizon() {
         },
         store: aico::historystore::store::HistoryStore::new(root.join(".aico/history")),
         context_content: std::collections::HashMap::new(),
-        history: std::collections::HashMap::new(),
     };
     fs::create_dir_all(root.join(".aico/sessions")).unwrap();
     fs::create_dir_all(root.join(".aico/history")).unwrap();
@@ -734,7 +728,6 @@ async fn test_multiple_updates_synchronization() {
         },
         store: aico::historystore::store::HistoryStore::new(root.join(".aico/history")),
         context_content: std::collections::HashMap::new(),
-        history: std::collections::HashMap::new(),
     };
     fs::create_dir_all(root.join(".aico/sessions")).unwrap();
     fs::create_dir_all(root.join(".aico/history")).unwrap();

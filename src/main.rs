@@ -255,7 +255,7 @@ async fn main() {
             verbatim,
             recompute,
             json,
-        } => aico::commands::last::run(index, prompt, verbatim, recompute, json),
+        } => aico::commands::last::run(&index, prompt, verbatim, recompute, json),
         Commands::Ask(ref args) | Commands::Gen(ref args) | Commands::Prompt(ref args) => {
             let mode = match &cli.command {
                 Commands::Ask(_) => aico::models::Mode::Conversation,
@@ -264,8 +264,8 @@ async fn main() {
             };
             aico::commands::llm_shared::run_llm_flow(
                 args.prompt.clone(),
-                args.model.clone(),
-                args.system_prompt.clone(),
+                args.model.as_deref(),
+                &args.system_prompt,
                 args.no_history,
                 args.passthrough,
                 mode,

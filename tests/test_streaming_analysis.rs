@@ -107,3 +107,20 @@ fn test_is_incomplete_ignores_conversational_mentions() {
         _ => panic!("Should have been identified as Markdown"),
     }
 }
+
+#[test]
+fn test_feed_complete_adds_newline_correctly() {
+    let contents = HashMap::new();
+    let mut parser = StreamParser::new(&contents);
+
+    // Case 1: No trailing newline -> Adds one
+    parser.feed_complete("foo");
+    assert_eq!(parser.get_pending_content(), "foo\n");
+
+    // Reset
+    let mut parser2 = StreamParser::new(&contents);
+
+    // Case 2: Has trailing newline -> Does not add extra
+    parser2.feed_complete("bar\n");
+    assert_eq!(parser2.get_pending_content(), "bar\n");
+}

@@ -7,8 +7,8 @@ use std::io::{self, Read, Write};
 
 pub async fn run_llm_flow(
     cli_prompt: Option<String>,
-    model: Option<String>,
-    system_prompt: String,
+    model: Option<&str>,
+    system_prompt: &str,
     no_history: bool,
     passthrough: bool,
     mode: Mode,
@@ -47,10 +47,12 @@ pub async fn run_llm_flow(
 
     let mut session = Session::load_active()?;
     session.warn_missing_files();
-    let active_model = model.unwrap_or_else(|| session.view.model.clone());
+    let active_model = model
+        .map(|m| m.to_string())
+        .unwrap_or_else(|| session.view.model.clone());
 
     let sys_prompt = if system_prompt.is_empty() {
-        crate::consts::DEFAULT_SYSTEM_PROMPT.to_string()
+        crate::consts::DEFAULT_SYSTEM_PROMPT
     } else {
         system_prompt
     };
@@ -64,7 +66,7 @@ pub async fn run_llm_flow(
 
     let interaction = crate::llm::executor::execute_interaction(
         &session,
-        &sys_prompt,
+        sys_prompt,
         &prompt_text,
         &piped_content,
         config,
@@ -119,7 +121,7 @@ pub async fn run_llm_flow(
         duration_ms: Some(interaction.duration_ms),
         derived: Some(DerivedContent {
             unified_diff: interaction.unified_diff,
-            display_content: interaction.display_items,
+            display_content: interaction.display_items.unwrap_or_default(),
         }),
         edit_of: None,
     };
