@@ -178,8 +178,8 @@ fn test_list_numbering_preserved_after_table() {
 
     let expected = "  \
   1. Item One
-   A    │ B
-   1    │ 2
+   A     │ B
+   1     │ 2
   2. Item Two";
 
     assert_eq!(
@@ -1615,5 +1615,91 @@ fn test_empty_emphasis_not_allowed() {
     check(
         "**** is not an empty strong emphasis",
         "**** is not an empty strong emphasis",
+    );
+}
+
+#[test]
+fn test_table_no_right_gap() {
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0);
+    streamer.set_width(20);
+    let mut sink = Vec::new();
+
+    // Table with 2 columns
+    let input = "| A | B |\n|---|---|\n| 1 | 2 |\n";
+    streamer.print_chunk(&mut sink, input).unwrap();
+    streamer.flush(&mut sink).unwrap();
+
+    let raw = String::from_utf8_lossy(&sink);
+    let clean = aico::console::strip_ansi_codes(&raw);
+
+    for (i, line) in clean.lines().enumerate() {
+        // We do NOT trim_end() because the table renderer pads the line with spaces (background color)
+        // to fill the width. We want to verify those spaces are present.
+        // We use chars().count() because the table separator (│) is multi-byte in UTF-8.
+        assert_eq!(
+            line.chars().count(),
+            20,
+            "Line {} is not the correct width ({} chars): '{}'. Expected 20.",
+            i,
+            line.chars().count(),
+            line
+        );
+    }
+}
+
+#[test]
+fn test_table_long_cell_uses_full_width() {
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0);
+    streamer.set_width(30);
+    let mut sink = Vec::new();
+
+    // Single column table.
+    // Width 30, margin 0.
+    // Current buggy calculation of 'avail' = 26.
+    // Fixed calculation of 'avail' should be 28 (30 - 2 padding).
+    // Content of 27 chars should wrap in buggy code but fit in fixed code.
+    let input = "| AAAAAAAAAAAAAAAAAAAAAAAAAAA |\n"; // 27 A's
+    streamer.print_chunk(&mut sink, input).unwrap();
+    streamer.flush(&mut sink).unwrap();
+
+    let clean = aico::console::strip_ansi_codes(&String::from_utf8_lossy(&sink));
+    let lines: Vec<&str> = clean.lines().collect();
+
+    assert_eq!(
+        lines.len(),
+        1,
+        "Table row should not have wrapped. It should use the full width available. Got {} lines: {:?}",
+        lines.len(),
+        clean
+    );
+}
+
+#[test]
+fn test_table_streaming_partial_row_wrapping() {
+    // Tests that wrapping is correct when a long row is streamed in chunks.
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0);
+    streamer.set_width(20);
+    let mut sink = Vec::new();
+
+    // Avail width (buggy) = 16.
+    // Content of 17 chars should fit in 20 width (18 avail).
+    // But buggy logic makes it wrap.
+    streamer.print_chunk(&mut sink, "| 12345678").unwrap();
+    streamer.print_chunk(&mut sink, "901234567 |").unwrap();
+    streamer.print_chunk(&mut sink, "\n").unwrap();
+    streamer.flush(&mut sink).unwrap();
+
+    let clean = aico::console::strip_ansi_codes(&String::from_utf8_lossy(&sink));
+    let lines: Vec<&str> = clean.lines().collect();
+
+    assert_eq!(
+        lines.len(),
+        1,
+        "Streaming a long row caused incorrect wrapping. Expected 1 line, got {}. Output: {:?}",
+        lines.len(),
+        clean
     );
 }

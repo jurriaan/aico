@@ -1022,7 +1022,8 @@ impl MarkdownStreamer {
         }
 
         let prefix_width = self.margin + (self.blockquote_depth * 2);
-        let avail = term_width.saturating_sub(prefix_width + self.margin + 1 + (cells.len() * 3));
+        let cell_overhead = (cells.len() * 3).saturating_sub(1);
+        let avail = term_width.saturating_sub(prefix_width + self.margin + cell_overhead);
         if avail == 0 {
             return Ok(());
         }
