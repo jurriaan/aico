@@ -76,13 +76,149 @@ static RE_ANSI_PARTS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\x1b\[([0-
 
 // --- Helper Structs ---
 
+struct ListLevel {
+    source_indent: usize,
+    marker_width: usize,
+}
+
+impl ListLevel {
+    fn new(source_indent: usize, marker_width: usize) -> Self {
+        Self {
+            source_indent,
+            marker_width,
+        }
+    }
+}
+
+struct ListContext {
+    levels: Vec<ListLevel>,
+}
+
+impl ListContext {
+    fn new() -> Self {
+        Self { levels: Vec::new() }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.levels.is_empty()
+    }
+
+    fn structural_width(&self) -> usize {
+        self.levels.iter().map(|l| l.marker_width).sum()
+    }
+
+    fn parent_width(&self) -> usize {
+        if self.levels.is_empty() {
+            0
+        } else {
+            self.levels[..self.levels.len() - 1]
+                .iter()
+                .map(|l| l.marker_width)
+                .sum()
+        }
+    }
+
+    fn last_indent(&self) -> Option<usize> {
+        self.levels.last().map(|l| l.source_indent)
+    }
+
+    fn push(&mut self, source_indent: usize, marker_width: usize) {
+        self.levels
+            .push(ListLevel::new(source_indent, marker_width));
+    }
+
+    fn pop_to_indent(&mut self, indent: usize) {
+        while self.levels.last().is_some_and(|l| l.source_indent > indent) {
+            self.levels.pop();
+        }
+    }
+
+    fn update_last_marker_width(&mut self, marker_width: usize) {
+        if let Some(last) = self.levels.last_mut() {
+            last.marker_width = marker_width;
+        }
+    }
+
+    fn clear(&mut self) {
+        self.levels.clear();
+    }
+}
+
+struct InlineCodeState {
+    ticks: Option<usize>,
+    buffer: String,
+}
+
+impl InlineCodeState {
+    fn new() -> Self {
+        Self {
+            ticks: None,
+            buffer: String::new(),
+        }
+    }
+
+    fn is_active(&self) -> bool {
+        self.ticks.is_some()
+    }
+
+    fn open(&mut self, tick_count: usize) {
+        self.ticks = Some(tick_count);
+        self.buffer.clear();
+    }
+
+    fn feed(&mut self, token: &str) -> Option<String> {
+        if let Some(n) = self.ticks {
+            if token.starts_with('`') && token.len() == n {
+                let result = self.normalize_content();
+                self.ticks = None;
+                self.buffer.clear();
+                return Some(result);
+            }
+            self.buffer.push_str(token);
+        }
+        None
+    }
+
+    fn append_space(&mut self) {
+        if self.is_active() {
+            self.buffer.push(' ');
+        }
+    }
+
+    fn normalize_content(&self) -> String {
+        if self.buffer.len() >= 2
+            && self.buffer.starts_with(' ')
+            && self.buffer.ends_with(' ')
+            && !self.buffer.trim().is_empty()
+        {
+            self.buffer[1..self.buffer.len() - 1].to_string()
+        } else {
+            self.buffer.clone()
+        }
+    }
+
+    fn flush_incomplete(&self) -> Option<(usize, String)> {
+        self.ticks.map(|n| (n, self.buffer.clone()))
+    }
+
+    fn reset(&mut self) {
+        self.ticks = None;
+        self.buffer.clear();
+    }
+}
+
+enum InlineToken {
+    Text(String),
+    Delimiter {
+        char: char,
+        len: usize,
+        can_open: bool,
+        can_close: bool,
+    },
+}
+
 struct InlinePart {
-    content: String,
-    is_delim: bool,
-    char: char,
-    len: usize,
-    can_open: bool,
-    can_close: bool,
+    token: InlineToken,
     pre_style: Vec<String>,
     post_style: Vec<String>,
 }
@@ -90,14 +226,67 @@ struct InlinePart {
 impl InlinePart {
     fn text(content: String) -> Self {
         Self {
-            content,
-            is_delim: false,
-            char: '\0',
-            len: 0,
-            can_open: false,
-            can_close: false,
+            token: InlineToken::Text(content),
             pre_style: vec![],
             post_style: vec![],
+        }
+    }
+
+    fn delimiter(char: char, len: usize, can_open: bool, can_close: bool) -> Self {
+        Self {
+            token: InlineToken::Delimiter {
+                char,
+                len,
+                can_open,
+                can_close,
+            },
+            pre_style: vec![],
+            post_style: vec![],
+        }
+    }
+
+    fn content(&self) -> String {
+        match &self.token {
+            InlineToken::Text(s) => s.clone(),
+            InlineToken::Delimiter { char, len, .. } => char.to_string().repeat(*len),
+        }
+    }
+
+    fn is_delim(&self) -> bool {
+        matches!(self.token, InlineToken::Delimiter { .. })
+    }
+
+    fn delim_char(&self) -> char {
+        match &self.token {
+            InlineToken::Delimiter { char, .. } => *char,
+            _ => '\0',
+        }
+    }
+
+    fn delim_len(&self) -> usize {
+        match &self.token {
+            InlineToken::Delimiter { len, .. } => *len,
+            _ => 0,
+        }
+    }
+
+    fn can_open(&self) -> bool {
+        match &self.token {
+            InlineToken::Delimiter { can_open, .. } => *can_open,
+            _ => false,
+        }
+    }
+
+    fn can_close(&self) -> bool {
+        match &self.token {
+            InlineToken::Delimiter { can_close, .. } => *can_close,
+            _ => false,
+        }
+    }
+
+    fn consume(&mut self, amount: usize) {
+        if let InlineToken::Delimiter { len, .. } = &mut self.token {
+            *len = len.saturating_sub(amount);
         }
     }
 }
@@ -108,8 +297,7 @@ pub struct MarkdownStreamer {
     code_lang: String,
 
     // Inline Code State
-    inline_code_ticks: Option<usize>,
-    inline_code_buffer: String,
+    inline_code: InlineCodeState,
 
     // Math State
     in_math_block: bool,
@@ -126,7 +314,7 @@ pub struct MarkdownStreamer {
     // Layout State
     margin: usize,
     blockquote_depth: usize,
-    list_stack: Vec<(usize, bool, usize, usize)>, // (indent_len, is_ordered, counter, marker_width)
+    list_context: ListContext,
     pending_newline: bool,
 
     // Configuration
@@ -147,8 +335,7 @@ impl MarkdownStreamer {
         Self {
             active_fence: None,
             code_lang: "bash".to_string(),
-            inline_code_ticks: None,
-            inline_code_buffer: String::new(),
+            inline_code: InlineCodeState::new(),
             in_math_block: false,
             math_buffer: String::new(),
             in_table: false,
@@ -157,7 +344,7 @@ impl MarkdownStreamer {
             line_buffer: String::new(),
             margin: 2,
             blockquote_depth: 0,
-            list_stack: Vec::new(),
+            list_context: ListContext::new(),
             pending_newline: false,
             manual_width: None,
             scratch_buffer: String::with_capacity(1024),
@@ -215,13 +402,10 @@ impl MarkdownStreamer {
     }
 
     fn flush_pending_inline<W: Write>(&mut self, writer: &mut W) -> io::Result<()> {
-        if let Some(ticks) = self.inline_code_ticks {
-            // Print the opening ticks
+        if let Some((ticks, buffer)) = self.inline_code.flush_incomplete() {
             queue!(writer, Print("`".repeat(ticks)))?;
-            // Print the buffer content
-            queue!(writer, Print(&self.inline_code_buffer))?;
-            self.inline_code_ticks = None;
-            self.inline_code_buffer.clear();
+            queue!(writer, Print(&buffer))?;
+            self.inline_code.reset();
         }
         Ok(())
     }
@@ -318,13 +502,7 @@ impl MarkdownStreamer {
             {
                 self.flush_pending_inline(w)?;
                 self.commit_newline(w)?;
-                while self
-                    .list_stack
-                    .last()
-                    .is_some_and(|(d, _, _, _)| *d > indent_len)
-                {
-                    self.list_stack.pop();
-                }
+                self.list_context.pop_to_indent(indent_len);
                 self.active_fence = Some((f_char, fence.len(), indent_len));
                 let lang = info.split_whitespace().next().unwrap_or("bash");
                 self.code_lang = lang.to_string();
@@ -359,7 +537,7 @@ impl MarkdownStreamer {
             } else {
                 self.flush_pending_inline(w)?;
                 self.commit_newline(w)?;
-                self.reset_block_context();
+                self.exit_block_context();
                 self.in_math_block = true;
             }
             return Ok(true);
@@ -381,7 +559,7 @@ impl MarkdownStreamer {
             if !self.in_table {
                 self.flush_pending_inline(w)?;
                 self.commit_newline(w)?;
-                self.reset_block_context();
+                self.exit_block_context();
                 self.in_table = true;
             }
             self.render_stream_table_row(w, trimmed)?;
@@ -404,7 +582,7 @@ impl MarkdownStreamer {
             self.commit_newline(w)?;
             let level = caps.get(1).map_or(0, |m| m.len());
             let text = caps.get(2).map_or("", |m| m.as_str());
-            self.reset_block_context();
+            self.exit_block_context();
 
             queue!(w, Print(prefix))?;
             if level <= 2 {
@@ -468,33 +646,21 @@ impl MarkdownStreamer {
             let disp_bullet = if is_ord { bullet } else { "•" };
             let marker_width = self.visible_width(disp_bullet) + separator.len();
 
-            let last_indent = self.list_stack.last().map(|(d, _, _, _)| *d).unwrap_or(0);
-            if self.list_stack.is_empty() || indent > last_indent {
-                self.list_stack.push((indent, is_ord, 0, marker_width));
+            let last_indent = self.list_context.last_indent().unwrap_or(0);
+            if self.list_context.is_empty() || indent > last_indent {
+                self.list_context.push(indent, marker_width);
             } else if indent < last_indent {
-                while self
-                    .list_stack
-                    .last()
-                    .is_some_and(|(d, _, _, _)| *d > indent)
-                {
-                    self.list_stack.pop();
-                }
-                if self
-                    .list_stack
-                    .last()
-                    .is_some_and(|(d, _, _, _)| *d != indent)
-                {
-                    self.list_stack.push((indent, is_ord, 0, marker_width));
+                self.list_context.pop_to_indent(indent);
+                if self.list_context.last_indent().is_some_and(|d| d != indent) {
+                    self.list_context.push(indent, marker_width);
                 }
             } else {
                 // Same level: update width in case marker size changed (e.g. 9. -> 10.)
-                if let Some(last) = self.list_stack.last_mut() {
-                    last.3 = marker_width;
-                }
+                self.list_context.update_last_marker_width(marker_width);
             }
 
-            let full_stack_width: usize = self.list_stack.iter().map(|(_, _, _, w)| *w).sum();
-            let parent_width = full_stack_width.saturating_sub(marker_width);
+            let full_stack_width = self.list_context.structural_width();
+            let parent_width = self.list_context.parent_width();
 
             let hang_indent = " ".repeat(full_stack_width);
             let content_width = avail.saturating_sub(full_stack_width);
@@ -564,7 +730,7 @@ impl MarkdownStreamer {
                 ResetColor
             )?;
             self.pending_newline = true;
-            self.reset_block_context();
+            self.exit_block_context();
             return Ok(true);
         }
         Ok(false)
@@ -580,7 +746,7 @@ impl MarkdownStreamer {
         self.commit_newline(w)?;
         let mut line_content = content.trim_end_matches(['\n', '\r']);
         if line_content.trim().is_empty() && content.ends_with('\n') {
-            self.reset_block_context();
+            self.exit_block_context();
             if self.blockquote_depth > 0 {
                 queue!(w, Print(prefix))?;
             }
@@ -588,25 +754,18 @@ impl MarkdownStreamer {
             return Ok(());
         }
 
-        if !line_content.is_empty() || self.inline_code_ticks.is_some() {
+        if !line_content.is_empty() || self.inline_code.is_active() {
             let mut eff_prefix = prefix.to_string();
-            if !self.list_stack.is_empty() {
+            if !self.list_context.is_empty() {
                 let current_indent = line_content.chars().take_while(|c| *c == ' ').count();
                 if current_indent == 0 {
-                    self.list_stack.clear();
+                    self.list_context.clear();
                 } else {
-                    while self
-                        .list_stack
-                        .last()
-                        .is_some_and(|(d, _, _, _)| *d > current_indent)
-                    {
-                        self.list_stack.pop();
-                    }
+                    self.list_context.pop_to_indent(current_indent);
                 }
 
-                if !self.list_stack.is_empty() {
-                    let structural_indent: usize =
-                        self.list_stack.iter().map(|(_, _, _, w)| *w).sum();
+                if !self.list_context.is_empty() {
+                    let structural_indent = self.list_context.structural_width();
                     eff_prefix.push_str(&" ".repeat(structural_indent));
 
                     // To avoid double-indenting, we skip the source indentation that matches
@@ -618,9 +777,7 @@ impl MarkdownStreamer {
 
             self.scratch_buffer.clear();
             self.render_inline(line_content, None, None);
-            if self.inline_code_ticks.is_some() {
-                self.inline_code_buffer.push(' ');
-            }
+            self.inline_code.append_space();
 
             let lines = self.wrap_ansi(&self.scratch_buffer, avail);
             for (i, line) in lines.iter().enumerate() {
@@ -643,8 +800,9 @@ impl MarkdownStreamer {
         Ok(())
     }
 
-    fn reset_block_context(&mut self) {
-        self.list_stack.clear();
+    fn exit_block_context(&mut self) {
+        self.list_context.clear();
+        self.in_table = false;
         self.table_header_printed = false;
     }
 
@@ -785,8 +943,8 @@ impl MarkdownStreamer {
         let line_content = chars.as_str();
 
         let mut prefix = " ".repeat(self.margin);
-        if !self.list_stack.is_empty() {
-            let indent_width: usize = self.list_stack.iter().map(|(_, _, _, w)| *w).sum();
+        if !self.list_context.is_empty() {
+            let indent_width = self.list_context.structural_width();
             prefix.push_str(&" ".repeat(indent_width));
         }
 
@@ -977,27 +1135,21 @@ impl MarkdownStreamer {
 
         // Pass 1: Build basic tokens
         for (i, tok) in tokens_raw.iter().enumerate() {
-            if self.inline_code_ticks.is_some() {
+            if self.inline_code.is_active() {
                 if tok.starts_with('`') {
-                    if let Some(n) = self.inline_code_ticks {
-                        if n == tok.len() {
-                            let formatted = self.format_inline_code(def_bg, restore_fg);
-                            parts.push(InlinePart::text(formatted));
-                            self.inline_code_ticks = None;
-                            self.inline_code_buffer.clear();
-                        } else {
-                            self.inline_code_buffer.push_str(tok);
-                        }
+                    if let Some(content) = self.inline_code.feed(tok) {
+                        let formatted =
+                            self.format_inline_code_content(&content, def_bg, restore_fg);
+                        parts.push(InlinePart::text(formatted));
                     }
                 } else {
-                    self.inline_code_buffer.push_str(tok);
+                    self.inline_code.feed(tok);
                 }
                 continue;
             }
 
             if tok.starts_with('`') {
-                self.inline_code_ticks = Some(tok.len());
-                self.inline_code_buffer.clear();
+                self.inline_code.open(tok.len());
                 continue;
             }
 
@@ -1025,7 +1177,7 @@ impl MarkdownStreamer {
                     ' '
                 };
 
-                // Inline Flanking Logic (Optimization #3: Lazy Calculation)
+                // Inline Flanking Logic
                 let is_ws_next = next_char.is_whitespace();
                 let is_ws_prev = prev_char.is_whitespace();
                 let is_punct_next = !next_char.is_alphanumeric() && !is_ws_next;
@@ -1044,22 +1196,13 @@ impl MarkdownStreamer {
                     (left_flanking, right_flanking)
                 };
 
-                parts.push(InlinePart {
-                    content: tok.to_string(),
-                    is_delim: true,
-                    char: c,
-                    len: tok.len(),
-                    can_open,
-                    can_close,
-                    pre_style: vec![],
-                    post_style: vec![],
-                });
+                parts.push(InlinePart::delimiter(c, tok.len(), can_open, can_close));
             } else {
                 parts.push(InlinePart::text(tok.to_string()));
             }
         }
 
-        // Pass 2: Delimiter Matching (Extracted Logic)
+        // Pass 2: Delimiter Matching
         self.resolve_delimiters(&mut parts);
 
         // Pass 3: Render
@@ -1067,7 +1210,7 @@ impl MarkdownStreamer {
             for s in &part.pre_style {
                 self.scratch_buffer.push_str(s);
             }
-            self.scratch_buffer.push_str(&part.content);
+            self.scratch_buffer.push_str(&part.content());
             for s in &part.post_style {
                 self.scratch_buffer.push_str(s);
             }
@@ -1078,51 +1221,51 @@ impl MarkdownStreamer {
         let mut stack: Vec<usize> = Vec::new();
 
         for i in 0..parts.len() {
-            if !parts[i].is_delim {
+            if !parts[i].is_delim() {
                 continue;
             }
 
-            if parts[i].can_close {
-                // Iterate stack in reverse
+            if parts[i].can_close() {
                 let mut stack_idx = stack.len();
                 while stack_idx > 0 {
                     let open_pos = stack_idx - 1;
                     let open_idx = stack[open_pos];
 
-                    // Check if match is possible
-                    if parts[open_idx].char == parts[i].char && parts[open_idx].can_open {
+                    if parts[open_idx].delim_char() == parts[i].delim_char()
+                        && parts[open_idx].can_open()
+                    {
                         // Rule 9/10: Multiple of 3 Rule
-                        if (parts[open_idx].can_open && parts[open_idx].can_close)
-                            || (parts[i].can_open && parts[i].can_close)
+                        if (parts[open_idx].can_open() && parts[open_idx].can_close())
+                            || (parts[i].can_open() && parts[i].can_close())
                         {
-                            let sum = parts[open_idx].len + parts[i].len;
+                            let sum = parts[open_idx].delim_len() + parts[i].delim_len();
                             if sum.is_multiple_of(3)
-                                && (!parts[open_idx].len.is_multiple_of(3)
-                                    || !parts[i].len.is_multiple_of(3))
+                                && (!parts[open_idx].delim_len().is_multiple_of(3)
+                                    || !parts[i].delim_len().is_multiple_of(3))
                             {
                                 stack_idx -= 1;
                                 continue;
                             }
                         }
 
-                        // Empty emphasis check: No content between opener and closer
+                        // Empty emphasis check
                         if open_idx + 1 == i {
                             stack_idx -= 1;
                             continue;
                         }
 
                         // Determine consumption length
-                        // Rule 14: Use length 1 first to satisfy Italic-outer (<em><strong>...</strong></em>)
-                        // If total length is 3 and we match 3, 1 is preferred as outer.
-                        let use_len = if parts[i].len == 3 && parts[open_idx].len == 3 {
+                        let open_len = parts[open_idx].delim_len();
+                        let close_len = parts[i].delim_len();
+                        let use_len = if close_len == 3 && open_len == 3 {
                             1
-                        } else if parts[i].len >= 2 && parts[open_idx].len >= 2 {
+                        } else if close_len >= 2 && open_len >= 2 {
                             2
                         } else {
                             1
                         };
 
-                        let (style_on, style_off) = match (parts[open_idx].char, use_len) {
+                        let (style_on, style_off) = match (parts[open_idx].delim_char(), use_len) {
                             ('~', _) => ("\x1b[9m", "\x1b[29m"),
                             ('_', 1) => ("\x1b[4m", "\x1b[24m"),
                             (_, 1) => ("\x1b[3m", "\x1b[23m"),
@@ -1130,80 +1273,48 @@ impl MarkdownStreamer {
                             _ => ("", ""),
                         };
 
-                        let char_str = parts[open_idx].char.to_string();
-
-                        // APPLY STYLES
-                        // CommonMark Rule 14 and delimiter pairing logic.
-                        // Order of application depends on whether we match inner or outer pairs first.
-                        // For openers: post_style is closer to the text (inner).
-                        // For closers: pre_style is closer to the text (inner).
-
-                        // Heuristic: Italic (len 1) is outer, Bold (len 2) is inner for ***.
+                        // Apply styles
                         if use_len == 1 {
-                            // Italic is Outer: Outer edges.
                             parts[open_idx].pre_style.push(style_on.to_string());
                             parts[i].post_style.push(style_off.to_string());
                         } else {
-                            // Bold is Inner: Inner edges (near text).
                             parts[open_idx].post_style.push(style_on.to_string());
                             parts[i].pre_style.push(style_off.to_string());
                         }
 
                         // Consume tokens
-                        parts[open_idx].len -= use_len;
-                        parts[i].len -= use_len;
-                        parts[open_idx].content = char_str.repeat(parts[open_idx].len);
-                        parts[i].content = char_str.repeat(parts[i].len);
+                        parts[open_idx].consume(use_len);
+                        parts[i].consume(use_len);
 
                         // Stack Management
-                        if parts[open_idx].len == 0 {
+                        if parts[open_idx].delim_len() == 0 {
                             stack.remove(open_pos);
-                            // Stack shifted, so current stack_idx is now the *next* item.
-                            // Decrementing continues the loop correctly down the stack.
                             stack_idx -= 1;
-                        } else {
-                            // Opener still has length (e.g. *** matched ** -> * left).
-                            // We do NOT decrement stack_idx here, effectively retrying this opener
-                            // against the *same* closer (if closer has len) or next iteration.
-                            // BUT: Current closer might be exhausted.
                         }
 
-                        if parts[i].len == 0 {
+                        if parts[i].delim_len() == 0 {
                             break;
                         }
-                        // If closer still has length, we continue loop to find another opener?
-                        // CommonMark says: "If the closer is not exhausted... continue searching...".
-                        // So we continue the while loop.
                     } else {
                         stack_idx -= 1;
                     }
                 }
             }
 
-            if parts[i].len > 0 && parts[i].can_open {
+            if parts[i].delim_len() > 0 && parts[i].can_open() {
                 stack.push(i);
             }
         }
     }
 
-    fn push_style(&mut self, active: bool, on: &str, off: &str) {
-        self.scratch_buffer.push_str(if active { on } else { off });
-    }
-
-    fn format_inline_code(&self, def_bg: Option<Color>, restore_fg: Option<&str>) -> String {
-        // Reuse buffer for speed? No, string is small.
+    fn format_inline_code_content(
+        &self,
+        content: &str,
+        def_bg: Option<Color>,
+        restore_fg: Option<&str>,
+    ) -> String {
         let mut out = String::new();
-        let norm = if self.inline_code_buffer.len() >= 2
-            && self.inline_code_buffer.starts_with(' ')
-            && self.inline_code_buffer.ends_with(' ')
-            && !self.inline_code_buffer.trim().is_empty()
-        {
-            &self.inline_code_buffer[1..self.inline_code_buffer.len() - 1]
-        } else {
-            &self.inline_code_buffer
-        };
-
-        let _ = write!(out, "\x1b[48;2;60;60;60m\x1b[38;2;255;255;255m{}", norm);
+        let _ = write!(out, "\x1b[48;2;60;60;60m\x1b[38;2;255;255;255m{}", content);
         if let Some(Color::Rgb { r, g, b }) = def_bg {
             let _ = write!(out, "\x1b[48;2;{};{};{}m", r, g, b);
         } else {
