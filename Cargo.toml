@@ -44,6 +44,7 @@ tempfile = "3.24.0"
 thiserror = "2.0.17"
 tokio = { version = "1.49.0", features = ["macros", "rt"] }
 tokio-util = { version = "0.7.17", features = ["io"] }
+two-face = { version = "0.5.1", features = ["syntect-default-fancy"], default-features = false }
 unicode-width = "0.2.2"
 unicodeit = "0.2.0"
 

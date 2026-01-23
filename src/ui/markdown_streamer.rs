@@ -16,7 +16,7 @@ use syntect::parsing::SyntaxSet;
 use unicode_width::UnicodeWidthStr;
 
 // --- Static Resources ---
-static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_no_newlines);
 static THEME: LazyLock<Theme> = LazyLock::new(|| {
     let ts = ThemeSet::load_defaults();
     ts.themes
