@@ -48,8 +48,13 @@ static RE_INVISIBLE: LazyLock<Regex> =
 // Shared pattern for OSC 8 links: \x1b]8;; ... \x1b\
 const OSC8_PATTERN: &str = r"\x1b]8;;.*?\x1b\\";
 
-static RE_LINK: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\[([^\]]+)\]\(([^\)]+)\)").unwrap());
+// Regex allows up to 2 levels of nested brackets/parentheses
+static RE_LINK: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"\[((?:[^\[\]]|\[(?:[^\[\]]|\[[^\[\]]*\])*\])*)\]\(((?:[^()\s]|\((?:[^()\s]|\([^()\s]*\))*\))*)\)",
+    )
+    .unwrap()
+});
 static RE_OSC8: LazyLock<Regex> = LazyLock::new(|| Regex::new(OSC8_PATTERN).unwrap());
 
 static RE_TOKENIZER: LazyLock<Regex> = LazyLock::new(|| {
@@ -1086,6 +1091,26 @@ impl MarkdownStreamer {
 
                     // Check if match is possible
                     if parts[open_idx].char == parts[i].char && parts[open_idx].can_open {
+                        // Rule 9/10: Multiple of 3 Rule
+                        if (parts[open_idx].can_open && parts[open_idx].can_close)
+                            || (parts[i].can_open && parts[i].can_close)
+                        {
+                            let sum = parts[open_idx].len + parts[i].len;
+                            if sum.is_multiple_of(3)
+                                && (!parts[open_idx].len.is_multiple_of(3)
+                                    || !parts[i].len.is_multiple_of(3))
+                            {
+                                stack_idx -= 1;
+                                continue;
+                            }
+                        }
+
+                        // Empty emphasis check: No content between opener and closer
+                        if open_idx + 1 == i {
+                            stack_idx -= 1;
+                            continue;
+                        }
+
                         // Determine consumption length
                         // Rule 14: Use length 1 first to satisfy Italic-outer (<em><strong>...</strong></em>)
                         // If total length is 3 and we match 3, 1 is preferred as outer.

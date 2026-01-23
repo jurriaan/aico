@@ -1505,3 +1505,115 @@ fn test_spec_compliance_block_precedence_list_vs_emphasis() {
         clean_output
     );
 }
+
+#[test]
+fn test_emphasis_multiple_of_3_rule() {
+    // Spec Example 413: 1+2=3, neither is multiple of 3, so ** cannot match *
+    check(
+        "*foo**bar*",
+        format!("{}foo**bar{}", ITALIC, ITALIC_OFF).as_str(),
+    );
+}
+
+#[test]
+fn test_emphasis_multiple_of_3_both_multiples() {
+    // Spec Example 414: foo***bar***baz -> <em><strong>bar</strong></em>
+    // 3+3=6 is multiple of 3, AND both 3 and 3 are multiples of 3, so it matches
+    check(
+        "foo***bar***baz",
+        format!("foo{}{}bar{}{}baz", ITALIC, BOLD, BOLD_OFF, ITALIC_OFF).as_str(),
+    );
+}
+
+#[test]
+fn test_spec_ex_43_thematic_break_precedence() {
+    // Spec Example 43: "* * *" as its own line should be HR, not list
+    // Note: The previous test `test_spec_ex_43_hr_precedence` used "- * * *" which is ambiguous/list.
+    // This test specifically targets the case where the line ITSELF is the HR marker using asterisks.
+
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0);
+    let mut sink = Vec::new();
+
+    let input = "* Foo\n* * *\n* Bar\n";
+    streamer
+        .print_chunk(&mut sink, input)
+        .expect("Write failed");
+    streamer.flush(&mut sink).expect("Flush failed");
+
+    let clean = aico::console::strip_ansi_codes(&String::from_utf8_lossy(&sink));
+
+    // Should have exactly 2 bullets (Foo and Bar) and 1 HR (─)
+    // Currently, without fix, the parser likely sees "* * *" as a list item with bullet "*" and content "* *"
+    assert_eq!(
+        clean.matches("•").count(),
+        2,
+        "Should have 2 list items. Got output:\n{}",
+        clean
+    );
+    assert!(clean.contains("─"), "Should contain horizontal rule");
+}
+
+#[test]
+fn test_link_nested_brackets_in_text() {
+    // Spec Example 508: [link [foo [bar]]](/uri)
+    // The link text can contain balanced brackets.
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0);
+    let mut sink = Vec::new();
+
+    let input = "[link [foo [bar]]](/uri)\n";
+    streamer
+        .print_chunk(&mut sink, input)
+        .expect("Write failed");
+    streamer.flush(&mut sink).expect("Flush failed");
+
+    let output = String::from_utf8_lossy(&sink);
+
+    // Should contain OSC8 link sequence to /uri
+    assert!(
+        output.contains("\x1b]8;;/uri\x1b\\"),
+        "Should create hyperlink to /uri"
+    );
+
+    // Link text should include the brackets
+    let clean = aico::console::strip_ansi_codes(&output);
+    assert!(
+        clean.contains("link [foo [bar]]"),
+        "Nested brackets should be preserved in link text"
+    );
+}
+
+#[test]
+fn test_link_balanced_parentheses_in_url() {
+    // Spec Example 497: [link](foo(and(bar)))
+    // The URL can contain balanced parentheses.
+    let mut streamer = MarkdownStreamer::new();
+    streamer.set_margin(0);
+    let mut sink = Vec::new();
+
+    let input = "[link](foo(and(bar)))\n";
+    streamer
+        .print_chunk(&mut sink, input)
+        .expect("Write failed");
+    streamer.flush(&mut sink).expect("Flush failed");
+
+    let output = String::from_utf8_lossy(&sink);
+
+    // The URL should be complete with balanced parens in the OSC8 sequence
+    // Note: OSC8 format is \x1b]8;;URL\x1b\\TEXT\x1b]8;;\x1b\\
+    assert!(
+        output.contains("\x1b]8;;foo(and(bar))\x1b\\"),
+        "URL with balanced parentheses should be preserved in OSC8 sequence"
+    );
+}
+
+#[test]
+fn test_empty_emphasis_not_allowed() {
+    // Spec Example 408-409: ** and **** alone are not emphasis
+    check("** is not an empty emphasis", "** is not an empty emphasis");
+    check(
+        "**** is not an empty strong emphasis",
+        "**** is not an empty strong emphasis",
+    );
+}
