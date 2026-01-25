@@ -131,7 +131,7 @@ impl Session {
 
         let pointer = SessionPointer {
             pointer_type: "aico_session_pointer_v1".to_string(),
-            path: rel_path.to_string_lossy().replace('\\', "/"),
+            path: rel_path.to_string_lossy().to_string(),
         };
 
         atomic_write_json(&self.file_path, &pointer)?;

@@ -73,7 +73,7 @@ pub fn run(
             .join(format!("{}.json", new_name));
         let pointer = SessionPointer {
             pointer_type: "aico_session_pointer_v1".to_string(),
-            path: rel_view_path.to_string_lossy().replace('\\', "/"),
+            path: rel_view_path.to_string_lossy().to_string(),
         };
         serde_json::to_writer(&mut temp_ptr, &pointer)?;
         temp_ptr.flush()?;

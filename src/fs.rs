@@ -114,14 +114,14 @@ pub fn validate_input_paths(
         // 4. Calculate relative path using the LOGICAL path to preserve symlink semantics in the context structure.
         match logical_abs_path.strip_prefix(session_root) {
             Ok(rel) => {
-                let rel_str = rel.to_string_lossy().replace('\\', "/");
+                let rel_str = rel.to_string_lossy().to_string();
                 valid_rels.push(rel_str);
             }
             Err(_) => {
                 // If the logical path doesn't start with root (e.g. symlink into root from outside),
                 // we use the physical relative path as the context identifier.
                 if let Ok(rel) = physical_target.strip_prefix(&root_canon) {
-                    let rel_str = rel.to_string_lossy().replace('\\', "/");
+                    let rel_str = rel.to_string_lossy().to_string();
                     valid_rels.push(rel_str);
                 } else {
                     eprintln!(

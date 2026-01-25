@@ -2,7 +2,6 @@ use crate::exceptions::AicoError;
 use crate::fs::atomic_write_json;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -11,27 +10,8 @@ struct TrustConfig {
     trusted_projects: Vec<String>,
 }
 
-fn get_config_dir() -> PathBuf {
-    if let Ok(xdg_config) = env::var("XDG_CONFIG_HOME") {
-        PathBuf::from(xdg_config).join("aico")
-    } else {
-        #[cfg(windows)]
-        {
-            PathBuf::from(env::var("APPDATA").unwrap_or_else(|_| ".".into())).join("aico")
-        }
-        #[cfg(not(windows))]
-        {
-            if let Ok(home) = env::var("HOME") {
-                PathBuf::from(home).join(".config").join("aico")
-            } else {
-                PathBuf::from(".").join(".config").join("aico")
-            }
-        }
-    }
-}
-
 pub fn get_trust_file() -> PathBuf {
-    get_config_dir().join("trust.json")
+    crate::utils::get_app_config_dir().join("trust.json")
 }
 
 fn load_trusted_paths() -> HashSet<String> {

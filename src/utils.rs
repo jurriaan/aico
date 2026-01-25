@@ -2,7 +2,34 @@
 use rustls::crypto::aws_lc_rs;
 #[cfg(target_arch = "riscv64")]
 use rustls::crypto::ring;
+use std::env;
+use std::path::PathBuf;
 use std::{sync::LazyLock, time::Duration};
+
+pub fn get_app_config_dir() -> PathBuf {
+    if let Ok(xdg) = env::var("XDG_CONFIG_HOME") {
+        PathBuf::from(xdg).join("aico")
+    } else {
+        let home = env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("."));
+        home.join(".config").join("aico")
+    }
+}
+
+pub fn get_app_cache_dir() -> PathBuf {
+    if let Ok(custom) = env::var("AICO_CACHE_DIR") {
+        return PathBuf::from(custom);
+    }
+    if let Ok(xdg) = env::var("XDG_CACHE_HOME") {
+        PathBuf::from(xdg).join("aico")
+    } else {
+        let home = env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("."));
+        home.join(".cache").join("aico")
+    }
+}
 
 pub fn setup_crypto_provider() {
     static DONE: LazyLock<()> = LazyLock::new(|| {

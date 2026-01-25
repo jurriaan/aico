@@ -54,16 +54,7 @@ pub struct ModelInfo {
 }
 
 fn get_cache_path() -> PathBuf {
-    if let Ok(custom) = env::var("AICO_CACHE_DIR") {
-        return PathBuf::from(custom).join("models.json");
-    }
-    let xdg = env::var("XDG_CACHE_HOME").map(PathBuf::from).ok();
-    let home = env::var("HOME").map(PathBuf::from).ok();
-
-    let base = xdg
-        .or_else(|| home.map(|h| h.join(".cache")))
-        .unwrap_or_else(|| PathBuf::from("."));
-    base.join("aico").join("models.json")
+    crate::utils::get_app_cache_dir().join("models.json")
 }
 
 static REGISTRY_CACHE: std::sync::OnceLock<ModelRegistry> = std::sync::OnceLock::new();
@@ -87,14 +78,16 @@ pub async fn get_model_info(model_id: &str) -> Option<ModelInfo> {
 async fn ensure_cache(path: &PathBuf) -> Option<ModelRegistry> {
     let mut should_fetch = false;
     let existing: Option<ModelRegistry> = if path.exists() {
-        crate::fs::read_json::<ModelRegistry>(path).ok().inspect(|reg| {
-            if let Ok(dt) = DateTime::parse_from_rfc3339(&reg.last_fetched)
-                && (Utc::now() - dt.with_timezone(&Utc)).num_days() < CACHE_TTL_DAYS
-            {
-                return;
-            }
-            should_fetch = true;
-        })
+        crate::fs::read_json::<ModelRegistry>(path)
+            .ok()
+            .inspect(|reg| {
+                if let Ok(dt) = DateTime::parse_from_rfc3339(&reg.last_fetched)
+                    && (Utc::now() - dt.with_timezone(&Utc)).num_days() < CACHE_TTL_DAYS
+                {
+                    return;
+                }
+                should_fetch = true;
+            })
     } else {
         should_fetch = true;
         None

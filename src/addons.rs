@@ -20,14 +20,7 @@ macro_rules! bundle_addon {
 }
 
 fn get_cache_dir() -> PathBuf {
-    let base = env::var("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            env::home_dir()
-                .map(|h| h.join(".cache"))
-                .unwrap_or_else(|| PathBuf::from("."))
-        });
-    let dir = base.join("aico").join("bundled_addons");
+    let dir = crate::utils::get_app_cache_dir().join("bundled_addons");
     let _ = fs::create_dir_all(&dir);
     dir
 }
@@ -93,10 +86,7 @@ pub fn discover_addons() -> Vec<AddonInfo> {
     }
 
     // 2. User Addons
-    let home = env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."));
-    let user_addon_dir = home.join(".config").join("aico").join("addons");
+    let user_addon_dir = crate::utils::get_app_config_dir().join("addons");
     if let Ok(entries) = fs::read_dir(user_addon_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -166,10 +156,6 @@ fn is_executable_file(path: &Path) -> bool {
         {
             use std::os::unix::fs::PermissionsExt;
             return meta.permissions().mode() & 0o111 != 0;
-        }
-        #[cfg(windows)]
-        {
-            return true;
         }
     }
     false

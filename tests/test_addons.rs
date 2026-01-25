@@ -9,13 +9,14 @@ fn test_discover_addons_untrusted_skips_project() {
     let temp = tempdir().unwrap();
     let root = temp.path();
     let home = root.join("fake_home");
-    fs::create_dir_all(&home).unwrap();
+    let xdg_config = home.join(".config");
+    fs::create_dir_all(&xdg_config).unwrap();
 
     // 1. Initialize session
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("init")
         .assert()
         .success();
@@ -43,7 +44,7 @@ fn test_discover_addons_untrusted_skips_project() {
     let output = cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("--help")
         .assert()
         .success()
@@ -59,7 +60,7 @@ fn test_discover_addons_untrusted_skips_project() {
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("trust")
         .assert()
         .success();
@@ -68,7 +69,7 @@ fn test_discover_addons_untrusted_skips_project() {
     let output_trusted = cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("--help")
         .assert()
         .success()
@@ -100,18 +101,21 @@ fn test_discover_addons_priority() {
     .unwrap();
     fs::set_permissions(&user_addon, fs::Permissions::from_mode(0o755)).unwrap();
 
+    let xdg_config = home.join(".config");
+    fs::create_dir_all(&xdg_config).unwrap();
+
     // Create project addon with same name (overrides user)
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("init")
         .assert()
         .success();
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("trust")
         .assert()
         .success();
@@ -129,7 +133,7 @@ fn test_discover_addons_priority() {
     let output = cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("--help")
         .assert()
         .success()
@@ -151,17 +155,18 @@ fn test_alias_group_prioritizes_builtin() {
     let home = root.join("fake_home");
     fs::create_dir_all(&home).unwrap();
 
+    let xdg_config = home.join(".config");
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("init")
         .assert()
         .success();
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("trust")
         .assert()
         .success();
@@ -177,7 +182,7 @@ fn test_alias_group_prioritizes_builtin() {
     let output = cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("log")
         .assert()
         .success()
@@ -196,17 +201,18 @@ fn test_execute_addon_environment() {
     let home = root.join("fake_home");
     fs::create_dir_all(&home).unwrap();
 
+    let xdg_config = home.join(".config");
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("init")
         .assert()
         .success();
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("trust")
         .assert()
         .success();
@@ -222,7 +228,7 @@ fn test_execute_addon_environment() {
     let output = cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("env-test")
         .assert()
         .success()
@@ -242,17 +248,18 @@ fn test_execute_addon_handles_os_error() {
     let home = root.join("fake_home");
     fs::create_dir_all(&home).unwrap();
 
+    let xdg_config = home.join(".config");
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("init")
         .assert()
         .success();
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("trust")
         .assert()
         .success();
@@ -269,7 +276,7 @@ fn test_execute_addon_handles_os_error() {
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("broken")
         .assert()
         .failure();
@@ -282,17 +289,18 @@ fn test_create_addon_command_execution() {
     let home = root.join("fake_home");
     fs::create_dir_all(&home).unwrap();
 
+    let xdg_config = home.join(".config");
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("init")
         .assert()
         .success();
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("trust")
         .assert()
         .success();
@@ -308,7 +316,7 @@ fn test_create_addon_command_execution() {
     let output = cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("arg-test")
         .arg("hello")
         .arg("--world")
@@ -339,17 +347,18 @@ fn test_discover_addons() {
     .unwrap();
     fs::set_permissions(&user_addon, fs::Permissions::from_mode(0o755)).unwrap();
 
+    let xdg_config = home.join(".config");
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("init")
         .assert()
         .success();
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("trust")
         .assert()
         .success();
@@ -357,7 +366,7 @@ fn test_discover_addons() {
     let output = cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("--help")
         .assert()
         .success()
@@ -377,11 +386,12 @@ fn test_bundled_addons_are_available() {
     let home = root.join("fake_home");
     fs::create_dir_all(&home).unwrap();
 
+    let xdg_config = home.join(".config");
     // bundled addons should be accessible without any setup
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("commit")
         .arg("--usage")
         .assert()
@@ -393,7 +403,7 @@ fn test_bundled_addons_are_available() {
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("summarize")
         .arg("--usage")
         .assert()
@@ -410,17 +420,18 @@ fn test_execute_addon_calls_execvpe() {
     let home = root.join("fake_home");
     fs::create_dir_all(&home).unwrap();
 
+    let xdg_config = home.join(".config");
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("init")
         .assert()
         .success();
     cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("trust")
         .assert()
         .success();
@@ -436,7 +447,7 @@ fn test_execute_addon_calls_execvpe() {
     let output = cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("HOME", &home)
-        .env("XDG_CONFIG_HOME", &home)
+        .env("XDG_CONFIG_HOME", &xdg_config)
         .arg("path-test")
         .assert()
         .success()
