@@ -69,7 +69,7 @@ fn test_load_pointer_invalid_json_exits() {
         .arg("status")
         .assert()
         .failure()
-        .stderr(predicates::str::contains("Detected a legacy session file"));
+        .stderr(predicates::str::contains("Invalid pointer file format"));
 }
 
 #[test]

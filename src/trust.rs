@@ -40,11 +40,8 @@ fn load_trusted_paths() -> HashSet<String> {
         return HashSet::new();
     }
 
-    match fs::read_to_string(trust_file) {
-        Ok(content) => {
-            let config: TrustConfig = serde_json::from_str(&content).unwrap_or_default();
-            config.trusted_projects.into_iter().collect()
-        }
+    match crate::fs::read_json::<TrustConfig>(&trust_file) {
+        Ok(config) => config.trusted_projects.into_iter().collect(),
         Err(_) => HashSet::new(),
     }
 }

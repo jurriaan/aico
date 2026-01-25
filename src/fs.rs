@@ -47,6 +47,15 @@ pub fn atomic_write_json<T: serde::Serialize>(
     Ok(())
 }
 
+pub fn read_json<T: serde::de::DeserializeOwned>(
+    path: &std::path::Path,
+) -> Result<T, crate::exceptions::AicoError> {
+    let file = std::fs::File::open(path)?;
+    let reader = std::io::BufReader::new(file);
+    let data = serde_json::from_reader(reader)?;
+    Ok(data)
+}
+
 /// Validates input paths relative to session root.
 pub fn validate_input_paths(
     session_root: &Path,

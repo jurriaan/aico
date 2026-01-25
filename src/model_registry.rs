@@ -87,16 +87,13 @@ pub async fn get_model_info(model_id: &str) -> Option<ModelInfo> {
 async fn ensure_cache(path: &PathBuf) -> Option<ModelRegistry> {
     let mut should_fetch = false;
     let existing: Option<ModelRegistry> = if path.exists() {
-        fs::read_to_string(path).ok().and_then(|c| {
-            let reg: Option<ModelRegistry> = serde_json::from_str(&c).ok();
-            if let Some(ref r) = reg
-                && let Ok(dt) = DateTime::parse_from_rfc3339(&r.last_fetched)
+        crate::fs::read_json::<ModelRegistry>(path).ok().inspect(|reg| {
+            if let Ok(dt) = DateTime::parse_from_rfc3339(&reg.last_fetched)
                 && (Utc::now() - dt.with_timezone(&Utc)).num_days() < CACHE_TTL_DAYS
             {
-                return reg;
+                return;
             }
             should_fetch = true;
-            reg
         })
     } else {
         should_fetch = true;
@@ -205,7 +202,6 @@ pub fn get_model_info_at(model_id: &str, path: PathBuf) -> Option<ModelInfo> {
         return None;
     }
 
-    let content = fs::read_to_string(path).ok()?;
-    let registry: ModelRegistry = serde_json::from_str(&content).ok()?;
+    let registry: ModelRegistry = crate::fs::read_json(&path).ok()?;
     get_info_from_registry(model_id, &registry)
 }

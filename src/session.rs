@@ -51,26 +51,26 @@ impl Session {
             .unwrap_or_else(|| Path::new("."))
             .to_path_buf();
 
-        let pointer_json = std::fs::read_to_string(&session_file)?;
+        let pointer: SessionPointer = crate::fs::read_json(&session_file).map_err(|e| {
+            if let AicoError::Serialization(_) = e {
+                AicoError::SessionIntegrity(format!(
+                    "Invalid pointer file format at {}.\n\
+                    If this is a legacy session, please run 'aico migrate-shared-history' (using the Python version).",
+                    session_file.display()
+                ))
+            } else {
+                e
+            }
+        })?;
 
-        if pointer_json.trim().is_empty() {
+        if pointer.pointer_type != "aico_session_pointer_v1" {
             return Err(AicoError::SessionIntegrity(format!(
-                "Session file '{}' is empty.",
-                SESSION_FILE_NAME
-            )));
-        }
-
-        if !pointer_json.contains("aico_session_pointer_v1") {
-            return Err(AicoError::SessionIntegrity(format!(
-                "Detected a legacy session file at {}.\n\
+                "Detected incompatible session file at {}.\n\
                 This version of aico only supports the Shared History format.\n\
                 Please run 'aico migrate-shared-history' (using the Python version) to upgrade your project.",
                 session_file.display()
             )));
         }
-
-        let pointer: SessionPointer = serde_json::from_str(&pointer_json)
-            .map_err(|_| AicoError::SessionIntegrity("Invalid pointer file format".into()))?;
 
         // Resolve View Path (relative to pointer file)
         let view_path = root.join(&pointer.path);
@@ -81,8 +81,7 @@ impl Session {
             )));
         }
 
-        let view_json = std::fs::read_to_string(&view_path)?;
-        let view: SessionView = serde_json::from_str(&view_json)?;
+        let view: SessionView = crate::fs::read_json(&view_path)?;
 
         let history_root = root.join(".aico").join("history");
         let store = HistoryStore::new(history_root);

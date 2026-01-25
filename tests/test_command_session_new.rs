@@ -55,5 +55,5 @@ fn test_session_new_fails_in_legacy_session() {
 
     // THEN the command fails because it's not a shared-history session pointer
     let stderr = String::from_utf8(cmd.get_output().stderr.clone()).unwrap();
-    assert!(stderr.contains("Detected a legacy session file"));
+    assert!(stderr.contains("Invalid pointer file format"));
 }

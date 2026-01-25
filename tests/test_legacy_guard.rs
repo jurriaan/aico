@@ -24,7 +24,7 @@ fn test_load_fails_on_legacy_json() {
         .arg("status")
         .assert()
         .failure()
-        .stderr(predicates::str::contains("Detected a legacy session file"));
+        .stderr(predicates::str::contains("Invalid pointer file format"));
 }
 
 #[test]
@@ -40,5 +40,5 @@ fn test_load_fails_on_empty_file() {
         .arg("status")
         .assert()
         .failure()
-        .stderr(predicates::str::contains("is empty"));
+        .stderr(predicates::str::contains("Invalid pointer file format"));
 }
