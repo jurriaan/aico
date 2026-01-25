@@ -1,181 +1,566 @@
 use aico::diffing::parser::StreamParser;
-use aico::models::StreamYieldItem;
+use aico::models::DisplayItem;
+use proptest::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
+use tempfile::tempdir;
 
-#[derive(Debug)]
-struct TestCase {
-    name: &'static str,
-    files: Vec<(&'static str, &'static str)>,
-    stream_input: &'static str,
+// =============================================================================
+// CONSTANTS
+// =============================================================================
+
+const TEST_FILENAME: &str = "src/main.rs";
+const ORIGINAL_CONTENT: &str = "fn main() {\n    println!(\"Hello\");\n}\n";
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+
+fn create_baseline() -> HashMap<String, String> {
+    let mut baseline = HashMap::new();
+    baseline.insert(TEST_FILENAME.to_string(), ORIGINAL_CONTENT.to_string());
+    baseline
 }
 
-fn get_cases() -> Vec<TestCase> {
-    vec![
-        TestCase {
-            name: "Standard Replacement",
-            files: vec![("main.rs", "fn main() {\n    println!(\"Old\");\n}\n")],
-            stream_input: "File: main.rs\n<<<<<<< SEARCH\n    println!(\"Old\");\n=======\n    println!(\"New\");\n>>>>>>> REPLACE\n",
-        },
-        TestCase {
-            name: "File Creation",
-            files: vec![],
-            stream_input: "File: new_script.py\n<<<<<<< SEARCH\n=======\nprint('Hello World')\n>>>>>>> REPLACE\n",
-        },
-        TestCase {
-            name: "Python Indentation Patch",
-            files: vec![(
-                "utils.py",
-                "def check(x):\n    if x:\n        return True\n    return False\n",
-            )],
-            stream_input: "File: utils.py\n<<<<<<< SEARCH\n    if x:\n        return True\n=======\n    if x:\n        # Logging added\n        print(x)\n        return True\n>>>>>>> REPLACE\n",
-        },
-        TestCase {
-            name: "Adjacent Markers (The Tricky Case)",
-            files: vec![("config.txt", "A=1\nB=1\n")],
-            stream_input: "File: config.txt\n<<<<<<< SEARCH\nA=1\n=======\nA=2\n>>>>>>> REPLACE\n<<<<<<< SEARCH\nB=1\n=======\nB=2\n>>>>>>> REPLACE\n",
-        },
-        TestCase {
-            name: "With Conversational Noise",
-            files: vec![("readme.md", "# Title\nOld Body")],
-            stream_input: "I will update the readme now.\n\nFile: readme.md\n<<<<<<< SEARCH\nOld Body\n=======\nNew Body\n>>>>>>> REPLACE\n\nThere, all done.",
-        },
-        TestCase {
-            name: "Unicode Characters (Safety Check)",
-            files: vec![("emoji.txt", "Old: 😐")],
-            stream_input: "File: emoji.txt\n<<<<<<< SEARCH\nOld: 😐\n=======\nNew: 😎\n>>>>>>> REPLACE\n",
-        },
-        TestCase {
-            name: "Windows Line Endings (CRLF)",
-            files: vec![("windows.txt", "line1\r\nline2\r\n")],
-            stream_input: "File: windows.txt\r\n<<<<<<< SEARCH\r\nline1\r\n=======\r\nline1_modified\r\n>>>>>>> REPLACE\r\n",
-        },
-    ]
+#[derive(Debug, Clone, PartialEq)]
+struct ParserResult {
+    diff: String,
+    items: Vec<DisplayItem>,
+    warnings: Vec<String>,
 }
 
-fn run_parser_with_chunks(files: &[(&str, &str)], chunks: &[&str]) -> Vec<StreamYieldItem> {
-    let mut context = HashMap::new();
-    for (name, content) in files {
-        context.insert(name.to_string(), content.to_string());
+fn run_parser_whole(baseline: &HashMap<String, String>, input: &str) -> ParserResult {
+    let mut parser = StreamParser::new(baseline);
+    parser.feed(input);
+    let (diff, items, warnings) = parser.final_resolve(Path::new("."));
+    ParserResult {
+        diff,
+        items,
+        warnings,
     }
-
-    let mut parser = StreamParser::new(&context);
-    let mut all_resolved_items = Vec::new();
-
-    // 1. Processing Loop (Mimics executor.rs)
-    for chunk in chunks {
-        // parse_and_resolve performs: feed() -> collect() -> process_yields()
-        let resolved = parser.parse_and_resolve(chunk, Path::new("."));
-        all_resolved_items.extend(resolved);
-    }
-
-    // 2. Finalization (Mimics final_resolve)
-    // We manually finish and process yields to capture the StreamYieldItems
-    // (final_resolve returns DisplayItems which loses type info)
-    let (_, final_raw, _) = parser.finish("");
-    let final_resolved = parser.process_yields(final_raw, Path::new("."));
-    all_resolved_items.extend(final_resolved);
-
-    normalize_items(all_resolved_items)
 }
 
-fn normalize_items(items: Vec<StreamYieldItem>) -> Vec<StreamYieldItem> {
-    let mut normalized = Vec::new();
-    let mut text_buf = String::new();
+fn run_parser_char_by_char(baseline: &HashMap<String, String>, input: &str) -> ParserResult {
+    let mut parser = StreamParser::new(baseline);
+    for c in input.chars() {
+        parser.feed(&c.to_string());
+    }
+    let (diff, items, warnings) = parser.final_resolve(Path::new("."));
+    ParserResult {
+        diff,
+        items,
+        warnings,
+    }
+}
 
-    let flush = |buf: &mut String, out: &mut Vec<StreamYieldItem>| {
-        if !buf.is_empty() {
-            out.push(StreamYieldItem::Text(std::mem::take(buf)));
+fn run_parser_random_chunks(
+    baseline: &HashMap<String, String>,
+    input: &str,
+    chunk_sizes: &[usize],
+) -> ParserResult {
+    let mut parser = StreamParser::new(baseline);
+    let bytes = input.as_bytes();
+    let mut pos = 0;
+    let mut chunk_idx = 0;
+
+    while pos < bytes.len() {
+        let size = chunk_sizes
+            .get(chunk_idx % chunk_sizes.len())
+            .copied()
+            .unwrap_or(1)
+            .min(bytes.len() - pos);
+
+        // Find a valid UTF-8 boundary
+        let mut end = pos + size;
+        while end < bytes.len() && !input.is_char_boundary(end) {
+            end += 1;
         }
-    };
+        end = end.min(bytes.len());
 
-    for item in items {
-        match item {
-            StreamYieldItem::Text(t) | StreamYieldItem::IncompleteBlock(t) => {
-                text_buf.push_str(&t);
-            }
-            other => {
-                flush(&mut text_buf, &mut normalized);
-                normalized.push(other);
-            }
+        if let Ok(chunk) = std::str::from_utf8(&bytes[pos..end]) {
+            parser.feed(chunk);
         }
+        pos = end;
+        chunk_idx += 1;
     }
-    flush(&mut text_buf, &mut normalized);
-    normalized
+
+    let (diff, items, warnings) = parser.final_resolve(Path::new("."));
+    ParserResult {
+        diff,
+        items,
+        warnings,
+    }
+}
+
+fn run_parser_split_at_char(
+    baseline: &HashMap<String, String>,
+    input: &str,
+    split_char: char,
+) -> ParserResult {
+    let mut parser = StreamParser::new(baseline);
+
+    if let Some(idx) = input.find(split_char) {
+        let split_pos = input
+            .char_indices()
+            .find(|(i, _)| *i >= idx)
+            .map(|(i, _)| i + 1)
+            .unwrap_or(input.len());
+        let (part1, part2) = input.split_at(split_pos.min(input.len()));
+        parser.feed(part1);
+        parser.feed(part2);
+    } else {
+        parser.feed(input);
+    }
+
+    let (diff, items, warnings) = parser.final_resolve(Path::new("."));
+    ParserResult {
+        diff,
+        items,
+        warnings,
+    }
+}
+
+// =============================================================================
+// PROPTEST STRATEGIES
+// =============================================================================
+
+fn line_ending() -> impl Strategy<Value = &'static str> {
+    prop_oneof![Just("\n"), Just("\r\n")]
+}
+
+fn indent() -> impl Strategy<Value = &'static str> {
+    prop_oneof![Just(""), Just("  "), Just("    "), Just("\t")]
+}
+
+fn chunk_sizes() -> impl Strategy<Value = Vec<usize>> {
+    prop::collection::vec(1usize..100, 5..20)
+}
+
+/// Comprehensive grammar-based LLM output generator
+fn llm_output() -> impl Strategy<Value = String> {
+    let valid_patch = (indent(), line_ending()).prop_map(|(ind, le)| {
+        format!(
+            "File: {}{le}{ind}<<<<<<< SEARCH{le}{ind}    println!(\"Hello\");{le}{ind}======={le}{ind}    println!(\"World\");{le}{ind}>>>>>>> REPLACE{le}",
+            TEST_FILENAME
+        )
+    });
+
+    let invalid_patch = (indent(), line_ending()).prop_map(|(ind, le)| {
+        format!(
+            "File: {}{le}{ind}<<<<<<< SEARCH{le}{ind}    nonexistent();{le}{ind}======={le}{ind}    fixed();{le}{ind}>>>>>>> REPLACE{le}",
+            TEST_FILENAME
+        )
+    });
+
+    let file_creation = line_ending().prop_map(|le| {
+        format!("File: new.rs{le}<<<<<<< SEARCH{le}======={le}fn new() {{}}{le}>>>>>>> REPLACE{le}")
+    });
+
+    let content_deletion = line_ending().prop_map(|le| {
+        format!(
+            "File: {}{le}<<<<<<< SEARCH{le}    println!(\"Hello\");{le}======={le}>>>>>>> REPLACE{le}",
+            TEST_FILENAME
+        )
+    });
+
+    let broken_markers = prop_oneof![
+        Just("<<<<<<<\n".to_string()),
+        Just("<<<<<<< SEARC\n".to_string()),
+        Just(">>>>>>>REPLACE\n".to_string()),
+        Just("=====\n".to_string()),
+        Just("File: \n".to_string()),
+    ];
+
+    let noise = prop_oneof![
+        "[a-zA-Z0-9 .,!?]{1,80}\n",
+        Just("Here are the changes:\n\n".to_string()),
+        Just("```rust\nfn example() {}\n```\n".to_string()),
+    ];
+
+    prop::collection::vec(
+        prop_oneof![
+            4 => valid_patch,
+            2 => invalid_patch,
+            1 => file_creation,
+            1 => content_deletion,
+            2 => broken_markers,
+            2 => noise,
+        ],
+        1..8,
+    )
+    .prop_map(|blocks| blocks.join(""))
+}
+
+/// Chaos generator for panic testing
+fn chaos_stream() -> impl Strategy<Value = String> {
+    let chunks = prop_oneof![
+        "[\\PC\\s]*",
+        Just("<<<<<<< SEARCH\n".to_string()),
+        Just("=======\n".to_string()),
+        Just(">>>>>>> REPLACE\n".to_string()),
+        Just("File: src/main.rs\n".to_string()),
+        Just("    <<<<<<< SEARCH\n".to_string()),
+        Just("<<<<<<<".to_string()),
+        Just("<<<<<<< SEARCH\r\n".to_string()),
+        Just("fn main() {}\n".to_string()),
+    ];
+
+    prop::collection::vec(chunks, 1..30).prop_map(|v| v.join(""))
+}
+
+// =============================================================================
+// PROPTEST: PANIC RESISTANCE
+// =============================================================================
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(500))]
+
+    #[test]
+    fn parser_never_panics_on_chaos(s in chaos_stream()) {
+        let baseline = HashMap::new();
+        let mut parser = StreamParser::new(&baseline);
+        parser.feed(&s);
+        let _ = parser.final_resolve(Path::new("."));
+    }
+
+    #[test]
+    fn parser_never_panics_on_random(s in any::<String>()) {
+        let baseline = HashMap::new();
+        let mut parser = StreamParser::new(&baseline);
+        parser.feed(&s);
+        let _ = parser.final_resolve(Path::new("."));
+    }
+
+    #[test]
+    fn parser_never_panics_on_grammar(s in llm_output()) {
+        let baseline = create_baseline();
+        let mut parser = StreamParser::new(&baseline);
+        parser.feed(&s);
+        let _ = parser.final_resolve(Path::new("."));
+    }
+}
+
+// =============================================================================
+// PROPTEST: FRAGMENTATION CONSISTENCY
+// =============================================================================
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(300))]
+
+    #[test]
+    fn fragmentation_produces_identical_output(input in llm_output()) {
+        let baseline = create_baseline();
+
+        let whole = run_parser_whole(&baseline, &input);
+        let char_by_char = run_parser_char_by_char(&baseline, &input);
+        let split_lt = run_parser_split_at_char(&baseline, &input, '<');
+        let split_eq = run_parser_split_at_char(&baseline, &input, '=');
+        let split_nl = run_parser_split_at_char(&baseline, &input, '\n');
+
+        // Diff consistency
+        assert_eq!(whole.diff, char_by_char.diff, "char-by-char diff mismatch");
+        assert_eq!(whole.diff, split_lt.diff, "split-at-< diff mismatch");
+        assert_eq!(whole.diff, split_eq.diff, "split-at-= diff mismatch");
+        assert_eq!(whole.diff, split_nl.diff, "split-at-newline diff mismatch");
+
+        // Structure consistency
+        assert_eq!(whole.items, char_by_char.items, "char-by-char items mismatch");
+
+        // Warning consistency
+        assert_eq!(whole.warnings, char_by_char.warnings, "char-by-char warnings mismatch");
+    }
+
+    #[test]
+    fn random_chunk_sizes_produce_identical_output(
+        input in llm_output(),
+        sizes in chunk_sizes()
+    ) {
+        let baseline = create_baseline();
+
+        let whole = run_parser_whole(&baseline, &input);
+        let chunked = run_parser_random_chunks(&baseline, &input, &sizes);
+
+        assert_eq!(whole.diff, chunked.diff, "random chunk diff mismatch");
+    }
+
+    #[test]
+    fn valid_patch_produces_diff(ind in indent(), le in line_ending()) {
+        let baseline = create_baseline();
+
+        let patch = format!(
+            "File: {}{le}{ind}<<<<<<< SEARCH{le}{ind}    println!(\"Hello\");{le}{ind}======={le}{ind}    println!(\"World\");{le}{ind}>>>>>>> REPLACE{le}",
+            TEST_FILENAME
+        );
+
+        let result = run_parser_whole(&baseline, &patch);
+
+        assert!(!result.diff.is_empty(), "valid patch must produce diff");
+        assert!(result.warnings.is_empty(), "valid patch must not warn");
+
+        let has_diff_block = result.items.iter().any(|i| matches!(i, DisplayItem::Diff(_)));
+        assert!(has_diff_block, "valid patch must produce DiffBlock");
+    }
+}
+
+// =============================================================================
+// EXPLICIT EDGE CASE TESTS
+// =============================================================================
+
+#[test]
+fn test_marker_content_inside_search_block() {
+    let baseline: HashMap<String, String> = [(
+        "docs.md".to_string(),
+        "The marker <<<<<<< SEARCH appears in docs\n".to_string(),
+    )]
+    .into_iter()
+    .collect();
+
+    let input = "File: docs.md\n<<<<<<< SEARCH\nThe marker <<<<<<< SEARCH appears in docs\n=======\nFixed\n>>>>>>> REPLACE\n";
+
+    let result = run_parser_whole(&baseline, input);
+    assert!(!result.diff.is_empty(), "should handle marker-like content");
 }
 
 #[test]
-fn test_parser_stress_consistency() {
-    for case in get_cases() {
-        println!("Testing Case: {}", case.name);
+fn test_empty_search_creates_file() {
+    let baseline = HashMap::new();
+    let input = "File: new.rs\n<<<<<<< SEARCH\n=======\nfn new() {}\n>>>>>>> REPLACE\n";
 
-        // --- 1. Reference Run (Single Chunk) ---
-        let reference_items = run_parser_with_chunks(&case.files, &[case.stream_input]);
+    let result = run_parser_whole(&baseline, input);
 
-        // VALIDITY CHECK
-        let success = reference_items
+    assert!(!result.diff.is_empty());
+    assert!(result.diff.contains("+fn new() {}"));
+}
+
+#[test]
+fn test_empty_replace_deletes_content() {
+    let baseline = create_baseline();
+    let input = format!(
+        "File: {}\n<<<<<<< SEARCH\n    println!(\"Hello\");\n=======\n>>>>>>> REPLACE\n",
+        TEST_FILENAME
+    );
+
+    let result = run_parser_whole(&baseline, &input);
+
+    assert!(!result.diff.is_empty());
+    assert!(result.diff.contains("-    println!(\"Hello\");"));
+}
+
+#[test]
+fn test_indentation_mismatch_rejected() {
+    let baseline = create_baseline();
+
+    // SEARCH has 4 spaces, separator has 2 - should not match as patch
+    let input = "File: src/main.rs\n    <<<<<<< SEARCH\n    println!(\"Hello\");\n  =======\n    println!(\"World\");\n    >>>>>>> REPLACE\n";
+
+    let result = run_parser_whole(&baseline, input);
+
+    let has_diff = result
+        .items
+        .iter()
+        .any(|i| matches!(i, DisplayItem::Diff(_)));
+    assert!(!has_diff, "mismatched indent should not produce DiffBlock");
+}
+
+#[test]
+fn test_consecutive_file_headers() {
+    let baseline = HashMap::new();
+    let input =
+        "File: foo.rs\nFile: bar.rs\n<<<<<<< SEARCH\n=======\nfn bar() {}\n>>>>>>> REPLACE\n";
+
+    let result = run_parser_whole(&baseline, input);
+    assert!(result.diff.contains("bar.rs"));
+}
+
+#[test]
+fn test_file_header_decorators() {
+    let baseline = create_baseline();
+
+    let decorated = "File: **src/main.rs**\n<<<<<<< SEARCH\n    println!(\"Hello\");\n=======\n    println!(\"World\");\n>>>>>>> REPLACE\n";
+    let result = run_parser_whole(&baseline, decorated);
+    assert!(!result.diff.is_empty(), "should strip ** decorators");
+
+    let backtick = "File: `src/main.rs`\n<<<<<<< SEARCH\n    println!(\"Hello\");\n=======\n    println!(\"World\");\n>>>>>>> REPLACE\n";
+    let result = run_parser_whole(&baseline, backtick);
+    assert!(!result.diff.is_empty(), "should strip backtick decorators");
+}
+
+#[test]
+fn test_multiple_patches_same_file() {
+    let baseline: HashMap<String, String> =
+        [("multi.rs".to_string(), "line1\nline2\nline3\n".to_string())]
+            .into_iter()
+            .collect();
+
+    let input = "File: multi.rs\n<<<<<<< SEARCH\nline1\n=======\nmod1\n>>>>>>> REPLACE\n<<<<<<< SEARCH\nline2\n=======\nmod2\n>>>>>>> REPLACE\n";
+
+    let result = run_parser_whole(&baseline, input);
+
+    assert!(result.diff.contains("-line1"));
+    assert!(result.diff.contains("+mod1"));
+    assert!(result.diff.contains("-line2"));
+    assert!(result.diff.contains("+mod2"));
+}
+
+#[test]
+fn test_file_not_in_context_but_on_disk() {
+    let temp = tempdir().unwrap();
+    let root = temp.path();
+
+    let file_path = root.join("on_disk.rs");
+    std::fs::write(&file_path, "original\n").unwrap();
+
+    let baseline = HashMap::new();
+    let input = "File: on_disk.rs\n<<<<<<< SEARCH\noriginal\n=======\nmodified\n>>>>>>> REPLACE\n";
+
+    let mut parser = StreamParser::new(&baseline);
+    parser.feed(input);
+    let (diff, _, warnings) = parser.final_resolve(root);
+
+    assert!(
+        !warnings.is_empty(),
+        "should warn about file not in context"
+    );
+    assert!(
+        warnings
             .iter()
-            .any(|i| matches!(i, StreamYieldItem::DiffBlock(_)));
-        let warnings: Vec<_> = reference_items.iter().filter(|i| i.is_warning()).collect();
+            .any(|w| w.contains("not in the session context"))
+    );
+    assert!(!diff.is_empty(), "should still produce diff");
+}
 
-        if !success || !warnings.is_empty() {
-            panic!(
-                "\n🚨 TEST FAILURE: Scenario '{}' Reference Run Failed!\n\
-                    Reason: The parser failed to produce a valid patch even when given the full string.\n\
-                    \n--- INPUT ---\n{:?}\n\
-                    \n--- ACTUAL FOUND ---\nDiffBlocks: {}\nWarnings: {}\n\
-                    \n--- FULL OUTPUT ITEMS ---\n{:#?}\n",
-                case.name,
-                case.stream_input,
-                reference_items
-                    .iter()
-                    .filter(|i| matches!(i, StreamYieldItem::DiffBlock(_)))
-                    .count(),
-                warnings.len(),
-                reference_items
-            );
+#[test]
+fn test_dangling_marker_at_eof() {
+    let baseline = HashMap::new();
+    let input = "Some text\n<<<<<";
+
+    let result = run_parser_whole(&baseline, input);
+
+    let has_content = result.items.iter().any(|item| match item {
+        DisplayItem::Markdown(t) => t.contains("<<<<<") || t.contains("Some text"),
+        _ => false,
+    });
+    assert!(has_content, "dangling marker should become text");
+}
+
+#[test]
+fn test_unicode_fragmentation() {
+    let baseline: HashMap<String, String> = [("emoji.txt".to_string(), "Old: 😐\n".to_string())]
+        .into_iter()
+        .collect();
+
+    let input = "File: emoji.txt\n<<<<<<< SEARCH\nOld: 😐\n=======\nNew: 🦀\n>>>>>>> REPLACE\n";
+
+    let whole = run_parser_whole(&baseline, input);
+    let fragmented = run_parser_char_by_char(&baseline, input);
+
+    assert!(!whole.diff.is_empty());
+    assert!(whole.diff.contains("🦀"));
+    assert_eq!(
+        whole.diff, fragmented.diff,
+        "unicode fragmentation mismatch"
+    );
+}
+
+#[test]
+fn test_very_long_lines() {
+    let long_line = "x".repeat(10_000);
+    let baseline: HashMap<String, String> = [("long.txt".to_string(), format!("{}\n", long_line))]
+        .into_iter()
+        .collect();
+
+    let input = format!(
+        "File: long.txt\n<<<<<<< SEARCH\n{}\n=======\n{}\n>>>>>>> REPLACE\n",
+        long_line,
+        "y".repeat(10_000)
+    );
+
+    let result = run_parser_whole(&baseline, &input);
+    assert!(!result.diff.is_empty(), "should handle very long lines");
+}
+
+#[test]
+fn test_deep_indentation() {
+    let deep_indent = "        ".repeat(10); // 80 spaces
+    let baseline: HashMap<String, String> =
+        [("deep.py".to_string(), format!("{}code()\n", deep_indent))]
+            .into_iter()
+            .collect();
+
+    let input = format!(
+        "File: deep.py\n<<<<<<< SEARCH\n{}code()\n=======\n{}modified()\n>>>>>>> REPLACE\n",
+        deep_indent, deep_indent
+    );
+
+    let result = run_parser_whole(&baseline, &input);
+    assert!(!result.diff.is_empty(), "should handle deep indentation");
+}
+
+// =============================================================================
+// DETERMINISTIC STRESS SUITE
+// =============================================================================
+
+#[test]
+fn test_stress_consistency_suite() {
+    let cases = vec![
+        (
+            "Standard Replacement",
+            vec![("main.rs", "fn main() {\n    println!(\"Old\");\n}\n")],
+            "File: main.rs\n<<<<<<< SEARCH\n    println!(\"Old\");\n=======\n    println!(\"New\");\n>>>>>>> REPLACE\n",
+        ),
+        (
+            "File Creation",
+            vec![],
+            "File: new.py\n<<<<<<< SEARCH\n=======\nprint('hello')\n>>>>>>> REPLACE\n",
+        ),
+        (
+            "Python Indentation Patch",
+            vec![(
+                "utils.py",
+                "def check(x):\n    if x:\n        return True\n    return False\n",
+            )],
+            "File: utils.py\n<<<<<<< SEARCH\n    if x:\n        return True\n=======\n    if x:\n        # Logging added\n        print(x)\n        return True\n>>>>>>> REPLACE\n",
+        ),
+        (
+            "Adjacent Patches",
+            vec![("cfg.txt", "A=1\nB=1\n")],
+            "File: cfg.txt\n<<<<<<< SEARCH\nA=1\n=======\nA=2\n>>>>>>> REPLACE\n<<<<<<< SEARCH\nB=1\n=======\nB=2\n>>>>>>> REPLACE\n",
+        ),
+        (
+            "With Noise",
+            vec![("readme.md", "# Title\nBody")],
+            "Updating readme.\n\nFile: readme.md\n<<<<<<< SEARCH\nBody\n=======\nNew Body\n>>>>>>> REPLACE\n\nDone.",
+        ),
+        (
+            "Unicode",
+            vec![("emoji.txt", "Old: 😐")],
+            "File: emoji.txt\n<<<<<<< SEARCH\nOld: 😐\n=======\nNew: 😎\n>>>>>>> REPLACE\n",
+        ),
+        (
+            "CRLF",
+            vec![("win.txt", "line1\r\nline2\r\n")],
+            "File: win.txt\r\n<<<<<<< SEARCH\r\nline1\r\n=======\r\nmodified\r\n>>>>>>> REPLACE\r\n",
+        ),
+    ];
+
+    for (name, files, input) in cases {
+        let mut baseline = HashMap::new();
+        for (path, content) in files {
+            baseline.insert(path.to_string(), content.to_string());
         }
 
-        // --- 2. Drip Feed Run (Char-by-Char) ---
-        let chars: Vec<String> = case.stream_input.chars().map(|c| c.to_string()).collect();
-        let char_chunks: Vec<&str> = chars.iter().map(|s| s.as_str()).collect();
-        let drip_items = run_parser_with_chunks(&case.files, &char_chunks);
+        let whole = run_parser_whole(&baseline, input);
+        let fragmented = run_parser_char_by_char(&baseline, input);
 
-        if reference_items != drip_items {
-            panic!(
-                "\n🚨 TEST FAILURE: Scenario '{}' Consistency Check Failed (Char-by-Char).\n\
-                    The output changed when fed character by character.\n\
-                    \n--- REFERENCE OUTPUT ---\n{:#?}\n\
-                    \n--- DRIP FEED OUTPUT ---\n{:#?}\n",
-                case.name, reference_items, drip_items
-            );
-        }
-
-        // --- 3. Brute Force Split Run ---
-        for (char_idx, (byte_idx, _)) in case.stream_input.char_indices().enumerate() {
-            if byte_idx == 0 {
-                continue;
-            }
-
-            let (part1, part2) = case.stream_input.split_at(byte_idx);
-            let split_items = run_parser_with_chunks(&case.files, &[part1, part2]);
-
-            if reference_items != split_items {
-                panic!(
-                    "\n🚨 TEST FAILURE: Scenario '{}' Consistency Check Failed.\n\
-                        The output changed when split at char index {} (byte {}).\n\
-                        \n--- SPLIT POINT ---\nPart 1 Tail: {:?}\nPart 2 Head: {:?}\n\
-                        \n--- REFERENCE OUTPUT ---\n{:#?}\n\
-                        \n--- SPLIT OUTPUT ---\n{:#?}\n",
-                    case.name,
-                    char_idx,
-                    byte_idx,
-                    &part1[part1.len().saturating_sub(10)..],
-                    &part2[..part2.len().min(10)],
-                    reference_items,
-                    split_items
-                );
-            }
-        }
+        assert_eq!(
+            whole.diff, fragmented.diff,
+            "Case '{}': diff mismatch",
+            name
+        );
+        assert_eq!(
+            whole.items, fragmented.items,
+            "Case '{}': items mismatch",
+            name
+        );
     }
 }
