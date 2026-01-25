@@ -55,7 +55,8 @@ async fn main() {
     // We only need to explicitly add/overwrite the specific ones we care about.
     let mut child = Command::new(command_name)
         .args(command_args)
-        .env("OPENAI_BASE_URL", base_url) // Inject the dynamic URL
+        .env("OPENAI_BASE_URL", &base_url)
+        .env("OPENROUTER_BASE_URL", &base_url)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())

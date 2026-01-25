@@ -1,12 +1,12 @@
 use crate::exceptions::AicoError;
 use crate::llm::api_models::{ChatCompletionChunk, ChatCompletionRequest};
+use crate::models::Provider;
 use reqwest::Client as HttpClient;
 use std::env;
 
 #[derive(Debug)]
 struct ModelSpec {
-    api_key_env: &'static str,
-    default_base_url: &'static str,
+    provider: Provider,
     model_id_short: String,
     extra_params: Option<serde_json::Value>,
 }
@@ -14,16 +14,16 @@ struct ModelSpec {
 impl ModelSpec {
     fn parse(full_str: &str) -> Result<Self, AicoError> {
         let (base_model, params_part) = full_str.split_once('+').unwrap_or((full_str, ""));
-        let (provider, model_name) = base_model.split_once('/').ok_or_else(|| {
+        let (provider_str, model_name) = base_model.split_once('/').ok_or_else(|| {
             AicoError::Configuration(format!(
                 "Invalid model format '{}'. Expected 'provider/model'.",
                 base_model
             ))
         })?;
 
-        let (api_key_env, default_base_url) = match provider {
-            "openrouter" => ("OPENROUTER_API_KEY", "https://openrouter.ai/api/v1"),
-            "openai" => ("OPENAI_API_KEY", "https://api.openai.com/v1"),
+        let provider = match provider_str {
+            "openrouter" => Provider::OpenRouter,
+            "openai" => Provider::OpenAI,
             _ => {
                 return Err(AicoError::Configuration(format!(
                     "Unrecognized provider prefix in '{}'. Use 'openai/' or 'openrouter/'.",
@@ -34,7 +34,7 @@ impl ModelSpec {
 
         let mut extra_map: Option<serde_json::Map<String, serde_json::Value>> = None;
 
-        if provider == "openrouter" {
+        if matches!(provider, Provider::OpenRouter) {
             extra_map
                 .get_or_insert_default()
                 .insert("usage".to_string(), serde_json::json!({ "include": true }));
@@ -47,7 +47,7 @@ impl ModelSpec {
                     let val = serde_json::from_str::<serde_json::Value>(v)
                         .unwrap_or_else(|_| serde_json::Value::String(v.to_string()));
 
-                    if provider == "openrouter" && k == "reasoning_effort" {
+                    if matches!(provider, Provider::OpenRouter) && k == "reasoning_effort" {
                         m.insert(
                             "reasoning".to_string(),
                             serde_json::json!({ "effort": val }),
@@ -64,8 +64,7 @@ impl ModelSpec {
         let extra_params = extra_map.map(serde_json::Value::Object);
 
         Ok(Self {
-            api_key_env,
-            default_base_url,
+            provider,
             model_id_short: model_name.to_string(),
             extra_params,
         })
@@ -81,15 +80,46 @@ pub struct LlmClient {
     extra_params: Option<serde_json::Value>,
 }
 
+impl Provider {
+    fn base_url_env_var(&self) -> &'static str {
+        match self {
+            Provider::OpenAI => "OPENAI_BASE_URL",
+            Provider::OpenRouter => "OPENROUTER_BASE_URL",
+        }
+    }
+
+    fn default_base_url(&self) -> &'static str {
+        match self {
+            Provider::OpenAI => "https://api.openai.com/v1",
+            Provider::OpenRouter => "https://openrouter.ai/api/v1",
+        }
+    }
+
+    fn api_key_env_var(&self) -> &'static str {
+        match self {
+            Provider::OpenAI => "OPENAI_API_KEY",
+            Provider::OpenRouter => "OPENROUTER_API_KEY",
+        }
+    }
+}
+
 impl LlmClient {
     pub fn new(full_model_string: &str) -> Result<Self, AicoError> {
+        Self::new_with_env(full_model_string, |k| env::var(k).ok())
+    }
+
+    pub fn new_with_env<F>(full_model_string: &str, env_get: F) -> Result<Self, AicoError>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
         let spec = ModelSpec::parse(full_model_string)?;
 
-        let api_key = env::var(spec.api_key_env)
-            .map_err(|_| AicoError::Configuration(format!("{} is required.", spec.api_key_env)))?;
+        let api_key_var = spec.provider.api_key_env_var();
+        let api_key = env_get(api_key_var)
+            .ok_or_else(|| AicoError::Configuration(format!("{} is required.", api_key_var)))?;
 
-        let base_url =
-            env::var("OPENAI_BASE_URL").unwrap_or_else(|_| spec.default_base_url.to_string());
+        let base_url = env_get(spec.provider.base_url_env_var())
+            .unwrap_or_else(|| spec.provider.default_base_url().to_string());
 
         Ok(Self {
             http: crate::utils::setup_http_client(),
@@ -98,6 +128,10 @@ impl LlmClient {
             model_id: spec.model_id_short,
             extra_params: spec.extra_params,
         })
+    }
+
+    pub fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     pub fn get_extra_params(&self) -> Option<serde_json::Value> {
@@ -157,10 +191,19 @@ pub fn parse_sse_line(line: &str) -> Option<ChatCompletionChunk> {
 mod tests {
     use super::*;
 
+    fn mock_env(key: &str) -> Option<String> {
+        match key {
+            "OPENAI_API_KEY" => Some("sk-test".to_string()),
+            "OPENROUTER_API_KEY" => Some("sk-or-test".to_string()),
+            _ => None,
+        }
+    }
+
     #[test]
     fn test_get_extra_params_openrouter_nesting() {
-        unsafe { std::env::set_var("OPENROUTER_API_KEY", "sk-test") };
-        let client = LlmClient::new("openrouter/openai/o1+reasoning_effort=medium").unwrap();
+        let client =
+            LlmClient::new_with_env("openrouter/openai/o1+reasoning_effort=medium", mock_env)
+                .unwrap();
         let params = client.get_extra_params().unwrap();
 
         assert_eq!(params["usage"]["include"], true);
@@ -170,8 +213,8 @@ mod tests {
 
     #[test]
     fn test_get_extra_params_openai_flattened() {
-        unsafe { std::env::set_var("OPENAI_API_KEY", "sk-test") };
-        let client = LlmClient::new("openai/o1+reasoning_effort=medium").unwrap();
+        let client =
+            LlmClient::new_with_env("openai/o1+reasoning_effort=medium", mock_env).unwrap();
         let params = client.get_extra_params().unwrap();
 
         assert_eq!(params["reasoning_effort"], "medium");

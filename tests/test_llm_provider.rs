@@ -110,7 +110,7 @@ async fn test_handle_unified_streaming_openrouter() {
     let assert = cargo_bin_cmd!("aico")
         .current_dir(root)
         .env("OPENROUTER_API_KEY", "sk-test")
-        .env("OPENAI_BASE_URL", server.url())
+        .env("OPENROUTER_BASE_URL", server.url())
         .args(["ask", "--model", "openrouter/meta-llama/llama-3", "test"])
         .assert()
         .success();

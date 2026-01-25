@@ -39,6 +39,13 @@ impl std::fmt::Display for Role {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Provider {
+    OpenAI,
+    OpenRouter,
+}
+
 // --- Shared History Models (historystore/models.py) ---
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

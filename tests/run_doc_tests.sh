@@ -25,7 +25,8 @@ export XDG_CACHE_HOME="$TEST_WORKSPACE/.cache"
 # Force aico to use the mock server (base url overwritten by mock_server)
 export OPENAI_API_KEY="sk-test-key"
 export OPENROUTER_API_KEY="sk-test-key"
-export OPENAI_BASE_URL="http://localhost:5005/v1" 
+export OPENAI_BASE_URL="http://localhost:5005/v1"
+export OPENROUTER_BASE_URL="http://localhost:5005/v1"
 
 # 4. Link Compiled Binary and Shim
 mkdir -p "$TEST_WORKSPACE/bin"
