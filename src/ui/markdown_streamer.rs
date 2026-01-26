@@ -13,7 +13,7 @@ use std::sync::LazyLock;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Theme, ThemeSet};
 use syntect::parsing::SyntaxSet;
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 // --- Static Resources ---
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_no_newlines);
@@ -816,9 +816,6 @@ impl MarkdownStreamer {
             let token = caps.get(1).unwrap().as_str();
             if token.starts_with("\x1b") {
                 current_line.push_str(token);
-                // If it's an OSC8 link sequence, it has no visible width.
-                // update_ansi_state already ignores it for state tracking, but we must
-                // ensure we don't accidentally treat it as visible text below.
                 self.update_ansi_state(&mut active_codes, token);
             } else {
                 let mut token_str = token;
@@ -830,7 +827,7 @@ impl MarkdownStreamer {
                         let mut split_idx = 0;
                         let mut split_len = 0;
                         for (idx, c) in token_str.char_indices() {
-                            let c_w = UnicodeWidthStr::width(c.to_string().as_str());
+                            let c_w = c.width().unwrap_or(0);
                             if split_len + c_w > width {
                                 break;
                             }
@@ -842,7 +839,7 @@ impl MarkdownStreamer {
                         }
                         if split_idx == 0 {
                             break;
-                        } // Empty string safety
+                        }
 
                         current_line.push_str(&token_str[..split_idx]);
                         lines.push(current_line);
@@ -971,11 +968,12 @@ impl MarkdownStreamer {
             );
         }
 
-        // 2. Wrap the colored string manually
-        let wrapped_lines = self.wrap_ansi(&self.scratch_buffer, avail_width);
+        // 2. Determine if we need to wrap
+        let content_width = self.visible_width(line_content);
 
-        // 3. Render each wrapped segment with consistent background
-        if wrapped_lines.is_empty() {
+        if content_width <= avail_width {
+            // Fits in one line: Print directly
+            let pad = avail_width.saturating_sub(content_width);
             queue!(
                 w,
                 Print(&prefix),
@@ -984,17 +982,15 @@ impl MarkdownStreamer {
                     g: 30,
                     b: 30
                 }),
-                Print(" ".repeat(avail_width)),
+                Print(&self.scratch_buffer),
+                Print(" ".repeat(pad)),
                 ResetColor
             )?;
         } else {
-            for (i, line) in wrapped_lines.iter().enumerate() {
-                if i > 0 {
-                    queue!(w, Print("\n"))?;
-                }
-                let vis_len = self.visible_width(line);
-                let pad = avail_width.saturating_sub(vis_len);
+            // Needs wrapping
+            let wrapped_lines = self.wrap_ansi(&self.scratch_buffer, avail_width);
 
+            if wrapped_lines.is_empty() {
                 queue!(
                     w,
                     Print(&prefix),
@@ -1003,10 +999,30 @@ impl MarkdownStreamer {
                         g: 30,
                         b: 30
                     }),
-                    Print(line),
-                    Print(" ".repeat(pad)), // Fill remaining width with bg color
+                    Print(" ".repeat(avail_width)),
                     ResetColor
                 )?;
+            } else {
+                for (i, line) in wrapped_lines.iter().enumerate() {
+                    if i > 0 {
+                        queue!(w, Print("\n"))?;
+                    }
+                    let vis_len = self.visible_width(line);
+                    let pad = avail_width.saturating_sub(vis_len);
+
+                    queue!(
+                        w,
+                        Print(&prefix),
+                        SetBackgroundColor(Color::Rgb {
+                            r: 30,
+                            g: 30,
+                            b: 30
+                        }),
+                        Print(line),
+                        Print(" ".repeat(pad)),
+                        ResetColor
+                    )?;
+                }
             }
         }
         self.pending_newline = true;
