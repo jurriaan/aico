@@ -24,6 +24,43 @@ impl<'a> StreamParser<'a> {
         self.buffer.clone()
     }
 
+    /// Checks if the pending buffer content is safe to display as Markdown during live streaming.
+    /// Returns `true` if the content is complete and can be rendered, `false` if it appears to be
+    /// an incomplete marker that should be held back.
+    pub fn is_pending_displayable(&self) -> bool {
+        let pending = &self.buffer;
+        if pending.is_empty() {
+            return false;
+        }
+
+        // If we have a complete SEARCH block started, definitely incomplete
+        if pending.contains("<<<<<<< SEARCH") {
+            return false;
+        }
+
+        // Check if the last line is a partial marker prefix
+        let last_line = pending.split('\n').next_back().unwrap_or("");
+        let trimmed = last_line.trim_start();
+
+        if !trimmed.is_empty() {
+            // Check for partial File: header
+            if "File:".starts_with(trimmed)
+                || trimmed.starts_with("File:") && !pending.ends_with('\n')
+            {
+                return false;
+            }
+
+            // Check for partial block markers
+            for marker in ["<<<<<<< SEARCH", "=======", ">>>>>>> REPLACE"] {
+                if marker.starts_with(trimmed) {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
     pub fn new(original_contents: &'a HashMap<String, String>) -> Self {
         Self {
             buffer: String::new(),

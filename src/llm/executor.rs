@@ -216,13 +216,9 @@ pub async fn execute_interaction(
                                     .filter_map(|i| i.to_display_item(false))
                                     .collect();
 
-                                let pending = parser.get_pending_content();
-                                if !pending.is_empty() {
-                                    let maybe_header = pending.trim_start().starts_with("File:");
-                                    let maybe_marker = pending.trim_start().starts_with("<<<");
-                                    if !maybe_header && !maybe_marker {
-                                        ui_items.push(DisplayItem::Markdown(pending.to_string()));
-                                    }
+                                if parser.is_pending_displayable() {
+                                    let pending = parser.get_pending_content();
+                                    ui_items.push(DisplayItem::Markdown(pending));
                                 }
 
                                 if !ui_items.is_empty() {
