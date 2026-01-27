@@ -147,13 +147,6 @@ pub enum DisplayItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContextFile {
-    pub path: String,
-    pub content: String,
-    pub mtime: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageWithId {
     #[serde(flatten)]
     pub record: HistoryRecord,
