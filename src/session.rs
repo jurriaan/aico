@@ -4,10 +4,10 @@ use crate::fs::atomic_write_json;
 use crate::historystore::store::HistoryStore;
 use crate::models::ActiveWindowSummary;
 use crate::models::{HistoryRecord, SessionPointer, SessionView};
+use chrono::{DateTime, Utc};
 use crossterm::style::Stylize;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
 
 #[derive(Debug)]
 pub struct Session {
@@ -439,26 +439,18 @@ impl Session {
 
         let mut static_files = vec![];
         let mut floating_files = vec![];
-        let mut latest_floating_mtime = chrono::DateTime::<chrono::Utc>::MIN_UTC;
+        let mut max_float_mtime = DateTime::<Utc>::MIN_UTC;
 
         for (rel_path, content) in &self.context_content {
             let abs_path = self.root.join(rel_path);
             if let Ok(meta) = std::fs::metadata(&abs_path) {
-                // Parity with math.ceil(mtime) from Python
-                let duration = meta
-                    .modified()
-                    .map_err(|e| AicoError::Session(e.to_string()))?
-                    .duration_since(UNIX_EPOCH)
-                    .map_err(|e| AicoError::Session(e.to_string()))?;
+                let modified: DateTime<Utc> = meta.modified().map_err(AicoError::Io)?.into();
 
-                let mtime_secs = duration.as_secs_f64().ceil() as i64;
-                let mtime = chrono::TimeZone::timestamp_opt(&chrono::Utc, mtime_secs, 0).unwrap();
-
-                if mtime < horizon {
+                if modified < horizon {
                     static_files.push((rel_path.as_str(), content.as_str()));
                 } else {
-                    if mtime > latest_floating_mtime {
-                        latest_floating_mtime = mtime;
+                    if modified > max_float_mtime {
+                        max_float_mtime = modified;
                     }
                     floating_files.push((rel_path.as_str(), content.as_str()));
                 }
@@ -471,7 +463,7 @@ impl Session {
         } else {
             history
                 .iter()
-                .position(|item| item.record.timestamp > latest_floating_mtime)
+                .position(|item| item.record.timestamp > max_float_mtime)
                 .unwrap_or(history.len())
         };
 
