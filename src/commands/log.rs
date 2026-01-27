@@ -2,7 +2,6 @@
 
 use crate::console::strip_ansi_codes;
 use crate::exceptions::AicoError;
-use crate::historystore::reconstruct::reconstruct_history;
 use crate::models::Role;
 use crate::session::Session;
 use comfy_table::presets::NOTHING;
@@ -32,7 +31,7 @@ pub fn run() -> Result<(), AicoError> {
     let width = crate::console::get_terminal_width();
 
     // Log needs to see excluded messages to show them as dimmed [-] entries
-    let history_vec = reconstruct_history(&session.store, &session.view, true)?;
+    let history_vec = session.history(true)?;
 
     let mut paired_history = Vec::new();
     let mut dangling_history = Vec::new();

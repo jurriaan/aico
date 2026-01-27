@@ -1,5 +1,5 @@
 use aico::historystore::store::HistoryStore;
-use aico::models::{HistoryRecord, Mode, Role};
+use aico::models::{HistoryRecord, Mode, Role, SessionView};
 use std::fs;
 use tempfile::tempdir;
 
@@ -17,6 +17,17 @@ fn make_record(role: Role, content: &str) -> HistoryRecord {
         duration_ms: None,
         derived: None,
         edit_of: None,
+    }
+}
+
+fn make_test_session(store: HistoryStore, view: SessionView) -> aico::session::Session {
+    aico::session::Session {
+        file_path: std::path::PathBuf::new(),
+        root: std::path::PathBuf::from("."), // Dummy root
+        view_path: std::path::PathBuf::new(),
+        view,
+        store,
+        context_content: std::collections::HashMap::new(),
     }
 }
 
@@ -362,8 +373,8 @@ fn test_find_message_pairs_in_view_logic() {
         created_at: chrono::Utc::now(),
     };
 
-    let history_vec =
-        aico::historystore::reconstruct::reconstruct_history(&store, &view, false).unwrap();
+    let session = make_test_session(store, view);
+    let history_vec = session.history(false).unwrap();
     let contents: Vec<String> = history_vec
         .iter()
         .map(|h| h.record.content.clone())
@@ -404,8 +415,8 @@ fn test_session_view_io_and_reconstruction() {
     assert_eq!(loaded.model, "test-model");
     assert_eq!(loaded.message_indices, vec![u, a]);
 
-    let history_vec =
-        aico::historystore::reconstruct::reconstruct_history(&store, &loaded, false).unwrap();
+    let session = make_test_session(store, view);
+    let history_vec = session.history(false).unwrap();
     assert_eq!(history_vec.len(), 2);
 }
 
@@ -464,8 +475,8 @@ fn test_reconstruct_history_tolerates_internal_mismatch() {
     };
 
     // WHEN reconstructing
-    let history_vec =
-        aico::historystore::reconstruct::reconstruct_history(&store, &view, false).unwrap();
+    let session = make_test_session(store, view);
+    let history_vec = session.history(false).unwrap();
 
     // THEN it contains all messages provided by the view
     assert_eq!(history_vec.len(), 2);
@@ -500,8 +511,8 @@ fn test_reconstruct_history_dangling_user_at_end() {
     };
 
     // WHEN reconstructing
-    let history_vec =
-        aico::historystore::reconstruct::reconstruct_history(&store, &view, false).unwrap();
+    let session = make_test_session(store, view);
+    let history_vec = session.history(false).unwrap();
 
     // THEN we have all 3 messages
     assert_eq!(history_vec.len(), 3);

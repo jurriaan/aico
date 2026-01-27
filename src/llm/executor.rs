@@ -1,7 +1,6 @@
 use crate::consts::*;
 use crate::diffing::parser::StreamParser;
 use crate::exceptions::AicoError;
-use crate::historystore::reconstruct::reconstruct_history;
 use crate::llm::api_models::{ChatCompletionRequest, Message, StreamOptions};
 use crate::llm::client::{LlmClient, parse_sse_line};
 use crate::models::{DisplayItem, InteractionResult, TokenUsage};
@@ -335,7 +334,7 @@ pub async fn build_request_with_piped(
     let history_to_use = if config.no_history {
         vec![]
     } else {
-        reconstruct_history(&session.store, &session.view, false)?
+        session.history(false)?
     };
 
     if config.passthrough {

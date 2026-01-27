@@ -11,8 +11,6 @@ use crossterm::style::Stylize;
 use std::fmt::Write as _;
 use std::io::Write;
 
-use crate::historystore::reconstruct::reconstruct_history;
-
 pub async fn run(json_output: bool) -> Result<(), AicoError> {
     let session = Session::load_active()?;
     let model_id = &session.view.model;
@@ -34,7 +32,7 @@ pub async fn run(json_output: bool) -> Result<(), AicoError> {
     ];
 
     // 3. Chat History
-    let history_vec = reconstruct_history(&session.store, &session.view, true)?;
+    let history_vec = session.history(true)?;
     let mut history_counter = crate::llm::tokens::HeuristicCounter::new();
 
     for item in &history_vec {

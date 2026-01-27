@@ -73,9 +73,7 @@ fn test_active_window_summary_with_exclusions() {
     session.save_view().unwrap();
 
     // WHEN reconstructing history
-    let history_vec =
-        aico::historystore::reconstruct::reconstruct_history(&session.store, &session.view, true)
-            .unwrap();
+    let history_vec = session.history(true).unwrap();
 
     // AND calculating the active window summary
     let summary = session
@@ -316,9 +314,7 @@ async fn test_active_history_filtering_and_slicing() {
     session.save_view().unwrap();
 
     // WHEN reconstructing history for the LLM
-    let history_vec =
-        aico::historystore::reconstruct::reconstruct_history(&session.store, &session.view, false)
-            .unwrap();
+    let history_vec = session.history(false).unwrap();
 
     // THEN only active pairs (2, 4) and dangling are marked active
     // We check records in active_history and verify they contain the expected text.

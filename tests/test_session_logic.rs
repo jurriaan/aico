@@ -152,9 +152,7 @@ fn test_get_active_history_filters_and_slices() {
     session.save_view().unwrap();
 
     // WHEN reconstructing history for the LLM
-    let history_vec =
-        aico::historystore::reconstruct::reconstruct_history(&session.store, &session.view, false)
-            .unwrap();
+    let history_vec = session.history(false).unwrap();
 
     // THEN only messages from active pairs and dangling user are present in active_history
     let contents: Vec<String> = history_vec

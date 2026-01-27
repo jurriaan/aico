@@ -2,7 +2,7 @@ use crate::consts::SESSION_FILE_NAME;
 use crate::exceptions::AicoError;
 use crate::fs::atomic_write_json;
 use crate::historystore::store::HistoryStore;
-use crate::models::ActiveWindowSummary;
+use crate::models::{ActiveWindowSummary, MessageWithContext};
 use crate::models::{HistoryRecord, SessionPointer, SessionView};
 use chrono::{DateTime, Utc};
 use crossterm::style::Stylize;
@@ -472,6 +472,33 @@ impl Session {
             floating_files,
             splice_idx,
         })
+    }
+
+    pub fn history(&self, include_excluded: bool) -> Result<Vec<MessageWithContext>, AicoError> {
+        let start_offset = self.view.history_start_pair * 2;
+        if start_offset >= self.view.message_indices.len() {
+            return Ok(Vec::new());
+        }
+
+        let active_indices = &self.view.message_indices[start_offset..];
+        let records = self.store.read_many(active_indices)?;
+
+        Ok(records
+            .into_iter()
+            .enumerate()
+            .map(|(i, record)| {
+                let abs_index = start_offset + i;
+                let pair_idx = abs_index / 2;
+                let is_excluded = self.view.excluded_pairs.contains(&pair_idx);
+                MessageWithContext {
+                    record,
+                    global_index: self.view.message_indices[abs_index],
+                    pair_index: pair_idx,
+                    is_excluded,
+                }
+            })
+            .filter(|item| include_excluded || !item.is_excluded)
+            .collect())
     }
 }
 
