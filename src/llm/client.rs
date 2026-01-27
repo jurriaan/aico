@@ -3,6 +3,7 @@ use crate::llm::api_models::{ChatCompletionChunk, ChatCompletionRequest};
 use crate::models::Provider;
 use reqwest::Client as HttpClient;
 use std::env;
+use std::str::FromStr;
 
 #[derive(Debug)]
 struct ModelSpec {
@@ -11,9 +12,11 @@ struct ModelSpec {
     extra_params: Option<serde_json::Value>,
 }
 
-impl ModelSpec {
-    fn parse(full_str: &str) -> Result<Self, AicoError> {
-        let (base_model, params_part) = full_str.split_once('+').unwrap_or((full_str, ""));
+impl FromStr for ModelSpec {
+    type Err = AicoError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (base_model, params_part) = s.split_once('+').unwrap_or((s, ""));
         let (provider_str, model_name) = base_model.split_once('/').ok_or_else(|| {
             AicoError::Configuration(format!(
                 "Invalid model format '{}'. Expected 'provider/model'.",
@@ -27,7 +30,7 @@ impl ModelSpec {
             _ => {
                 return Err(AicoError::Configuration(format!(
                     "Unrecognized provider prefix in '{}'. Use 'openai/' or 'openrouter/'.",
-                    full_str
+                    s
                 )));
             }
         };
@@ -112,7 +115,7 @@ impl LlmClient {
     where
         F: Fn(&str) -> Option<String>,
     {
-        let spec = ModelSpec::parse(full_model_string)?;
+        let spec: ModelSpec = full_model_string.parse()?;
 
         let api_key_var = spec.provider.api_key_env_var();
         let api_key = env_get(api_key_var)
