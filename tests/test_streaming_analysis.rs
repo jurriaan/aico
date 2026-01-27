@@ -264,27 +264,39 @@ fn test_exact_debug_log_sequence() {
 }
 
 #[test]
-fn test_single_char_partials_held_back() {
-    let root = std::path::Path::new(".");
+fn test_partials_displayability() {
     let contents = HashMap::new();
-    let mut parser = StreamParser::new(&contents);
 
-    let chunk1 = "<";
-    let yields1 = parser.parse_and_resolve(chunk1, root);
-    assert_eq!(yields1.len(), 0, "Single '<' should be held in buffer");
-    assert_eq!(parser.get_pending_content(), "<");
+    // Case 1: "Fi" implies "File:", which is checked globally.
+    // Expectation: HIDDEN (it triggers the global File header check).
+    let mut parser = StreamParser::new(&contents);
+    parser.feed("Fi");
     assert!(
         !parser.is_pending_displayable(),
-        "'<' should not be displayable"
+        "'Fi' should be hidden (potential start of File header)"
     );
 
-    let mut parser2 = StreamParser::new(&contents);
-    let chunk2 = "Fi";
-    let yields2 = parser2.parse_and_resolve(chunk2, root);
-    assert_eq!(yields2.len(), 0, "'Fi' should be held in buffer");
-    assert_eq!(parser2.get_pending_content(), "Fi");
+    // Case 2: "<" in Conversation Mode (no active file).
+    // Expectation: VISIBLE (we are not in a file, so diff markers are irrelevant).
+    let mut parser = StreamParser::new(&contents);
+    parser.feed("<");
     assert!(
-        !parser2.is_pending_displayable(),
-        "'Fi' should not be displayable"
+        parser.is_pending_displayable(),
+        "'<' should be visible when not in a file (conversation text)"
+    );
+
+    // Case 3: "<" in File Mode.
+    // Expectation: HIDDEN (we are in a file, so this could be the start of a SEARCH block).
+    let mut parser = StreamParser::new(&contents);
+
+    // Establish file context
+    parser.feed("File: test.rs\n");
+    // We must consume the iterator to trigger the state change (current_file = Some(...))
+    let _ = parser.next();
+
+    parser.feed("<");
+    assert!(
+        !parser.is_pending_displayable(),
+        "'<' should be hidden when inside a file context"
     );
 }

@@ -24,37 +24,40 @@ impl<'a> StreamParser<'a> {
         self.buffer.clone()
     }
 
-    /// Checks if the pending buffer content is safe to display as Markdown during live streaming.
-    /// Returns `true` if the content is complete and can be rendered, `false` if it appears to be
-    /// an incomplete marker that should be held back.
     pub fn is_pending_displayable(&self) -> bool {
         let pending = &self.buffer;
         if pending.is_empty() {
             return false;
         }
 
-        // If we have a complete SEARCH block started, definitely incomplete
-        if pending.contains("<<<<<<< SEARCH") {
-            return false;
-        }
-
-        // Check if the last line is a partial marker prefix
         let last_line = pending.split('\n').next_back().unwrap_or("");
         let trimmed = last_line.trim_start();
 
-        if !trimmed.is_empty() {
-            // Check for partial File: header
-            if "File:".starts_with(trimmed)
-                || trimmed.starts_with("File:") && !pending.ends_with('\n')
-            {
+        // 1. GLOBAL CHECK: File Headers
+        // Block if the tail looks like the start of a "File:" line.
+        if !trimmed.is_empty()
+            && ("File:".starts_with(trimmed)
+                || (trimmed.starts_with("File:") && !pending.ends_with('\n')))
+        {
+            return false;
+        }
+
+        // 2. CONTEXT CHECK: Diff Markers
+        // We only care about diff markers if we are actively inside a file context.
+        if self.current_file.is_some() {
+            // A. Body Check: Are we buffering a block?
+            // If the buffer contains the start marker, we are inside a block (or waiting for it to close).
+            // We must hold back everything until the parser consumes it.
+            if pending.contains("<<<<<<< SEARCH") {
                 return false;
             }
 
-            // Check for partial block markers
-            for marker in ["<<<<<<< SEARCH", "=======", ">>>>>>> REPLACE"] {
-                if marker.starts_with(trimmed) {
-                    return false;
-                }
+            // B. Tail Check: Is a block starting right now?
+            // We ONLY need to check for the start marker.
+            // (We don't check for ======= or >>>>>>> because if we see those WITHOUT
+            // the start marker in the body check above, they are just text).
+            if !trimmed.is_empty() && "<<<<<<< SEARCH".starts_with(trimmed) {
+                return false;
             }
         }
 
@@ -222,36 +225,40 @@ impl<'a> Iterator for StreamParser<'a> {
 
 impl<'a> StreamParser<'a> {
     fn is_incomplete(&self, text: &str) -> bool {
-        // Check if we are inside an unclosed SEARCH block
-        if let Some(idx) = text.find("<<<<<<< SEARCH") {
-            let line_start = text[..idx].rfind('\n').map(|i| i + 1).unwrap_or(0);
-            let indent = &text[line_start..idx];
-            if indent.chars().all(|c| c.is_whitespace()) && !text.contains(">>>>>>> REPLACE") {
+        // 1. GLOBAL CHECK: File Headers
+        // Check for partial "File:" header at the end of the buffer
+        if let Some(last_line) = text.split('\n').next_back() {
+            let trimmed = last_line.trim_start();
+            if !trimmed.is_empty()
+                && ("File:".starts_with(trimmed)
+                    || (trimmed.starts_with("File:") && !text.ends_with('\n')))
+            {
                 return true;
             }
         }
 
-        // Check for partial tokens at the end of the buffer
-        if let Some(last_line) = text.split('\n').next_back() {
-            let trimmed = last_line.trim_start();
-            if !trimmed.is_empty() {
-                // Partial "File:" header?
-                // Note: We deliberately don't check for \r here, forcing a wait for \n
-                if "File:".starts_with(trimmed) && trimmed.len() < "File:".len() {
+        // 2. CONTEXT CHECK: Diff Markers
+        // Only check for markers if we are inside a file
+        if self.current_file.is_some() {
+            // Check if we are inside an unclosed SEARCH block
+            if let Some(idx) = text.find("<<<<<<< SEARCH") {
+                let line_start = text[..idx].rfind('\n').map(|i| i + 1).unwrap_or(0);
+                let indent = &text[line_start..idx];
+                // Only consider it a block if indent is pure whitespace and it hasn't been closed yet
+                if indent.chars().all(|c| c.is_whitespace()) && !text.contains(">>>>>>> REPLACE") {
                     return true;
                 }
-                if trimmed.starts_with("File:") && !text.ends_with('\n') {
-                    return true;
-                }
+            }
 
-                // Partial markers?
-                for marker in ["<<<<<<< SEARCH", "=======", ">>>>>>> REPLACE"] {
-                    if marker.starts_with(trimmed) && marker.len() > trimmed.len() {
-                        return true;
-                    }
+            // Check for partial markers at the end
+            if let Some(last_line) = text.split('\n').next_back() {
+                let trimmed = last_line.trim_start();
+                if !trimmed.is_empty() && "<<<<<<< SEARCH".starts_with(trimmed) {
+                    return true;
                 }
             }
         }
+
         false
     }
 
