@@ -171,12 +171,13 @@ pub fn display_cost_summary(
 
     if let Some(cost) = current_cost {
         let mut history_cost = 0.0;
+        let start_idx = view.history_start_pair * 2;
 
-        if let Ok(records) = store.read_many(&view.message_indices) {
-            let start_idx = view.history_start_pair * 2;
-            for (i, record) in records.iter().enumerate() {
-                if i >= start_idx
-                    && record.role == Role::Assistant
+        if start_idx < view.message_indices.len()
+            && let Ok(records) = store.read_many(&view.message_indices[start_idx..])
+        {
+            for record in records {
+                if record.role == Role::Assistant
                     && let Some(c) = record.cost
                 {
                     history_cost += c;
