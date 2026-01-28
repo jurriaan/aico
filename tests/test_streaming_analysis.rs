@@ -300,3 +300,55 @@ fn test_partials_displayability() {
         "'<' should be hidden when inside a file context"
     );
 }
+
+#[test]
+fn test_reproduce_final_corruption_bug() {
+    let root = Path::new(".");
+    let baseline = HashMap::new();
+
+    let original_line = "*   File: `the/path.ts` (New file).\n";
+
+    // Helper to stringify items for comparison
+    // Note: We need to handle how FileHeader is rendered back to string
+    // In the real app, this happens via `to_display_item`, but here we can just inspect the items directly
+    // or simulate the corruption check.
+
+    // --- 1. The "Correct" reference run ---
+    let mut parser_whole = StreamParser::new(&baseline);
+    // Feed and parse in one go
+    let yields_whole = parser_whole.parse_and_resolve(original_line, root);
+
+    // --- 2. The "Buggy" streaming run ---
+    let chunk1 = "*";
+    let chunk2 = "   File: `the/path.ts` (New file).\n";
+
+    let mut parser_split = StreamParser::new(&baseline);
+
+    // CRITICAL: Parse chunk 1 immediately.
+    // This consumes "*" as Text and clears the buffer.
+    // Internal state `buffer` is now empty.
+    let mut yields_split = parser_split.parse_and_resolve(chunk1, root);
+
+    // Parse chunk 2.
+    // The buffer starts with "   File: ...".
+    // The parser sees index 0 matches "^File:", and since it forgot the previous chunk didn't end in newline,
+    // it accepts it as a header.
+    let mut y2 = parser_split.parse_and_resolve(chunk2, root);
+    yields_split.append(&mut y2);
+
+    // --- 3. Comparison ---
+    // If the bug exists, `yields_whole` will be [Text], but `yields_split` will be [Text, FileHeader].
+
+    let is_text_whole = yields_whole
+        .iter()
+        .all(|i| matches!(i, aico::models::StreamYieldItem::Text(_)));
+    let is_text_split = yields_split
+        .iter()
+        .all(|i| matches!(i, aico::models::StreamYieldItem::Text(_)));
+
+    assert!(is_text_whole, "Reference run should be pure text");
+    assert!(
+        is_text_split,
+        "BUG REPRODUCED: Split parser incorrectly produced non-text items (FileHeader) for an indented line."
+    );
+}

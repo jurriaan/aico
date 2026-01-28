@@ -17,6 +17,9 @@ pub struct StreamParser<'a> {
     overlay: HashMap<String, String>,
     /// Maps filenames to their content pre-modification in this stream.
     discovered_baseline: HashMap<String, String>,
+    /// Tracks if the last yielded character was a newline.
+    /// Used to enforce line-start anchors for headers.
+    last_char_was_newline: bool,
 }
 
 impl<'a> StreamParser<'a> {
@@ -28,6 +31,16 @@ impl<'a> StreamParser<'a> {
         let pending = &self.buffer;
         if pending.is_empty() {
             return false;
+        }
+
+        let tail_is_at_line_start = if let Some(_) = pending.rfind('\n') {
+            true
+        } else {
+            self.last_char_was_newline
+        };
+
+        if !tail_is_at_line_start {
+            return true;
         }
 
         let last_line = pending.split('\n').next_back().unwrap_or("");
@@ -72,6 +85,8 @@ impl<'a> StreamParser<'a> {
             baseline: original_contents,
             overlay: HashMap::new(),
             discovered_baseline: HashMap::new(),
+            // Start of stream is treated as start of a line
+            last_char_was_newline: true,
         }
     }
 
@@ -118,6 +133,20 @@ impl<'a> StreamParser<'a> {
 
         (diff, display_items, warnings)
     }
+
+    fn update_newline_state(&mut self, item: &StreamYieldItem) {
+        match item {
+            StreamYieldItem::Text(s) => self.last_char_was_newline = s.ends_with('\n'),
+            StreamYieldItem::Unparsed(u) => self.last_char_was_newline = u.text.ends_with('\n'),
+            StreamYieldItem::FileHeader(_) => self.last_char_was_newline = true, // Headers end with \n
+            StreamYieldItem::Patch(p) => self.last_char_was_newline = p.raw_block.ends_with('\n'),
+            StreamYieldItem::DiffBlock(d) => {
+                self.last_char_was_newline = d.unified_diff.ends_with('\n')
+            }
+            StreamYieldItem::Warning(_) => {} // Metadata doesn't affect flow
+            StreamYieldItem::IncompleteBlock(b) => self.last_char_was_newline = b.ends_with('\n'),
+        }
+    }
 }
 
 static FILE_HEADER_RE: LazyLock<Regex> =
@@ -130,6 +159,7 @@ impl<'a> Iterator for StreamParser<'a> {
         loop {
             // 1. First, drain the pre-parsed queue
             if let Some(item) = self.yield_queue.pop_front() {
+                self.update_newline_state(&item);
                 return Some(item);
             }
 
@@ -139,12 +169,19 @@ impl<'a> Iterator for StreamParser<'a> {
 
             // 2. If we are currently "inside" a file's content section
             if let Some(llm_file_path) = self.current_file.clone() {
-                let next_header_idx = FILE_HEADER_RE
-                    .find(&self.buffer)
-                    .map(|m| m.start())
-                    .unwrap_or(self.buffer.len());
+                // Find potential headers
+                let mut next_header_idx = self.buffer.len();
+                for m in FILE_HEADER_RE.find_iter(&self.buffer) {
+                    // Valid header must be at > 0 (newline preceding) OR at 0 with newline state
+                    if m.start() > 0 || self.last_char_was_newline {
+                        next_header_idx = m.start();
+                        break;
+                    }
+                    // If m.start() == 0 && !last_char_was_newline, it's a false positive.
+                    // We skip it and treat it as part of the file content.
+                }
 
-                if next_header_idx > 0 {
+                if next_header_idx > 0 || (next_header_idx == 0 && self.last_char_was_newline) {
                     let (chunk_items, consumed_bytes) =
                         self.process_file_chunk(&llm_file_path, &self.buffer[..next_header_idx]);
                     self.buffer.drain(..consumed_bytes);
@@ -164,6 +201,7 @@ impl<'a> Iterator for StreamParser<'a> {
                     }
                 }
 
+                // If we found a valid header (and aren't stuck waiting for chunks)
                 if next_header_idx < self.buffer.len() {
                     self.current_file = None;
                     continue;
@@ -173,24 +211,33 @@ impl<'a> Iterator for StreamParser<'a> {
             // 3. Look for Global File Headers
             if let Some(caps) = FILE_HEADER_RE.captures(&self.buffer) {
                 let mat = caps.get(0).unwrap();
-                if mat.start() > 0 {
-                    let text = self.buffer[..mat.start()].to_string();
-                    self.buffer.drain(..mat.start());
-                    return Some(StreamYieldItem::Text(text));
-                }
+                let is_valid_match = mat.start() > 0 || self.last_char_was_newline;
 
-                let path_str = caps
-                    .name("path")
-                    .unwrap()
-                    .as_str()
-                    .trim()
-                    .trim_matches(|c| c == '*' || c == '`')
-                    .to_string();
-                self.current_file = Some(path_str.clone());
-                self.buffer.drain(..mat.end());
-                return Some(StreamYieldItem::FileHeader(crate::models::FileHeader {
-                    llm_file_path: path_str,
-                }));
+                if is_valid_match {
+                    if mat.start() > 0 {
+                        let text = self.buffer[..mat.start()].to_string();
+                        self.buffer.drain(..mat.start());
+                        let item = StreamYieldItem::Text(text);
+                        self.update_newline_state(&item);
+                        return Some(item);
+                    }
+
+                    let path_str = caps
+                        .name("path")
+                        .unwrap()
+                        .as_str()
+                        .trim()
+                        .trim_matches(|c| c == '*' || c == '`')
+                        .to_string();
+                    self.current_file = Some(path_str.clone());
+                    self.buffer.drain(..mat.end());
+                    let item = StreamYieldItem::FileHeader(crate::models::FileHeader {
+                        llm_file_path: path_str,
+                    });
+                    self.update_newline_state(&item);
+                    return Some(item);
+                }
+                // If invalid match (at 0 but !newline), fall through to Text handling
             }
 
             // 4. Handle remaining buffer as Markdown Text
@@ -198,16 +245,31 @@ impl<'a> Iterator for StreamParser<'a> {
             let mut stable_len = text.len();
 
             if self.is_incomplete(text) {
+                // Check if we are holding back for a file header
                 if let Some(m) = FILE_HEADER_RE.find(text) {
-                    stable_len = m.start();
+                    // Only respect valid headers
+                    if m.start() > 0 || self.last_char_was_newline {
+                        stable_len = m.start();
+                    }
                 } else if let Some(search_idx) = text.find("<<<<<<< SEARCH") {
+                    // Only respect diff markers if line-start (handled by is_incomplete logic?)
+                    // Logic here simplifies assuming is_incomplete did the heavy lifting
+                    // But we must calculate stable_len correctly.
                     stable_len = text[..search_idx].rfind('\n').map(|i| i + 1).unwrap_or(0);
+                    if stable_len == 0 && !self.last_char_was_newline {
+                        // Marker at 0 but not newline -> Ignore marker, yield text
+                        stable_len = text.len();
+                    }
                 } else if let Some(last_newline) = text.rfind('\n') {
                     let last_line = &text[last_newline + 1..];
                     if self.is_incomplete(last_line) {
                         stable_len = last_newline + 1;
                     }
                 } else {
+                    // No newlines.
+                    // If is_incomplete returned true, it means !tail_is_at_line_start check passed?
+                    // No, if no newlines and !last_char_was_newline, is_incomplete returns false.
+                    // So if we are here, either last_char_was_newline IS true, OR is_incomplete found something else.
                     stable_len = 0;
                 }
             }
@@ -215,7 +277,9 @@ impl<'a> Iterator for StreamParser<'a> {
             if stable_len > 0 {
                 let text_yield = self.buffer[..stable_len].to_string();
                 self.buffer.drain(..stable_len);
-                return Some(StreamYieldItem::Text(text_yield));
+                let item = StreamYieldItem::Text(text_yield);
+                self.update_newline_state(&item);
+                return Some(item);
             }
 
             return None;
@@ -225,6 +289,17 @@ impl<'a> Iterator for StreamParser<'a> {
 
 impl<'a> StreamParser<'a> {
     fn is_incomplete(&self, text: &str) -> bool {
+        // Optimization: If we are not at the start of a line, we can't match headers/markers.
+        let tail_is_at_line_start = if let Some(_) = text.rfind('\n') {
+            true
+        } else {
+            self.last_char_was_newline
+        };
+
+        if !tail_is_at_line_start {
+            return false;
+        }
+
         // 1. GLOBAL CHECK: File Headers
         // Check for partial "File:" header at the end of the buffer
         if let Some(last_line) = text.split('\n').next_back() {
@@ -243,10 +318,17 @@ impl<'a> StreamParser<'a> {
             // Check if we are inside an unclosed SEARCH block
             if let Some(idx) = text.find("<<<<<<< SEARCH") {
                 let line_start = text[..idx].rfind('\n').map(|i| i + 1).unwrap_or(0);
-                let indent = &text[line_start..idx];
-                // Only consider it a block if indent is pure whitespace and it hasn't been closed yet
-                if indent.chars().all(|c| c.is_whitespace()) && !text.contains(">>>>>>> REPLACE") {
-                    return true;
+                // If start is 0, check newline state
+                if line_start == 0 && !text.contains('\n') && !self.last_char_was_newline {
+                    // Mid-line marker match -> Invalid. Ignore.
+                } else {
+                    let indent = &text[line_start..idx];
+                    // Only consider it a block if indent is pure whitespace and it hasn't been closed yet
+                    if indent.chars().all(|c| c.is_whitespace())
+                        && !text.contains(">>>>>>> REPLACE")
+                    {
+                        return true;
+                    }
                 }
             }
 
