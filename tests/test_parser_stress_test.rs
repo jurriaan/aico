@@ -29,27 +29,54 @@ struct ParserResult {
     warnings: Vec<String>,
 }
 
+fn normalize_items(items: Vec<DisplayItem>) -> Vec<DisplayItem> {
+    let mut merged = Vec::new();
+    for item in items {
+        if let (Some(DisplayItem::Markdown(last)), DisplayItem::Markdown(next)) =
+            (merged.last_mut(), &item)
+        {
+            last.push_str(next);
+        } else {
+            merged.push(item);
+        }
+    }
+    merged
+}
+
 fn run_parser_whole(baseline: &HashMap<String, String>, input: &str) -> ParserResult {
     let mut parser = StreamParser::new(baseline);
     parser.feed(input);
     let (diff, items, warnings) = parser.final_resolve(Path::new("."));
     ParserResult {
         diff,
-        items,
+        items: normalize_items(items),
         warnings,
     }
 }
 
 fn run_parser_char_by_char(baseline: &HashMap<String, String>, input: &str) -> ParserResult {
     let mut parser = StreamParser::new(baseline);
+    let mut accumulated_items = Vec::new();
+    let mut accumulated_warnings = Vec::new();
+
     for c in input.chars() {
-        parser.feed(&c.to_string());
+        let yields = parser.parse_and_resolve(&c.to_string(), Path::new("."));
+        accumulated_warnings.extend(parser.collect_warnings(&yields));
+        for y in yields {
+            if let Some(di) = y.to_display_item(true) {
+                accumulated_items.push(di);
+            }
+        }
     }
-    let (diff, items, warnings) = parser.final_resolve(Path::new("."));
+
+    let (diff, mut final_items, final_warnings) = parser.final_resolve(Path::new("."));
+    accumulated_items.append(&mut final_items);
+    accumulated_warnings.extend(final_warnings);
+
     ParserResult {
         diff,
-        items,
-        warnings,
+        items: normalize_items(accumulated_items),
+        warnings: accumulated_warnings,
     }
 }
 
@@ -63,6 +90,10 @@ fn run_parser_random_chunks(
     let mut pos = 0;
     let mut chunk_idx = 0;
 
+    // We must accumulate results incrementally to simulate real streaming
+    let mut accumulated_items = Vec::new();
+    let mut accumulated_warnings = Vec::new();
+
     while pos < bytes.len() {
         let size = chunk_sizes
             .get(chunk_idx % chunk_sizes.len())
@@ -70,7 +101,6 @@ fn run_parser_random_chunks(
             .unwrap_or(1)
             .min(bytes.len() - pos);
 
-        // Find a valid UTF-8 boundary
         let mut end = pos + size;
         while end < bytes.len() && !input.is_char_boundary(end) {
             end += 1;
@@ -78,17 +108,32 @@ fn run_parser_random_chunks(
         end = end.min(bytes.len());
 
         if let Ok(chunk) = std::str::from_utf8(&bytes[pos..end]) {
-            parser.feed(chunk);
+            let yields = parser.parse_and_resolve(chunk, Path::new("."));
+
+            // Collect warnings from this chunk
+            accumulated_warnings.extend(parser.collect_warnings(&yields));
+
+            // Convert yields to DisplayItems
+            for y in yields {
+                if let Some(di) = y.to_display_item(true) {
+                    accumulated_items.push(di);
+                }
+            }
         }
         pos = end;
         chunk_idx += 1;
     }
 
-    let (diff, items, warnings) = parser.final_resolve(Path::new("."));
+    // Handle any remainder and get the final diff
+    let (diff, mut final_items, final_warnings) = parser.final_resolve(Path::new("."));
+
+    accumulated_items.append(&mut final_items);
+    accumulated_warnings.extend(final_warnings);
+
     ParserResult {
         diff,
-        items,
-        warnings,
+        items: accumulated_items,
+        warnings: accumulated_warnings,
     }
 }
 
@@ -172,7 +217,9 @@ fn llm_output() -> impl Strategy<Value = String> {
     ];
 
     let noise = prop_oneof![
-        "[a-zA-Z0-9 .,!?]{1,80}\n",
+        "[a-zA-Z0-9 .,!?*`_~]{1,80}",
+        Just("-  ".to_string()),
+        Just("1.  ".to_string()),
         Just("Here are the changes:\n\n".to_string()),
         Just("```rust\nfn example() {}\n```\n".to_string()),
     ];
@@ -184,9 +231,9 @@ fn llm_output() -> impl Strategy<Value = String> {
             1 => file_creation,
             1 => content_deletion,
             2 => broken_markers,
-            2 => noise,
+            3 => noise,
         ],
-        1..8,
+        1..32,
     )
     .prop_map(|blocks| blocks.join(""))
 }
