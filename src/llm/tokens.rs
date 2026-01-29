@@ -1,7 +1,25 @@
-use crate::model_registry::get_model_info;
-
 use crate::consts::*;
+use crate::model_registry::get_model_info;
 use crate::models::TokenUsage;
+use std::fmt::Write;
+
+pub const SYSTEM_TOKEN_COUNT: u32 =
+    ((DEFAULT_SYSTEM_PROMPT.len() + DIFF_MODE_INSTRUCTIONS.len()) as u32).div_ceil(4);
+
+pub const MAX_ALIGNMENT_TOKENS: u32 = {
+    let conv = ((ALIGNMENT_CONVERSATION_USER.len() + ALIGNMENT_CONVERSATION_ASSISTANT.len())
+        as u32)
+        .div_ceil(4);
+    let diff = ((ALIGNMENT_DIFF_USER.len() + ALIGNMENT_DIFF_ASSISTANT.len()) as u32).div_ceil(4);
+    let anchor_tokens = ((STATIC_CONTEXT_INTRO.len()
+        + STATIC_CONTEXT_ANCHOR.len()
+        + FLOATING_CONTEXT_INTRO.len()
+        + FLOATING_CONTEXT_ANCHOR.len()) as u32)
+        .div_ceil(4);
+
+    let base_max = if conv > diff { conv } else { diff };
+    base_max + anchor_tokens
+};
 
 pub async fn calculate_cost(model_id: &str, usage: &TokenUsage) -> Option<f64> {
     if let Some(cost) = usage.cost {
@@ -31,27 +49,14 @@ pub fn calculate_cost_prefetched(
     if has_cost { Some(total_cost) } else { None }
 }
 
+#[derive(Debug, Clone, Default)]
 pub struct HeuristicCounter {
     total_bytes: usize,
 }
 
-impl Default for HeuristicCounter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl HeuristicCounter {
-    pub fn new() -> Self {
-        Self { total_bytes: 0 }
-    }
-
     pub fn count(&self) -> u32 {
         (self.total_bytes as u32).div_ceil(4)
-    }
-
-    pub fn add_str(&mut self, s: &str) {
-        self.total_bytes += s.len();
     }
 }
 
@@ -63,13 +68,15 @@ impl std::fmt::Write for HeuristicCounter {
 }
 
 pub fn count_heuristic(text: &str) -> u32 {
-    (text.len() as u32).div_ceil(4)
+    let mut counter = HeuristicCounter::default();
+    let _ = counter.write_str(text);
+    counter.count()
 }
 
 pub fn count_tokens_for_messages(messages: &[&str]) -> u32 {
-    let mut counter = HeuristicCounter::new();
+    let mut counter = HeuristicCounter::default();
     for message in messages {
-        counter.add_str(message);
+        let _ = counter.write_str(message);
     }
     counter.count()
 }
@@ -80,8 +87,16 @@ mod tests {
 
     #[test]
     fn test_count_heuristic() {
+        assert_eq!(count_heuristic("acd"), 1);
         assert_eq!(count_heuristic("abcd"), 1);
         assert_eq!(count_heuristic("abcdefgh"), 2);
+    }
+
+    #[test]
+    fn test_count_tokens_for_messages() {
+        let messages = vec!["Hello", "World!", "This is a test."];
+
+        assert_eq!(count_tokens_for_messages(&messages), 7);
     }
 
     #[tokio::test]
@@ -99,21 +114,3 @@ mod tests {
         assert_eq!(cost, Some(1.234));
     }
 }
-
-pub const SYSTEM_TOKEN_COUNT: u32 =
-    ((DEFAULT_SYSTEM_PROMPT.len() + DIFF_MODE_INSTRUCTIONS.len()) as u32).div_ceil(4);
-
-pub const MAX_ALIGNMENT_TOKENS: u32 = {
-    let conv = ((ALIGNMENT_CONVERSATION_USER.len() + ALIGNMENT_CONVERSATION_ASSISTANT.len())
-        as u32)
-        .div_ceil(4);
-    let diff = ((ALIGNMENT_DIFF_USER.len() + ALIGNMENT_DIFF_ASSISTANT.len()) as u32).div_ceil(4);
-    let anchor_tokens = ((STATIC_CONTEXT_INTRO.len()
-        + STATIC_CONTEXT_ANCHOR.len()
-        + FLOATING_CONTEXT_INTRO.len()
-        + FLOATING_CONTEXT_ANCHOR.len()) as u32)
-        .div_ceil(4);
-
-    let base_max = if conv > diff { conv } else { diff };
-    base_max + anchor_tokens
-};

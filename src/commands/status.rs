@@ -33,7 +33,7 @@ pub async fn run(json_output: bool) -> Result<(), AicoError> {
 
     // 3. Chat History
     let history_vec = session.history(true)?;
-    let mut history_counter = crate::llm::tokens::HeuristicCounter::new();
+    let mut history_counter = crate::llm::tokens::HeuristicCounter::default();
 
     for item in &history_vec {
         if item.is_excluded {
@@ -50,10 +50,10 @@ pub async fn run(json_output: bool) -> Result<(), AicoError> {
                     rec.content.trim()
                 );
             } else {
-                history_counter.add_str(&rec.content);
+                let _ = history_counter.write_str(&rec.content);
             }
         } else {
-            history_counter.add_str(&rec.content);
+            let _ = history_counter.write_str(&rec.content);
         }
     }
 
