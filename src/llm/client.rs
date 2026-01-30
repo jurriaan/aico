@@ -16,60 +16,49 @@ impl FromStr for ModelSpec {
     type Err = AicoError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (base_model, params_part) = s.split_once('+').unwrap_or((s, ""));
-        let (provider_str, model_name) = base_model.split_once('/').ok_or_else(|| {
-            AicoError::Configuration(format!(
-                "Invalid model format '{}'. Expected 'provider/model'.",
-                base_model
-            ))
-        })?;
+        let (base, params_part) = s.split_once('+').unwrap_or((s, ""));
 
-        let provider = match provider_str {
-            "openrouter" => Provider::OpenRouter,
-            "openai" => Provider::OpenAI,
-            _ => {
-                return Err(AicoError::Configuration(format!(
-                    "Unrecognized provider prefix in '{}'. Use 'openai/' or 'openrouter/'.",
-                    s
-                )));
-            }
+        let Some((provider_str, model_name)) = base.split_once('/') else {
+            return Err(AicoError::Configuration(format!(
+                "Invalid model format '{}'. Expected 'provider/model'.",
+                base
+            )));
         };
 
-        let mut extra_map: Option<serde_json::Map<String, serde_json::Value>> = None;
+        let provider: Provider = provider_str.parse()?;
+        let mut extra_map = serde_json::Map::new();
 
+        // Defaults
         if matches!(provider, Provider::OpenRouter) {
-            extra_map
-                .get_or_insert_default()
-                .insert("usage".to_string(), serde_json::json!({ "include": true }));
+            extra_map.insert("usage".into(), serde_json::json!({ "include": true }));
         }
 
+        // Parse params
         if !params_part.is_empty() {
             for param in params_part.split('+') {
-                let m = extra_map.get_or_insert_default();
-                if let Some((k, v)) = param.split_once('=') {
-                    let val = serde_json::from_str::<serde_json::Value>(v)
-                        .unwrap_or_else(|_| serde_json::Value::String(v.to_string()));
+                let (k, v) = param.split_once('=').unwrap_or((param, "true"));
 
-                    if matches!(provider, Provider::OpenRouter) && k == "reasoning_effort" {
-                        m.insert(
-                            "reasoning".to_string(),
-                            serde_json::json!({ "effort": val }),
-                        );
-                    } else {
-                        m.insert(k.to_string(), val);
-                    }
+                // Attempt to parse as JSON (numbers/bools), fallback to string
+                let val = serde_json::from_str(v)
+                    .unwrap_or_else(|_| serde_json::Value::String(v.to_string()));
+
+                // Logic specific to provider can remain here or be extracted
+                if matches!(provider, Provider::OpenRouter) && k == "reasoning_effort" {
+                    extra_map.insert("reasoning".into(), serde_json::json!({ "effort": val }));
                 } else {
-                    m.insert(param.to_string(), serde_json::Value::Bool(true));
+                    extra_map.insert(k.to_string(), val);
                 }
             }
         }
 
-        let extra_params = extra_map.map(serde_json::Value::Object);
-
         Ok(Self {
             provider,
             model_id_short: model_name.to_string(),
-            extra_params,
+            extra_params: if extra_map.is_empty() {
+                None
+            } else {
+                Some(serde_json::Value::Object(extra_map))
+            },
         })
     }
 }

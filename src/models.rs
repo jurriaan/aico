@@ -1,5 +1,9 @@
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+
+use crate::exceptions::AicoError;
 
 // --- Enums ---
 
@@ -44,6 +48,20 @@ impl std::fmt::Display for Role {
 pub enum Provider {
     OpenAI,
     OpenRouter,
+}
+
+impl FromStr for Provider {
+    type Err = AicoError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "openai" => Ok(Self::OpenAI),
+            "openrouter" => Ok(Self::OpenRouter),
+            _ => Err(AicoError::Configuration(format!(
+                "Unrecognized provider prefix in '{}'. Use 'openai/' or 'openrouter/'.",
+                s
+            ))),
+        }
+    }
 }
 
 // --- Shared History Models (historystore/models.py) ---

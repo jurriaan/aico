@@ -122,26 +122,16 @@ pub fn format_tokens(n: u32) -> String {
 
 pub fn format_thousands(n: u32) -> String {
     let s = n.to_string();
-    let len = s.len();
-    let num_commas = (len.saturating_sub(1)) / 3;
-    let mut result = String::with_capacity(len + num_commas);
+    let bytes = s.as_bytes();
 
-    let offset = len % 3;
-    let mut chars = s.chars();
+    let mut groups: Vec<&str> = bytes
+        .rchunks(3)
+        .map(|chunk| std::str::from_utf8(chunk).unwrap()) // Safe because numbers are ASCII
+        .collect();
 
-    if offset > 0 {
-        for _ in 0..offset {
-            result.push(chars.next().unwrap());
-        }
-    }
+    groups.reverse();
 
-    for (i, c) in chars.enumerate() {
-        if i % 3 == 0 && (offset > 0 || i > 0) {
-            result.push(',');
-        }
-        result.push(c);
-    }
-    result
+    groups.join(",")
 }
 
 pub fn display_cost_summary(

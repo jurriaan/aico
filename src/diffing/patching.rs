@@ -102,32 +102,25 @@ fn try_whitespace_flexible_patch(original: &str, search: &str, replace: &str) ->
 }
 
 fn get_consistent_indentation(lines: &[&str]) -> String {
-    let mut iter = lines.iter().filter(|l| !l.trim().is_empty()).cloned();
-
-    let first = match iter.next() {
-        Some(f) => f,
-        None => return String::new(),
-    };
-
-    // Start with the first line's indentation as the candidate
-    let indent_len = first.len() - first.trim_start().len();
-    let mut common_indent = &first[..indent_len];
-
-    for line in iter {
-        let shared_len = common_indent
-            .char_indices()
-            .zip(line.chars())
-            .take_while(|((_, c1), c2)| c1 == c2)
-            .map(|((i, c), _)| i + c.len_utf8())
-            .last()
-            .unwrap_or(0);
-
-        common_indent = &common_indent[..shared_len];
-
-        if common_indent.is_empty() {
-            break;
-        }
-    }
-
-    common_indent.to_string()
+    lines
+        .iter()
+        .filter(|line| !line.trim().is_empty()) // Ignore blank lines
+        .cloned()
+        .reduce(|acc, line| {
+            // Find common prefix between accumulator and current line
+            acc.char_indices()
+                .zip(line.chars())
+                .take_while(|((_, c1), c2)| c1 == c2)
+                .map(|((i, c), _)| &acc[..i + c.len_utf8()])
+                .last()
+                .unwrap_or("") // Fallback to empty string if no common prefix
+        })
+        .map(|s| {
+            // Ensure we only captured whitespace
+            let ws_len = s.chars().take_while(|c| c.is_whitespace()).count();
+            // Convert byte-slice back to char-aware string slice logic if needed,
+            // but simply creating a string from the whitespace prefix is safer.
+            s.chars().take(ws_len).collect()
+        })
+        .unwrap_or_default()
 }
