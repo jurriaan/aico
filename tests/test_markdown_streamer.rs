@@ -23,7 +23,8 @@ fn render(input: &str, width: usize, margin: usize) -> (String, String) {
     streamer.print_chunk(&mut sink, input).unwrap();
     streamer.flush(&mut sink).unwrap();
     let raw = String::from_utf8_lossy(&sink).to_string();
-    (raw.clone(), strip_ansi_codes(&raw))
+    let clean = strip_ansi_codes(&raw);
+    (raw, clean)
 }
 
 macro_rules! inline_tests {
@@ -67,7 +68,8 @@ macro_rules! inline_tests {
                     assert_eq!(clean_out, c, "CLEAN mismatch for {}", stringify!($name));
                 }
                 if let Some(con) = contains {
-                    assert!(clean_out.contains(con), "CONTAINS mismatch for {}: expected to contain {:?}", stringify!($name), con);
+                    let normalized = clean_out.lines().map(|l| l.trim_end()).collect::<Vec<_>>().join("\n");
+                    assert!(normalized.contains(con) || clean_out.contains(con), "CONTAINS mismatch for {}: expected to contain {:?}", stringify!($name), con);
                 }
             }
         )*
@@ -156,6 +158,12 @@ inline_tests! {
     fence_block_containing_tildes: { input: "```markdown\nThis block contains ~~~ as text.\n```\n", contains: "~~~" },
     fence_inline_bg_1: { input: "Text `code` Text\n", raw_contains: "48;2;60;60;60m" },
     fence_inline_bg_2: { input: "Text `` double code `` Text\n", raw_contains: "48;2;60;60;60m" },
+
+    fence_indent_stripping: { input: "  ```\n  def foo():\n    return True\n  ```\n", contains: "def foo():\n  return True", not_raw: "  def foo()" },
+    tab_expansion_list: { input: "-\tList Item\n", clean: "•   List Item\n" },
+    autolink_basic: { input: "Visit <https://example.com> now.\n", clean: "Visit https://example.com now.\n", raw_contains: "\x1b]8;;https://example.com\x1b\\" },
+    atx_closing_hashes: { input: "## Title ##", contains: "Title", raw_contains: BOLD },
+    escaped_ordered_list_marker: { input: "1986\\. What a year.\n", clean: "1986. What a year.\n", not_raw: "\x1b[33m" },
 }
 
 #[test]

@@ -40,6 +40,16 @@ static RE_TABLE_SEP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[\s\|\-\:]
 
 static RE_MATH_BLOCK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*\$\$\s*$").unwrap());
 
+// --- UI Styling ---
+const STYLE_H1: &str = "\x1b[1m";
+const STYLE_H2: &str = "\x1b[1m\x1b[94m";
+const STYLE_H3: &str = "\x1b[1m\x1b[36m";
+const STYLE_H_DEFAULT: &str = "\x1b[1m\x1b[33m";
+const STYLE_INLINE_CODE: &str = "\x1b[48;2;60;60;60m\x1b[38;2;255;255;255m";
+const STYLE_RESET: &str = "\x1b[0m";
+const STYLE_RESET_BG: &str = "\x1b[49m";
+const STYLE_RESET_FG: &str = "\x1b[39m";
+
 // Single pattern for "Invisible" content (ANSI codes + OSC8 links) used for width calculation
 static RE_INVISIBLE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(&format!("({}|{})", OSC8_PATTERN, ANSI_REGEX_PATTERN)).unwrap());
@@ -412,7 +422,7 @@ impl MarkdownStreamer {
 
     // --- Pipeline Controller ---
     fn process_line<W: Write>(&mut self, w: &mut W, raw_line: &str) -> io::Result<()> {
-        let expanded = raw_line.replace('\t', "  ");
+        let expanded = self.expand_tabs(raw_line);
         let trimmed = expanded.trim_end();
 
         // 1. Context-Specific Handlers (return true if consumed)
@@ -440,7 +450,7 @@ impl MarkdownStreamer {
             for _ in 0..self.blockquote_depth {
                 prefix.push_str("│ ");
             }
-            prefix.push_str("\x1b[0m");
+            prefix.push_str(STYLE_RESET);
         }
 
         let term_width = self.get_width();
@@ -581,7 +591,7 @@ impl MarkdownStreamer {
             self.flush_pending_inline(w)?;
             self.commit_newline(w)?;
             let level = caps.get(1).map_or(0, |m| m.len());
-            let text = caps.get(2).map_or("", |m| m.as_str());
+            let text = self.clean_atx_header_text(caps.get(2).map_or("", |m| m.as_str()));
             self.exit_block_context();
 
             queue!(w, Print(prefix))?;
@@ -591,34 +601,37 @@ impl MarkdownStreamer {
 
             self.scratch_buffer.clear();
             let style = match level {
-                1 => "\x1b[1m",
-                2 => "\x1b[1;94m",
-                3 => "\x1b[1;36m",
-                _ => "\x1b[1;33m",
+                1 => STYLE_H1,
+                2 => STYLE_H2,
+                3 => STYLE_H3,
+                _ => STYLE_H_DEFAULT,
             };
             self.render_inline(text, None, Some(style));
 
             if level <= 2 {
                 let lines = self.wrap_ansi(&self.scratch_buffer, avail);
-                for line in lines {
-                    let pad = avail.saturating_sub(self.visible_width(&line)) / 2;
+                for (i, line) in lines.iter().enumerate() {
+                    let pad = avail.saturating_sub(self.visible_width(line)) / 2;
+                    if i > 0 {
+                        queue!(w, Print("\n"), Print(prefix))?;
+                    }
                     queue!(
                         w,
                         Print(" ".repeat(pad)),
-                        Print(format!("{}{}\x1b[0m", style, line)),
-                        ResetColor,
-                        Print("\n")
+                        Print(format!("{}{}{}", style, line, STYLE_RESET)),
+                        ResetColor
                     )?;
-                    if level == 1 {
-                        queue!(w, Print(prefix))?;
-                    }
                 }
+                if level == 1 {
+                    queue!(w, Print("\n"), Print(prefix), Print("─".repeat(avail)))?;
+                }
+                self.pending_newline = true;
             } else {
                 queue!(
                     w,
                     Print(style),
                     Print(&self.scratch_buffer),
-                    Print("\x1b[0m")
+                    Print(STYLE_RESET)
                 )?;
                 self.pending_newline = true;
             }
@@ -925,19 +938,13 @@ impl MarkdownStreamer {
 
         let fence_indent = self.active_fence.map(|(_, _, i)| i).unwrap_or(0);
 
-        // Strip the fence's indentation from the content line
-        let mut chars = raw_line.chars();
-        let mut skipped = 0;
-        while skipped < fence_indent {
-            let as_str = chars.as_str();
-            if as_str.starts_with(' ') {
-                chars.next();
-                skipped += 1;
-            } else {
-                break;
-            }
-        }
-        let line_content = chars.as_str();
+        // Strip the fence's indentation from the content line (Spec §4.5)
+        let skip = raw_line
+            .chars()
+            .take(fence_indent)
+            .take_while(|&c| c == ' ')
+            .count();
+        let line_content = &raw_line[skip..];
 
         let mut prefix = " ".repeat(self.margin);
         if !self.list_context.is_empty() {
@@ -967,6 +974,8 @@ impl MarkdownStreamer {
                 style.foreground.r, style.foreground.g, style.foreground.b, text
             );
         }
+        // Ensure background is closed at end of line to prevent bleeding
+        self.scratch_buffer.push_str(STYLE_RESET_BG);
 
         // 2. Determine if we need to wrap
         let content_width = self.visible_width(line_content);
@@ -1101,7 +1110,7 @@ impl MarkdownStreamer {
             for _ in 0..self.blockquote_depth {
                 prefix.push_str("│ ");
             }
-            prefix.push_str("\x1b[0m");
+            prefix.push_str(STYLE_RESET);
         }
 
         for i in 0..max_h {
@@ -1138,8 +1147,18 @@ impl MarkdownStreamer {
     }
 
     pub fn render_inline(&mut self, text: &str, def_bg: Option<Color>, restore_fg: Option<&str>) {
+        // Pre-process autolinks (Spec §6.4)
+        static RE_AUTOLINK: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"<([a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<> \x00-\x1f]+)>").unwrap()
+        });
+
+        let text_autolinked = RE_AUTOLINK.replace_all(text, |c: &regex::Captures| {
+            let url = &c[1];
+            format!("\x1b]8;;{}\x1b\\{}\x1b]8;;\x1b\\", url, url)
+        });
+
         // Pre-process links
-        let text_linked = RE_LINK.replace_all(text, |c: &regex::Captures| {
+        let text_linked = RE_LINK.replace_all(&text_autolinked, |c: &regex::Captures| {
             format!(
                 "\x1b]8;;{}\x1b\\\x1b[33;4m{}\x1b[24;39m\x1b]8;;\x1b\\",
                 &c[2], &c[1]
@@ -1331,14 +1350,46 @@ impl MarkdownStreamer {
         restore_fg: Option<&str>,
     ) -> String {
         let mut out = String::new();
-        let _ = write!(out, "\x1b[48;2;60;60;60m\x1b[38;2;255;255;255m{}", content);
+        let _ = write!(out, "{}{}", STYLE_INLINE_CODE, content);
         if let Some(Color::Rgb { r, g, b }) = def_bg {
             let _ = write!(out, "\x1b[48;2;{};{};{}m", r, g, b);
         } else {
-            out.push_str("\x1b[49m");
+            out.push_str(STYLE_RESET_BG);
         }
-        out.push_str(restore_fg.unwrap_or("\x1b[39m"));
+        out.push_str(restore_fg.unwrap_or(STYLE_RESET_FG));
         out
+    }
+
+    fn expand_tabs(&self, line: &str) -> String {
+        let mut expanded = String::with_capacity(line.len());
+        let mut col = 0;
+        for c in line.chars() {
+            if c == '\t' {
+                let n = 4 - (col % 4);
+                expanded.push_str(&" ".repeat(n));
+                col += n;
+            } else {
+                expanded.push(c);
+                col += UnicodeWidthChar::width(c).unwrap_or(0);
+            }
+        }
+        expanded
+    }
+
+    fn clean_atx_header_text<'a>(&self, text: &'a str) -> &'a str {
+        // Strip trailing hashes per Spec §4.2
+        let mut end = text.len();
+        let bytes = text.as_bytes();
+        while end > 0 && bytes[end - 1] == b'#' {
+            end -= 1;
+        }
+        if end > 0 && end < text.len() && bytes[end - 1] == b' ' {
+            &text[..end - 1]
+        } else if end == 0 {
+            ""
+        } else {
+            &text[..end]
+        }
     }
 
     fn start_highlighter(&mut self, lang: &str) {
