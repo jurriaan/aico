@@ -251,54 +251,36 @@ impl<'a> Iterator for StreamParser<'a> {
 
             // 4. Handle remaining buffer as Markdown Text
             let text = &self.buffer;
-            let mut stable_len = text.len();
+            let mut limit = text.len();
 
-            if self.is_incomplete(text) {
-                let mut header_cutoff = None;
-                if let Some(m) = FILE_HEADER_RE.find(text)
-                    && self.check_header_match(m, self.last_char_was_newline)
-                {
-                    header_cutoff = Some(m.start());
-                }
-
-                let search_cutoff = if let Some(search_idx) = text.find("<<<<<<< SEARCH") {
-                    let ls = text[..search_idx].rfind('\n').map(|i| i + 1).unwrap_or(0);
-                    if ls == 0 && !self.last_char_was_newline {
-                        None
-                    } else {
-                        Some(ls)
-                    }
-                } else {
-                    None
-                };
-
-                if let Some(h) = header_cutoff {
-                    if let Some(s) = search_cutoff {
-                        if s < h {
-                            stable_len = s;
-                        } else {
-                            stable_len = h;
-                        }
-                    } else {
-                        stable_len = h;
-                    }
-                } else if let Some(s) = search_cutoff {
-                    stable_len = s;
-                } else if let Some(last_newline) = text.rfind('\n') {
-                    // If we have newlines, we can safely yield up to the last one
-                    // provided the *tail* is what's causing the incompleteness.
-                    // internal check in is_incomplete does look at the tail.
-                    stable_len = last_newline + 1;
-                } else {
-                    // No newlines, potentially incomplete.
-                    // If start of line, we wait.
-                    stable_len = 0;
+            // Always truncate at the first valid header found inside the buffer
+            for m in FILE_HEADER_RE.find_iter(text) {
+                if self.check_header_match(m, self.last_char_was_newline) {
+                    limit = m.start();
+                    break;
                 }
             }
 
-            if stable_len > 0 {
-                let text_yield = self.buffer[..stable_len].to_string();
-                self.buffer.drain(..stable_len);
+            // Always truncate at the first valid diff marker found inside the buffer
+            if let Some(search_idx) = text[..limit].find("<<<<<<< SEARCH") {
+                let ls = text[..search_idx].rfind('\n').map(|i| i + 1).unwrap_or(0);
+                if ls > 0 || self.last_char_was_newline {
+                    limit = limit.min(ls);
+                }
+            }
+
+            // If the remaining part is incomplete, we must truncate further
+            if self.is_incomplete(&text[..limit]) {
+                if let Some(last_newline) = text[..limit].rfind('\n') {
+                    limit = last_newline + 1;
+                } else {
+                    limit = 0;
+                }
+            }
+
+            if limit > 0 {
+                let text_yield = self.buffer[..limit].to_string();
+                self.buffer.drain(..limit);
                 let item = StreamYieldItem::Text(text_yield);
                 self.update_newline_state(&item);
                 return Some(item);
