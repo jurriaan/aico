@@ -46,9 +46,18 @@ const STYLE_H2: &str = "\x1b[1m\x1b[94m";
 const STYLE_H3: &str = "\x1b[1m\x1b[36m";
 const STYLE_H_DEFAULT: &str = "\x1b[1m\x1b[33m";
 const STYLE_INLINE_CODE: &str = "\x1b[48;2;60;60;60m\x1b[38;2;255;255;255m";
+const STYLE_BLOCKQUOTE: &str = "\x1b[38;5;240m";
+const STYLE_LIST_BULLET: &str = "\x1b[33m";
+const STYLE_MATH: &str = "\x1b[36;3m";
 const STYLE_RESET: &str = "\x1b[0m";
 const STYLE_RESET_BG: &str = "\x1b[49m";
 const STYLE_RESET_FG: &str = "\x1b[39m";
+
+const COLOR_CODE_BG: Color = Color::Rgb {
+    r: 30,
+    g: 30,
+    b: 30,
+};
 
 // Single pattern for "Invisible" content (ANSI codes + OSC8 links) used for width calculation
 static RE_INVISIBLE: LazyLock<Regex> =
@@ -444,14 +453,7 @@ impl MarkdownStreamer {
             content = caps.get(2).map_or("", |m| m.as_str());
         }
 
-        let mut prefix = " ".repeat(self.margin);
-        if self.blockquote_depth > 0 {
-            prefix.push_str("\x1b[38;5;240m");
-            for _ in 0..self.blockquote_depth {
-                prefix.push_str("│ ");
-            }
-            prefix.push_str(STYLE_RESET);
-        }
+        let prefix = self.build_block_prefix();
 
         let term_width = self.get_width();
         let prefix_width = self.margin + (self.blockquote_depth * 2);
@@ -536,11 +538,9 @@ impl MarkdownStreamer {
                 queue!(
                     w,
                     Print(" ".repeat(self.margin + padding)),
-                    SetForegroundColor(Color::Cyan),
-                    SetAttribute(Attribute::Italic),
+                    Print(STYLE_MATH),
                     Print(converted),
-                    ResetColor,
-                    SetAttribute(Attribute::Reset)
+                    Print(STYLE_RESET)
                 )?;
                 self.pending_newline = true;
                 self.math_buffer.clear();
@@ -682,10 +682,10 @@ impl MarkdownStreamer {
                 w,
                 Print(prefix),
                 Print(" ".repeat(parent_width)),
-                SetForegroundColor(Color::Yellow),
+                Print(STYLE_LIST_BULLET),
                 Print(disp_bullet),
-                Print(separator),
-                ResetColor
+                Print(STYLE_RESET),
+                Print(separator)
             )?;
 
             // Check if the text portion looks like a code fence start (e.g., "```ruby")
@@ -768,7 +768,7 @@ impl MarkdownStreamer {
         }
 
         if !line_content.is_empty() || self.inline_code.is_active() {
-            let mut eff_prefix = prefix.to_string();
+            let mut eff_prefix = self.build_block_prefix();
             if !self.list_context.is_empty() {
                 let current_indent = line_content.chars().take_while(|c| *c == ' ').count();
                 if current_indent == 0 {
@@ -974,8 +974,6 @@ impl MarkdownStreamer {
                 style.foreground.r, style.foreground.g, style.foreground.b, text
             );
         }
-        // Ensure background is closed at end of line to prevent bleeding
-        self.scratch_buffer.push_str(STYLE_RESET_BG);
 
         // 2. Determine if we need to wrap
         let content_width = self.visible_width(line_content);
@@ -986,11 +984,7 @@ impl MarkdownStreamer {
             queue!(
                 w,
                 Print(&prefix),
-                SetBackgroundColor(Color::Rgb {
-                    r: 30,
-                    g: 30,
-                    b: 30
-                }),
+                SetBackgroundColor(COLOR_CODE_BG),
                 Print(&self.scratch_buffer),
                 Print(" ".repeat(pad)),
                 ResetColor
@@ -1003,11 +997,7 @@ impl MarkdownStreamer {
                 queue!(
                     w,
                     Print(&prefix),
-                    SetBackgroundColor(Color::Rgb {
-                        r: 30,
-                        g: 30,
-                        b: 30
-                    }),
+                    SetBackgroundColor(COLOR_CODE_BG),
                     Print(" ".repeat(avail_width)),
                     ResetColor
                 )?;
@@ -1022,11 +1012,7 @@ impl MarkdownStreamer {
                     queue!(
                         w,
                         Print(&prefix),
-                        SetBackgroundColor(Color::Rgb {
-                            r: 30,
-                            g: 30,
-                            b: 30
-                        }),
+                        SetBackgroundColor(COLOR_CODE_BG),
                         Print(line),
                         Print(" ".repeat(pad)),
                         ResetColor
@@ -1062,11 +1048,7 @@ impl MarkdownStreamer {
                 b: 80,
             }
         } else {
-            Color::Rgb {
-                r: 30,
-                g: 30,
-                b: 30,
-            }
+            COLOR_CODE_BG
         };
         let mut wrapped_cells = Vec::new();
         let mut max_h = 1;
@@ -1104,14 +1086,7 @@ impl MarkdownStreamer {
             wrapped_cells.push((lines, width));
         }
 
-        let mut prefix = " ".repeat(self.margin);
-        if self.blockquote_depth > 0 {
-            prefix.push_str("\x1b[38;5;240m");
-            for _ in 0..self.blockquote_depth {
-                prefix.push_str("│ ");
-            }
-            prefix.push_str(STYLE_RESET);
-        }
+        let prefix = self.build_block_prefix();
 
         for i in 0..max_h {
             if i > 0 {
@@ -1341,6 +1316,18 @@ impl MarkdownStreamer {
                 stack.push(i);
             }
         }
+    }
+
+    fn build_block_prefix(&self) -> String {
+        let mut prefix = " ".repeat(self.margin);
+        if self.blockquote_depth > 0 {
+            prefix.push_str(STYLE_BLOCKQUOTE);
+            for _ in 0..self.blockquote_depth {
+                prefix.push_str("│ ");
+            }
+            prefix.push_str(STYLE_RESET);
+        }
+        prefix
     }
 
     fn format_inline_code_content(

@@ -164,6 +164,7 @@ inline_tests! {
     autolink_basic: { input: "Visit <https://example.com> now.\n", clean: "Visit https://example.com now.\n", raw_contains: "\x1b]8;;https://example.com\x1b\\" },
     atx_closing_hashes: { input: "## Title ##", contains: "Title", raw_contains: BOLD },
     escaped_ordered_list_marker: { input: "1986\\. What a year.\n", clean: "1986. What a year.\n", not_raw: "\x1b[33m" },
+    code_block_background_color: { input: "```\ncode\n```\n", raw_contains: "48;2;30;30;30m" },
 }
 
 #[test]
@@ -415,7 +416,7 @@ fn test_list_integrity_with_interleaved_code_blocks() {
         "Second list item lost alignment."
     );
     assert!(
-        raw.contains("\u{1b}[38;5;11m2."),
+        raw.contains("\x1b[33m2."),
         "Second list item lost specific styling (Yellow)."
     );
 }
@@ -675,5 +676,36 @@ fn test_table_streaming_partial_row_wrapping() {
         clean.lines().count(),
         1,
         "Streaming a long row caused incorrect wrapping."
+    );
+}
+
+#[test]
+fn test_code_block_full_width_background_sequence() {
+    // Width 20, Margin 0. Line "123" (3 chars) leaves 17 chars of padding.
+    let input = "```\n123\n```\n";
+    let (raw, _) = render(input, 20, 0);
+
+    let bg_seq = "48;2;30;30;30m";
+    let reset_seq = "\x1b[0m";
+
+    // Find the background color start
+    let bg_start = raw.find(bg_seq).expect("Missing code background sequence");
+
+    // Find where the background is reset
+    let reset_pos = raw[bg_start..]
+        .find(reset_seq)
+        .expect("Missing reset sequence after background")
+        + bg_start;
+
+    // Extract the block that is supposed to have the background
+    let background_block = &raw[bg_start..reset_pos];
+
+    // VERIFY: The background block must contain the code AND the padding spaces.
+    // In a 20-wide terminal, "123" with 17 spaces padding should be present
+    // before the reset occurs.
+    assert!(
+        background_block.contains("123                 "),
+        "Background color reset before padding was complete. Block was: {:?}",
+        background_block
     );
 }
