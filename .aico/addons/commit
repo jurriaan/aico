@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env sh
 #
 # This script is an example of an `aico` addon. Here's how it works:
 #

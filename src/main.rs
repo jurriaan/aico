@@ -26,7 +26,6 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
         "Source Control:\n",
         "  Commit SHA:        ", env!("VERGEN_GIT_SHA"), "\n",
         "  Commit Timestamp:  ", env!("VERGEN_GIT_COMMIT_TIMESTAMP"), "\n",
-        "  Branch:            ", env!("VERGEN_GIT_BRANCH"), "\n",
         "\n",
         "Compiler:\n",
         "  Rustc Version:     ", env!("VERGEN_RUSTC_SEMVER"), "\n",

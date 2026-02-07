@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Shim script to wrap the 'aico' binary for testing purposes.
 #
 # AICO_BINARY is expected to be set to the path of the actual 'aico' binary.

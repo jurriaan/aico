@@ -18,7 +18,7 @@ backend = "aqua:rust-cross/cargo-zigbuild"
 
 [[tools."http:clitest"]]
 version = "latest"
-backend = "http:clitest[url=https://raw.githubusercontent.com/aureliojargas/clitest/master/clitest]"
+backend = "http:clitest"
 "platforms.linux-x64" = { checksum = "blake3:6eb6e7fd02547c634a2b76735fd510ff3e23782f1461a6b0f9cfaf79d8e32376", url = "https://raw.githubusercontent.com/aureliojargas/clitest/master/clitest"}
 
 [[tools.jq]]

@@ -15,6 +15,9 @@ exclude = [
     "mise.toml",
     "mise.lock",
     ".github",
+    "flake.nix",
+    "flake.lock",
+    ".envrc",
 ]
 build = "build.rs"
 

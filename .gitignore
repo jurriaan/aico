@@ -9,3 +9,5 @@ debug/
 build/
 .stignore
 PROJECT_SUMMARY.md
+result
+.direnv

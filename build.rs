@@ -14,18 +14,24 @@ fn vergen() -> Result<(), anyhow::Error> {
         .host_triple(true)
         .build()?;
     let cargo = CargoBuilder::default().target_triple(true).build()?;
-    let gitcl = GitclBuilder::default()
-        .commit_timestamp(true)
-        .branch(true)
-        .sha(true)
-        .build()?;
-
-    Emitter::default()
+    let mut emitter = Emitter::default();
+    emitter
         .add_instructions(&build)?
-        .add_instructions(&gitcl)?
         .add_instructions(&cargo)?
-        .add_instructions(&rustc)?
-        .emit()?;
+        .add_instructions(&rustc)?;
+
+    // If VERGEN_GIT_SHA is passed (e.g. from Nix), skip git detection
+    if std::env::var("VERGEN_GIT_SHA").is_ok() {
+        // We assume timestamp is also passed if SHA is passed
+    } else {
+        let gitcl = GitclBuilder::default()
+            .commit_timestamp(true)
+            .sha(true)
+            .build()?;
+        emitter.add_instructions(&gitcl)?;
+    }
+
+    emitter.emit()?;
 
     Ok(())
 }
