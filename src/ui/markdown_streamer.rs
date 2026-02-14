@@ -31,7 +31,8 @@ static THEME: LazyLock<Theme> = LazyLock::new(|| {
 static RE_CODE_FENCE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(\s*)([`~]{3,})(.*)$").unwrap());
 static RE_HEADER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(#{1,6})\s+(.*)").unwrap());
-static RE_HR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\s*[-*_]){3,}\s*$").unwrap());
+static RE_HR: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[ ]{0,3}(?:[-*_][ \t]*){3,}$").unwrap());
 static RE_LIST: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(\s*)([-*+]|\d+\.)(?:(\s+)(.*)|$)").unwrap());
 static RE_BLOCKQUOTE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\s*>\s?)(.*)").unwrap());
@@ -77,9 +78,8 @@ static RE_LINK: LazyLock<Regex> = LazyLock::new(|| {
 });
 static RE_OSC8: LazyLock<Regex> = LazyLock::new(|| Regex::new(OSC8_PATTERN).unwrap());
 
-static RE_AUTOLINK: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"<([a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<> \x00-\x1f]+)>").unwrap()
-});
+static RE_AUTOLINK: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<([a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<> \x00-\x1f]+)>").unwrap());
 
 static RE_OPAQUE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
@@ -218,11 +218,7 @@ impl InlineCodeState {
     }
 
     fn normalize_content_static(s: &str) -> String {
-        if s.len() >= 2
-            && s.starts_with(' ')
-            && s.ends_with(' ')
-            && s.chars().any(|c| c != ' ')
-        {
+        if s.len() >= 2 && s.starts_with(' ') && s.ends_with(' ') && s.chars().any(|c| c != ' ') {
             s[1..s.len() - 1].to_string()
         } else {
             s.to_string()
@@ -412,7 +408,6 @@ fn find_backtick_closer(text: &str, n: usize) -> Option<usize> {
 }
 
 fn parse_segments(text: &str, active_ticks: Option<usize>) -> Vec<ParsedSegment> {
-
     let mut segments = Vec::new();
     let mut pos = 0;
 
@@ -445,7 +440,9 @@ fn parse_segments(text: &str, active_ticks: Option<usize>) -> Vec<ParsedSegment>
     while let Some(caps) = it.next() {
         let m = caps.get(0).unwrap();
         if m.start() > last_match_end {
-            segments.push(ParsedSegment::Text(offset + last_match_end..offset + m.start()));
+            segments.push(ParsedSegment::Text(
+                offset + last_match_end..offset + m.start(),
+            ));
         }
 
         let start = offset + m.start();
@@ -632,7 +629,8 @@ impl MarkdownStreamer {
     fn flush_pending_inline<W: Write>(&mut self, writer: &mut W) -> io::Result<()> {
         if let Some((ticks, buffer)) = self.inline_code.flush_incomplete() {
             let prefix = "`".repeat(ticks);
-            let formatted = self.format_inline_code_content(&format!("{}{}", prefix, buffer), None, None);
+            let formatted =
+                self.format_inline_code_content(&format!("{}{}", prefix, buffer), None, None);
             queue!(writer, Print(formatted))?;
             self.inline_code.reset();
         }
@@ -929,7 +927,7 @@ impl MarkdownStreamer {
     ) -> io::Result<()> {
         self.commit_newline(w)?;
         let mut line_content = content.trim_end_matches(['\n', '\r']);
-        if line_content.trim().is_empty() && content.ends_with('\n') {
+        if line_content.trim().is_empty() {
             self.exit_block_context();
             if self.blockquote_depth > 0 {
                 queue!(w, Print(prefix))?;
@@ -967,7 +965,7 @@ impl MarkdownStreamer {
 
             let lines = self.wrap_ansi(&self.scratch_buffer, avail);
             let has_visible_content = self.visible_width(&self.scratch_buffer) > 0;
-            
+
             for (i, line) in lines.iter().enumerate() {
                 if i > 0 {
                     queue!(w, Print("\n"))?;
@@ -1377,24 +1375,33 @@ impl MarkdownStreamer {
 
         for seg in &segments {
             match seg {
-                ParsedSegment::CodeSpan { range, delimiter_len } => {
+                ParsedSegment::CodeSpan {
+                    range,
+                    delimiter_len,
+                } => {
                     let n = *delimiter_len;
                     let content_range = range.start + n..range.end - n;
                     let raw_content = &text[content_range];
                     let normalized = InlineCodeState::normalize_content_static(raw_content);
-                    let formatted = self.format_inline_code_content(&normalized, def_bg, restore_fg);
+                    let formatted =
+                        self.format_inline_code_content(&normalized, def_bg, restore_fg);
                     parts.push(InlinePart::text(formatted));
                 }
-                ParsedSegment::CodeSpanOpener { range: _, delimiter_len } => {
+                ParsedSegment::CodeSpanOpener {
+                    range: _,
+                    delimiter_len,
+                } => {
                     self.inline_code.open(*delimiter_len);
                 }
                 ParsedSegment::CodeSpanContent(range) => {
                     self.inline_code.push_content(&text[range.clone()]);
                 }
-                ParsedSegment::CodeSpanCloser { range: _, delimiter_len: _ } => {
+                ParsedSegment::CodeSpanCloser {
+                    range: _,
+                    delimiter_len: _,
+                } => {
                     let content = self.inline_code.close();
-                    let formatted =
-                        self.format_inline_code_content(&content, def_bg, restore_fg);
+                    let formatted = self.format_inline_code_content(&content, def_bg, restore_fg);
                     parts.push(InlinePart::text(formatted));
                 }
                 ParsedSegment::Escape(r) => {
@@ -1686,11 +1693,7 @@ impl MarkdownStreamer {
             let info = caps[3].trim();
             if let Some(f_char) = fence.chars().next() {
                 if f_char != '`' || !info.contains('`') {
-                    let lang = info
-                        .split_whitespace()
-                        .next()
-                        .unwrap_or("bash")
-                        .to_string();
+                    let lang = info.split_whitespace().next().unwrap_or("bash").to_string();
                     return ClassifiedLine {
                         blockquote_depth,
                         content: content.clone(),
@@ -1726,13 +1729,35 @@ impl MarkdownStreamer {
             };
         }
 
+        // Empty ATX heading: `## ` or `###` with only hashes and optional trailing whitespace
+        {
+            let stripped = clean.trim_start();
+            let hash_count = stripped.chars().take_while(|&c| c == '#').count();
+            if (1..=6).contains(&hash_count) {
+                let after_hashes = &stripped[hash_count..];
+                if after_hashes.is_empty() || after_hashes.chars().all(|c| c.is_whitespace()) {
+                    return ClassifiedLine {
+                        blockquote_depth,
+                        content: content.clone(),
+                        kind: BlockKind::Header {
+                            level: hash_count,
+                            text: "".to_string(),
+                        },
+                    };
+                }
+            }
+        }
+
         // Thematic break (must be checked before list to handle `* * *`)
         if RE_HR.is_match(clean) {
-            return ClassifiedLine {
-                blockquote_depth,
-                content: content.clone(),
-                kind: BlockKind::ThematicBreak,
-            };
+            let hr_chars: Vec<char> = clean.chars().filter(|c| !c.is_whitespace()).collect();
+            if !hr_chars.is_empty() && hr_chars.iter().all(|&c| c == hr_chars[0]) {
+                return ClassifiedLine {
+                    blockquote_depth,
+                    content: content.clone(),
+                    kind: BlockKind::ThematicBreak,
+                };
+            }
         }
 
         // List item
@@ -1742,6 +1767,23 @@ impl MarkdownStreamer {
             let separator = caps.get(3).map_or(" ", |m| m.as_str()).to_string();
             let content_text = caps.get(4).map_or("", |m| m.as_str()).to_string();
             let is_ordered = marker.chars().any(|c| c.is_numeric());
+
+            // CommonMark §4.1 ex 43: thematic break inside list item content
+            // takes precedence over the list item
+            if !content_text.is_empty() {
+                let ct = content_text.trim_end();
+                if RE_HR.is_match(ct) {
+                    let hr_chars: Vec<char> = ct.chars().filter(|c| !c.is_whitespace()).collect();
+                    if !hr_chars.is_empty() && hr_chars.iter().all(|&c| c == hr_chars[0]) {
+                        return ClassifiedLine {
+                            blockquote_depth,
+                            content: content.clone(),
+                            kind: BlockKind::ThematicBreak,
+                        };
+                    }
+                }
+            }
+
             return ClassifiedLine {
                 blockquote_depth,
                 content: content.clone(),
@@ -1773,17 +1815,21 @@ impl MarkdownStreamer {
     }
 
     fn clean_atx_header_text_static(text: &str) -> &str {
-        let mut end = text.len();
-        let bytes = text.as_bytes();
+        let trimmed = text.trim_end();
+        let mut end = trimmed.len();
+        let bytes = trimmed.as_bytes();
         while end > 0 && bytes[end - 1] == b'#' {
             end -= 1;
         }
-        if end > 0 && end < text.len() && bytes[end - 1] == b' ' {
-            &text[..end - 1]
-        } else if end == 0 {
+        if end == 0 {
+            // All hashes (e.g., "###"): empty heading
             ""
+        } else if end < trimmed.len() && bytes[end - 1] == b' ' {
+            // Closing hashes preceded by space: strip both space and hashes
+            trimmed[..end - 1].trim_end()
         } else {
-            &text[..end]
+            // No valid closing sequence (e.g., "foo#"): return as-is
+            trimmed
         }
     }
 

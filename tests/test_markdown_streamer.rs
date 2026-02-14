@@ -165,6 +165,30 @@ inline_tests! {
     atx_closing_hashes: { input: "## Title ##", contains: "Title", raw_contains: BOLD },
     escaped_ordered_list_marker: { input: "1986\\. What a year.\n", clean: "1986. What a year.\n", not_raw: "\x1b[33m" },
     code_block_background_color: { input: "```\ncode\n```\n", raw_contains: "48;2;30;30;30m" },
+
+    // §4.1 Thematic break edge cases
+    thematic_break_indent_1: { input: " ---\n", contains: "─" },
+    thematic_break_indent_2: { input: "  ---\n", contains: "─" },
+    thematic_break_indent_3: { input: "   ---\n", contains: "─" },
+    thematic_break_many_chars: { input: "_____________________________________\n", contains: "─" },
+    thematic_break_trailing_spaces: { input: "- - - -    \n", contains: "─" },
+
+    // §4.2 ATX Heading edge cases
+    heading_7_hashes_not_heading: { input: "####### foo\n", clean: "####### foo\n" },
+    heading_no_space_not_heading: { input: "#5 bolt\n", clean: "#5 bolt\n" },
+    heading_hashtag_not_heading: { input: "#hashtag\n", clean: "#hashtag\n" },
+
+    // §6.7 Hard line breaks
+    hard_break_two_trailing_spaces: { input: "foo  \nbar\n", contains: "foo" },
+    hard_break_two_trailing_spaces_bar: { input: "foo  \nbar\n", contains: "bar" },
+    hard_break_trailing_backslash: { input: "foo\\\nbar\n", contains: "foo" },
+    hard_break_trailing_backslash_bar: { input: "foo\\\nbar\n", contains: "bar" },
+
+    // §5.2 List item with `+` marker
+    list_plus_marker: { input: "+ Item\n", contains: "• Item" },
+
+    // §5.2 Ordered list start > 1
+    list_ordered_start_3: { input: "3. Third\n", contains: "3. Third" },
 }
 
 #[test]
@@ -710,6 +734,194 @@ fn test_code_block_full_width_background_sequence() {
     );
 }
 
+// --- §4.1 Thematic Break Rejected Cases ---
+
+#[test]
+fn test_thematic_break_mixed_chars_rejected() {
+    // Mixed characters `*-*` is NOT a thematic break
+    let (_, clean) = render("*-*\n", 1000, 0);
+    assert!(
+        !clean.contains("─"),
+        "Mixed-char thematic break should not render as HR. Output:\n{}",
+        clean
+    );
+}
+
+#[test]
+fn test_thematic_break_extra_text_rejected() {
+    // Characters with extra text: `_ _ _ _ a` is NOT a thematic break
+    let (_, clean) = render("_ _ _ _ a\n", 1000, 0);
+    assert!(
+        !clean.contains("─"),
+        "Thematic break with trailing text should not render as HR. Output:\n{}",
+        clean
+    );
+}
+
+// --- §4.2 ATX Heading Edge Cases ---
+
+#[test]
+fn test_heading_empty_h1() {
+    let (_, clean) = render("# \n", 1000, 0);
+    // Should render as a heading (with rule line for h1) but no text content
+    assert!(
+        clean.contains("─"),
+        "Empty H1 should still render the heading rule. Output:\n{}",
+        clean
+    );
+}
+
+#[test]
+fn test_heading_closing_hash_no_space() {
+    // `# foo#` → heading text is `foo#` (closing # must be preceded by space)
+    let (_, clean) = render("# foo#\n", 1000, 0);
+    assert!(
+        clean.contains("foo#"),
+        "Closing hash without preceding space should be part of heading text. Output:\n{}",
+        clean
+    );
+}
+
+#[test]
+fn test_heading_closing_hashes_empty() {
+    // `### ###` → empty heading (all hashes are closing)
+    let (raw, _) = render("### ###\n", 1000, 0);
+    // Should have heading styling but no visible text content
+    assert!(
+        raw.contains("\x1b[1m"),
+        "Empty heading should still have heading styling. Output:\n{}",
+        raw
+    );
+}
+
+// --- §6.7 Hard Line Breaks ---
+
+#[test]
+fn test_hard_break_two_trailing_spaces_renders_newline() {
+    // Two trailing spaces at end of line should produce a hard line break
+    let (_, clean) = render("foo  \nbar\n", 1000, 0);
+    let lines: Vec<&str> = clean.lines().collect();
+    assert!(
+        lines.len() >= 2,
+        "Hard line break (two spaces) should produce separate lines. Output:\n{}",
+        clean
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("foo")),
+        "Should contain 'foo'. Output:\n{}",
+        clean
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("bar")),
+        "Should contain 'bar'. Output:\n{}",
+        clean
+    );
+}
+
+#[test]
+fn test_hard_break_trailing_backslash_renders_newline() {
+    // Trailing backslash at end of line should produce a hard line break
+    let (_, clean) = render("foo\\\nbar\n", 1000, 0);
+    let lines: Vec<&str> = clean.lines().collect();
+    assert!(
+        lines.len() >= 2,
+        "Hard line break (backslash) should produce separate lines. Output:\n{}",
+        clean
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("foo")),
+        "Should contain 'foo'. Output:\n{}",
+        clean
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("bar")),
+        "Should contain 'bar'. Output:\n{}",
+        clean
+    );
+}
+
+#[test]
+fn test_hard_break_not_in_code_span() {
+    // Hard breaks don't work inside code spans
+    let (_, clean) = render("`code  \nspan`\n", 1000, 0);
+    // Inside code span, the two trailing spaces + newline should become a space, not a break
+    assert!(
+        clean.contains("code"),
+        "Code span content missing. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("span"),
+        "Code span content missing. Output:\n{}",
+        clean
+    );
+}
+
+// --- §5.2 List Items ---
+
+#[test]
+fn test_list_plus_marker_renders_bullet() {
+    let (_, clean) = render("+ Item One\n+ Item Two\n", 1000, 0);
+    assert_eq!(
+        clean.matches("•").count(),
+        2,
+        "Plus markers should render as bullets. Output:\n{}",
+        clean
+    );
+}
+
+#[test]
+fn test_list_changing_marker_type() {
+    // Different bullet characters should all render as bullets
+    let (_, clean) = render("- Dash\n* Star\n+ Plus\n", 1000, 0);
+    assert_eq!(
+        clean.matches("•").count(),
+        3,
+        "All unordered markers (-, *, +) should render as bullets. Output:\n{}",
+        clean
+    );
+}
+
+#[test]
+fn test_list_ordered_start_gt_1() {
+    let (_, clean) = render("3. Third\n4. Fourth\n", 1000, 0);
+    assert!(
+        clean.contains("3.") && clean.contains("Third"),
+        "Ordered list starting > 1 should preserve number. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("4.") && clean.contains("Fourth"),
+        "Second item should also preserve number. Output:\n{}",
+        clean
+    );
+}
+
+#[test]
+fn test_list_empty_item() {
+    // `* ` with nothing after should render a bullet with no content
+    let (_, clean) = render("* \n* Item\n", 1000, 0);
+    assert_eq!(
+        clean.matches("•").count(),
+        2,
+        "Empty list item should still render a bullet. Output:\n{}",
+        clean
+    );
+}
+
+// --- §5.1 Blockquote Edge Cases ---
+
+#[test]
+fn test_blockquote_empty() {
+    // `>` alone should be a valid blockquote
+    let (raw, _) = render("> \n", 1000, 0);
+    assert!(
+        raw.contains("│"),
+        "Empty blockquote should render border. Output:\n{}",
+        raw
+    );
+}
+
 #[test]
 fn test_table_pipe_in_inline_code() {
     // Pipe characters inside inline code spans should NOT be treated as column separators.
@@ -729,4 +941,3 @@ fn test_table_pipe_in_inline_code() {
         clean
     );
 }
-

@@ -455,3 +455,199 @@ fn classify_longer_fence() {
         }
     );
 }
+
+// --- §4.1 Thematic Break Edge Cases ---
+
+#[test]
+fn classify_thematic_break_with_indent_1() {
+    // Up to 3 spaces of indentation allowed (CommonMark §4.1)
+    let s = make_streamer();
+    assert_eq!(s.classify_line(" ***").kind, BlockKind::ThematicBreak);
+}
+
+#[test]
+fn classify_thematic_break_with_indent_2() {
+    let s = make_streamer();
+    assert_eq!(s.classify_line("  ***").kind, BlockKind::ThematicBreak);
+}
+
+#[test]
+fn classify_thematic_break_with_indent_3() {
+    let s = make_streamer();
+    assert_eq!(s.classify_line("   ***").kind, BlockKind::ThematicBreak);
+}
+
+#[test]
+fn classify_thematic_break_many_chars() {
+    // More than 3 characters is still a thematic break
+    let s = make_streamer();
+    assert_eq!(
+        s.classify_line("_____________________________________")
+            .kind,
+        BlockKind::ThematicBreak
+    );
+}
+
+#[test]
+fn classify_thematic_break_trailing_spaces() {
+    let s = make_streamer();
+    assert_eq!(
+        s.classify_line("- - - -    ").kind,
+        BlockKind::ThematicBreak
+    );
+}
+
+#[test]
+fn classify_thematic_break_with_extra_text_rejected() {
+    // Characters with extra text: NOT a thematic break (CommonMark §4.1)
+    let s = make_streamer();
+    assert_ne!(s.classify_line("_ _ _ _ a").kind, BlockKind::ThematicBreak);
+}
+
+#[test]
+fn classify_thematic_break_mixed_chars_rejected() {
+    // Mixed characters: `*-*` is NOT a thematic break
+    let s = make_streamer();
+    assert_ne!(s.classify_line("*-*").kind, BlockKind::ThematicBreak);
+}
+
+// --- §4.2 ATX Heading Edge Cases ---
+
+#[test]
+fn classify_header_7_hashes_not_heading() {
+    // 7+ `#` is NOT a heading (CommonMark §4.2)
+    let s = make_streamer();
+    let result = s.classify_line("####### foo");
+    assert_eq!(result.kind, BlockKind::Paragraph);
+}
+
+#[test]
+fn classify_header_no_space_not_heading() {
+    // `#` without space is NOT a heading (CommonMark §4.2)
+    let s = make_streamer();
+    let result = s.classify_line("#5 bolt");
+    assert_eq!(result.kind, BlockKind::Paragraph);
+}
+
+#[test]
+fn classify_header_hashtag_not_heading() {
+    let s = make_streamer();
+    let result = s.classify_line("#hashtag");
+    assert_eq!(result.kind, BlockKind::Paragraph);
+}
+
+#[test]
+fn classify_header_empty_h2() {
+    // Empty headings: `##` with trailing hashes stripped yields empty text
+    let s = make_streamer();
+    let result = s.classify_line("## ");
+    assert_eq!(
+        result.kind,
+        BlockKind::Header {
+            level: 2,
+            text: "".to_string(),
+        }
+    );
+}
+
+#[test]
+fn classify_header_empty_closing_hashes() {
+    // `### ###` → empty heading
+    let s = make_streamer();
+    let result = s.classify_line("### ###");
+    assert_eq!(
+        result.kind,
+        BlockKind::Header {
+            level: 3,
+            text: "".to_string(),
+        }
+    );
+}
+
+#[test]
+fn classify_header_closing_hash_no_space() {
+    // Closing `#` must be preceded by space: `# foo#` → heading text is `foo#`
+    let s = make_streamer();
+    let result = s.classify_line("# foo#");
+    assert_eq!(
+        result.kind,
+        BlockKind::Header {
+            level: 1,
+            text: "foo#".to_string(),
+        }
+    );
+}
+
+// --- §6.7 Hard Line Breaks ---
+
+#[test]
+fn classify_hard_line_break_trailing_spaces() {
+    // Two trailing spaces → should still be a paragraph (block classification doesn't change)
+    // but the inline rendering must handle it. At the classify level, it's a Paragraph.
+    let s = make_streamer();
+    let result = s.classify_line("foo  ");
+    assert_eq!(result.kind, BlockKind::Paragraph);
+}
+
+#[test]
+fn classify_hard_line_break_trailing_backslash() {
+    // Trailing backslash → still a paragraph at block level
+    let s = make_streamer();
+    let result = s.classify_line("foo\\");
+    assert_eq!(result.kind, BlockKind::Paragraph);
+}
+
+// --- §5.2 List Item Edge Cases ---
+
+#[test]
+fn classify_list_plus_marker() {
+    // `+` is a valid unordered list marker
+    let s = make_streamer();
+    let result = s.classify_line("+ Item");
+    assert_eq!(
+        result.kind,
+        BlockKind::ListItem {
+            indent: 0,
+            marker: "+".to_string(),
+            separator: " ".to_string(),
+            content: "Item".to_string(),
+            is_ordered: false,
+        }
+    );
+}
+
+#[test]
+fn classify_ordered_list_start_gt_1() {
+    // Start number > 1 for ordered lists
+    let s = make_streamer();
+    let result = s.classify_line("3. Third");
+    assert_eq!(
+        result.kind,
+        BlockKind::ListItem {
+            indent: 0,
+            marker: "3.".to_string(),
+            separator: " ".to_string(),
+            content: "Third".to_string(),
+            is_ordered: true,
+        }
+    );
+}
+
+#[test]
+fn classify_list_empty_marker_only() {
+    // Empty list item: `*` alone on a line
+    let s = make_streamer();
+    // `* ` with nothing after — the regex should match with empty content
+    // but `*` alone without space could be tricky
+    let result = s.classify_line("* ");
+    assert_eq!(
+        result.kind,
+        BlockKind::ListItem {
+            indent: 0,
+            marker: "*".to_string(),
+            separator: " ".to_string(),
+            content: "".to_string(),
+            is_ordered: false,
+        }
+    );
+}
