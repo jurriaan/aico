@@ -359,6 +359,7 @@ pub enum BlockKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassifiedLine {
     pub blockquote_depth: usize,
+    pub content: String,
     pub kind: BlockKind,
 }
 
@@ -641,321 +642,282 @@ impl MarkdownStreamer {
     // --- Pipeline Controller ---
     fn process_line<W: Write>(&mut self, w: &mut W, raw_line: &str) -> io::Result<()> {
         let expanded = self.expand_tabs(raw_line);
-        let trimmed = expanded.trim_end();
+        let classified = self.classify_line(&expanded);
 
-        // 1. Context-Specific Handlers (return true if consumed)
-        if self.try_handle_fence(w, &expanded, trimmed)? {
-            return Ok(());
-        }
-        if self.try_handle_math(w, trimmed)? {
-            return Ok(());
-        }
-        if self.try_handle_table(w, trimmed)? {
-            return Ok(());
-        }
+        self.blockquote_depth = classified.blockquote_depth;
+        self.update_block_state(&classified);
 
-        // 2. Global Layout Calculation (Blockquotes & Margins)
-        let mut content = expanded.as_str();
-        self.blockquote_depth = 0;
-        while let Some(caps) = RE_BLOCKQUOTE.captures(content) {
-            self.blockquote_depth += 1;
-            content = caps.get(2).map_or("", |m| m.as_str());
+        match classified.kind {
+            BlockKind::FenceOpen { lang, .. } => {
+                self.render_fence_open(w, &lang)?;
+            }
+            BlockKind::FenceClose => {
+                self.render_fence_close(w)?;
+            }
+            BlockKind::FenceContent => {
+                self.render_code_line(w, &expanded)?;
+            }
+            BlockKind::MathOpen => {
+                self.render_math_open(w)?;
+            }
+            BlockKind::MathClose => {
+                self.render_math_close(w)?;
+            }
+            BlockKind::MathContent => {
+                let trimmed = expanded.trim_end();
+                self.render_math_content(trimmed);
+            }
+            BlockKind::TableSeparator => {
+                // Separator line is consumed (sets table_header_printed in update_block_state)
+            }
+            BlockKind::TableRow => {
+                let trimmed = expanded.trim_end();
+                self.render_stream_table_row(w, trimmed)?;
+            }
+            BlockKind::Header { level, text } => {
+                let prefix = self.build_block_prefix();
+                let term_width = self.get_width();
+                let prefix_width = self.margin + (self.blockquote_depth * 2);
+                let avail_width = term_width.saturating_sub(prefix_width + self.margin);
+                self.render_header(w, level, &text, &prefix, avail_width)?;
+            }
+            BlockKind::ThematicBreak => {
+                let prefix = self.build_block_prefix();
+                let term_width = self.get_width();
+                let prefix_width = self.margin + (self.blockquote_depth * 2);
+                let avail_width = term_width.saturating_sub(prefix_width + self.margin);
+                self.render_thematic_break(w, &prefix, avail_width)?;
+            }
+            BlockKind::ListItem {
+                indent,
+                marker,
+                separator,
+                content,
+                is_ordered,
+            } => {
+                let prefix = self.build_block_prefix();
+                let term_width = self.get_width();
+                let prefix_width = self.margin + (self.blockquote_depth * 2);
+                let avail_width = term_width.saturating_sub(prefix_width + self.margin);
+                self.render_list_item(
+                    w,
+                    indent,
+                    &marker,
+                    &separator,
+                    &content,
+                    is_ordered,
+                    &prefix,
+                    avail_width,
+                )?;
+            }
+            BlockKind::BlankLine | BlockKind::Paragraph => {
+                let prefix = self.build_block_prefix();
+                let term_width = self.get_width();
+                let prefix_width = self.margin + (self.blockquote_depth * 2);
+                let avail_width = term_width.saturating_sub(prefix_width + self.margin);
+                self.render_standard_text(w, &classified.content, &prefix, avail_width)?;
+            }
         }
-
-        let prefix = self.build_block_prefix();
-
-        let term_width = self.get_width();
-        let prefix_width = self.margin + (self.blockquote_depth * 2);
-        let avail_width = term_width.saturating_sub(prefix_width + self.margin);
-
-        // 3. Block Start Handlers
-        // Note: Block handlers must now check for pending inline code and flush it
-        // if the block structure interrupts the inline span (Spec 6.1).
-        let clean = content.trim_end();
-        if self.try_handle_header(w, clean, &prefix, avail_width)? {
-            return Ok(());
-        }
-        if self.try_handle_hr(w, clean, &prefix, avail_width)? {
-            return Ok(());
-        }
-        if self.try_handle_list(w, clean, &prefix, avail_width)? {
-            return Ok(());
-        }
-
-        // 4. Standard Text / Lazy Continuation
-        self.render_standard_text(w, content, &prefix, avail_width)
+        Ok(())
     }
 
-    // --- Specific Handlers ---
+    // --- Pure Renderers ---
 
-    fn try_handle_fence<W: Write>(
+    fn render_fence_open<W: Write>(&mut self, w: &mut W, lang: &str) -> io::Result<()> {
+        self.flush_pending_inline(w)?;
+        self.commit_newline(w)?;
+        self.start_highlighter(lang);
+        Ok(())
+    }
+
+    fn render_fence_close<W: Write>(&mut self, w: &mut W) -> io::Result<()> {
+        self.commit_newline(w)?;
+        queue!(w, ResetColor)?;
+        self.pending_newline = true;
+        Ok(())
+    }
+
+    fn render_math_open<W: Write>(&mut self, w: &mut W) -> io::Result<()> {
+        self.flush_pending_inline(w)?;
+        self.commit_newline(w)?;
+        Ok(())
+    }
+
+    fn render_math_close<W: Write>(&mut self, w: &mut W) -> io::Result<()> {
+        let converted = unicodeit::replace(&self.math_buffer);
+        let p_width = self.margin + (self.blockquote_depth * 2);
+        let avail = self.get_width().saturating_sub(p_width + self.margin);
+        let padding = avail.saturating_sub(self.visible_width(&converted)) / 2;
+
+        self.commit_newline(w)?;
+        queue!(
+            w,
+            Print(" ".repeat(self.margin + padding)),
+            Print(STYLE_MATH),
+            Print(converted),
+            Print(STYLE_RESET)
+        )?;
+        self.pending_newline = true;
+        self.math_buffer.clear();
+        Ok(())
+    }
+
+    fn render_math_content(&mut self, trimmed: &str) {
+        self.math_buffer.push_str(trimmed);
+        self.math_buffer.push(' ');
+    }
+
+    fn render_header<W: Write>(
         &mut self,
         w: &mut W,
-        full: &str,
-        trimmed: &str,
-    ) -> io::Result<bool> {
-        let match_data = RE_CODE_FENCE.captures(trimmed);
+        level: usize,
+        text: &str,
+        prefix: &str,
+        avail: usize,
+    ) -> io::Result<()> {
+        self.flush_pending_inline(w)?;
+        self.commit_newline(w)?;
 
-        // Closing Fence
-        if let Some((f_char, min_len, _)) = self.active_fence {
-            if let Some(caps) = &match_data {
-                let fence = &caps[2];
-                if fence.starts_with(f_char) && fence.len() >= min_len && caps[3].trim().is_empty()
-                {
-                    self.active_fence = None;
-                    self.commit_newline(w)?;
-                    queue!(w, ResetColor)?;
-                    self.pending_newline = true;
-                    return Ok(true);
-                }
-            }
-            self.render_code_line(w, full)?;
-            return Ok(true);
+        queue!(w, Print(prefix))?;
+        if level <= 2 {
+            queue!(w, Print("\n"))?;
         }
 
-        // Opening Fence
-        if let Some(caps) = match_data {
-            let fence = &caps[2];
-            let indent_len = caps[1].len();
-            let info = caps[3].trim();
-            if let Some(f_char) = fence.chars().next()
-                && (f_char != '`' || !info.contains('`'))
-            {
-                self.flush_pending_inline(w)?;
-                self.commit_newline(w)?;
-                self.list_context.pop_to_indent(indent_len);
-                self.active_fence = Some((f_char, fence.len(), indent_len));
+        self.scratch_buffer.clear();
+        let style = match level {
+            1 => STYLE_H1,
+            2 => STYLE_H2,
+            3 => STYLE_H3,
+            _ => STYLE_H_DEFAULT,
+        };
+        self.render_inline(text, None, Some(style));
+
+        if level <= 2 {
+            let lines = self.wrap_ansi(&self.scratch_buffer, avail);
+            for (i, line) in lines.iter().enumerate() {
+                let pad = avail.saturating_sub(self.visible_width(line)) / 2;
+                if i > 0 {
+                    queue!(w, Print("\n"), Print(prefix))?;
+                }
+                queue!(
+                    w,
+                    Print(" ".repeat(pad)),
+                    Print(format!("{}{}{}", style, line, STYLE_RESET)),
+                    ResetColor
+                )?;
+            }
+            if level == 1 {
+                queue!(w, Print("\n"), Print(prefix), Print("─".repeat(avail)))?;
+            }
+            self.pending_newline = true;
+        } else {
+            queue!(
+                w,
+                Print(style),
+                Print(&self.scratch_buffer),
+                Print(STYLE_RESET)
+            )?;
+            self.pending_newline = true;
+        }
+        Ok(())
+    }
+
+    fn render_list_item<W: Write>(
+        &mut self,
+        w: &mut W,
+        indent: usize,
+        marker: &str,
+        separator: &str,
+        text: &str,
+        is_ordered: bool,
+        prefix: &str,
+        avail: usize,
+    ) -> io::Result<()> {
+        self.flush_pending_inline(w)?;
+        self.commit_newline(w)?;
+
+        let disp_bullet = if is_ordered { marker } else { "•" };
+        let marker_width = self.visible_width(disp_bullet) + separator.len();
+
+        let last_indent = self.list_context.last_indent().unwrap_or(0);
+        if self.list_context.is_empty() || indent > last_indent {
+            self.list_context.push(indent, marker_width);
+        } else if indent < last_indent {
+            self.list_context.pop_to_indent(indent);
+            if self.list_context.last_indent().is_some_and(|d| d != indent) {
+                self.list_context.push(indent, marker_width);
+            }
+        } else {
+            self.list_context.update_last_marker_width(marker_width);
+        }
+
+        let full_stack_width = self.list_context.structural_width();
+        let parent_width = self.list_context.parent_width();
+
+        let hang_indent = " ".repeat(full_stack_width);
+        let content_width = avail.saturating_sub(full_stack_width);
+
+        queue!(
+            w,
+            Print(prefix),
+            Print(" ".repeat(parent_width)),
+            Print(STYLE_LIST_BULLET),
+            Print(disp_bullet),
+            Print(STYLE_RESET),
+            Print(separator)
+        )?;
+
+        if let Some(fcaps) = RE_CODE_FENCE.captures(text) {
+            queue!(w, Print("\n"))?;
+
+            let fence_chars = &fcaps[2];
+            let info = fcaps[3].trim();
+
+            if let Some(f_char) = fence_chars.chars().next() {
+                self.active_fence = Some((f_char, fence_chars.len(), 0));
+
                 let lang = info.split_whitespace().next().unwrap_or("bash");
                 self.code_lang = lang.to_string();
                 self.start_highlighter(&self.code_lang.clone());
-                return Ok(true);
             }
+            return Ok(());
         }
-        Ok(false)
-    }
 
-    fn try_handle_math<W: Write>(&mut self, w: &mut W, trimmed: &str) -> io::Result<bool> {
-        if RE_MATH_BLOCK.is_match(trimmed) {
-            if self.in_math_block {
-                self.in_math_block = false;
-                let converted = unicodeit::replace(&self.math_buffer);
-                let p_width = self.margin + (self.blockquote_depth * 2);
-                let avail = self.get_width().saturating_sub(p_width + self.margin);
-                let padding = avail.saturating_sub(self.visible_width(&converted)) / 2;
+        self.scratch_buffer.clear();
+        self.render_inline(text, None, None);
+        let lines = self.wrap_ansi(&self.scratch_buffer, content_width);
 
-                self.commit_newline(w)?;
-                queue!(
-                    w,
-                    Print(" ".repeat(self.margin + padding)),
-                    Print(STYLE_MATH),
-                    Print(converted),
-                    Print(STYLE_RESET)
-                )?;
-                self.pending_newline = true;
-                self.math_buffer.clear();
-            } else {
-                self.flush_pending_inline(w)?;
-                self.commit_newline(w)?;
-                self.exit_block_context();
-                self.in_math_block = true;
-            }
-            return Ok(true);
-        }
-        if self.in_math_block {
-            self.math_buffer.push_str(trimmed);
-            self.math_buffer.push(' ');
-            return Ok(true);
-        }
-        Ok(false)
-    }
-
-    fn try_handle_table<W: Write>(&mut self, w: &mut W, trimmed: &str) -> io::Result<bool> {
-        if self.in_table && RE_TABLE_SEP.is_match(trimmed) {
-            self.table_header_printed = true;
-            return Ok(true);
-        }
-        if RE_TABLE_ROW.is_match(trimmed) {
-            if !self.in_table {
-                self.flush_pending_inline(w)?;
-                self.commit_newline(w)?;
-                self.exit_block_context();
-                self.in_table = true;
-            }
-            self.render_stream_table_row(w, trimmed)?;
-            return Ok(true);
-        }
-        self.in_table = false;
-        self.table_header_printed = false;
-        Ok(false)
-    }
-
-    fn try_handle_header<W: Write>(
-        &mut self,
-        w: &mut W,
-        clean: &str,
-        prefix: &str,
-        avail: usize,
-    ) -> io::Result<bool> {
-        if let Some(caps) = RE_HEADER.captures(clean) {
-            self.flush_pending_inline(w)?;
-            self.commit_newline(w)?;
-            let level = caps.get(1).map_or(0, |m| m.len());
-            let text = self.clean_atx_header_text(caps.get(2).map_or("", |m| m.as_str()));
-            self.exit_block_context();
-
-            queue!(w, Print(prefix))?;
-            if level <= 2 {
-                queue!(w, Print("\n"))?;
-            }
-
-            self.scratch_buffer.clear();
-            let style = match level {
-                1 => STYLE_H1,
-                2 => STYLE_H2,
-                3 => STYLE_H3,
-                _ => STYLE_H_DEFAULT,
-            };
-            self.render_inline(text, None, Some(style));
-
-            if level <= 2 {
-                let lines = self.wrap_ansi(&self.scratch_buffer, avail);
-                for (i, line) in lines.iter().enumerate() {
-                    let pad = avail.saturating_sub(self.visible_width(line)) / 2;
-                    if i > 0 {
-                        queue!(w, Print("\n"), Print(prefix))?;
-                    }
-                    queue!(
-                        w,
-                        Print(" ".repeat(pad)),
-                        Print(format!("{}{}{}", style, line, STYLE_RESET)),
-                        ResetColor
-                    )?;
-                }
-                if level == 1 {
-                    queue!(w, Print("\n"), Print(prefix), Print("─".repeat(avail)))?;
-                }
-                self.pending_newline = true;
-            } else {
-                queue!(
-                    w,
-                    Print(style),
-                    Print(&self.scratch_buffer),
-                    Print(STYLE_RESET)
-                )?;
-                self.pending_newline = true;
-            }
-            return Ok(true);
-        }
-        Ok(false)
-    }
-
-    fn try_handle_list<W: Write>(
-        &mut self,
-        w: &mut W,
-        clean: &str,
-        prefix: &str,
-        avail: usize,
-    ) -> io::Result<bool> {
-        if let Some(caps) = RE_LIST.captures(clean) {
-            self.flush_pending_inline(w)?;
-            self.commit_newline(w)?;
-            let indent = caps.get(1).map_or(0, |m| m.len());
-            let bullet = caps.get(2).map_or("-", |m| m.as_str());
-            let separator = caps.get(3).map_or(" ", |m| m.as_str());
-            let text = caps.get(4).map_or("", |m| m.as_str());
-
-            let is_ord = bullet.chars().any(|c| c.is_numeric());
-            let disp_bullet = if is_ord { bullet } else { "•" };
-            let marker_width = self.visible_width(disp_bullet) + separator.len();
-
-            let last_indent = self.list_context.last_indent().unwrap_or(0);
-            if self.list_context.is_empty() || indent > last_indent {
-                self.list_context.push(indent, marker_width);
-            } else if indent < last_indent {
-                self.list_context.pop_to_indent(indent);
-                if self.list_context.last_indent().is_some_and(|d| d != indent) {
-                    self.list_context.push(indent, marker_width);
-                }
-            } else {
-                // Same level: update width in case marker size changed (e.g. 9. -> 10.)
-                self.list_context.update_last_marker_width(marker_width);
-            }
-
-            let full_stack_width = self.list_context.structural_width();
-            let parent_width = self.list_context.parent_width();
-
-            let hang_indent = " ".repeat(full_stack_width);
-            let content_width = avail.saturating_sub(full_stack_width);
-
-            queue!(
-                w,
-                Print(prefix),
-                Print(" ".repeat(parent_width)),
-                Print(STYLE_LIST_BULLET),
-                Print(disp_bullet),
-                Print(STYLE_RESET),
-                Print(separator)
-            )?;
-
-            // Check if the text portion looks like a code fence start (e.g., "```ruby")
-            if let Some(fcaps) = RE_CODE_FENCE.captures(text) {
-                queue!(w, Print("\n"))?;
-
-                let fence_chars = &fcaps[2];
-                let info = fcaps[3].trim();
-
-                if let Some(f_char) = fence_chars.chars().next() {
-                    self.active_fence = Some((f_char, fence_chars.len(), 0));
-
-                    let lang = info.split_whitespace().next().unwrap_or("bash");
-                    self.code_lang = lang.to_string();
-                    self.start_highlighter(&self.code_lang.clone());
-                }
-                return Ok(true);
-            }
-
-            self.scratch_buffer.clear();
-            self.render_inline(text, None, None);
-            let lines = self.wrap_ansi(&self.scratch_buffer, content_width);
-
-            if lines.is_empty() {
-                self.pending_newline = true;
-            } else {
-                for (i, line) in lines.iter().enumerate() {
-                    if i > 0 {
-                        queue!(w, Print("\n"), Print(prefix), Print(&hang_indent))?;
-                    }
-                    queue!(w, Print(line), ResetColor)?;
-                }
-                self.pending_newline = true;
-            }
-            return Ok(true);
-        }
-        Ok(false)
-    }
-
-    fn try_handle_hr<W: Write>(
-        &mut self,
-        w: &mut W,
-        clean: &str,
-        prefix: &str,
-        avail: usize,
-    ) -> io::Result<bool> {
-        if RE_HR.is_match(clean) {
-            self.flush_pending_inline(w)?;
-            self.commit_newline(w)?;
-            queue!(
-                w,
-                Print(prefix),
-                SetForegroundColor(Color::DarkGrey),
-                Print("─".repeat(avail)),
-                ResetColor
-            )?;
+        if lines.is_empty() {
             self.pending_newline = true;
-            self.exit_block_context();
-            return Ok(true);
+        } else {
+            for (i, line) in lines.iter().enumerate() {
+                if i > 0 {
+                    queue!(w, Print("\n"), Print(prefix), Print(&hang_indent))?;
+                }
+                queue!(w, Print(line), ResetColor)?;
+            }
+            self.pending_newline = true;
         }
-        Ok(false)
+        Ok(())
+    }
+
+    fn render_thematic_break<W: Write>(
+        &mut self,
+        w: &mut W,
+        prefix: &str,
+        avail: usize,
+    ) -> io::Result<()> {
+        self.flush_pending_inline(w)?;
+        self.commit_newline(w)?;
+        queue!(
+            w,
+            Print(prefix),
+            SetForegroundColor(Color::DarkGrey),
+            Print("─".repeat(avail)),
+            ResetColor
+        )?;
+        self.pending_newline = true;
+        Ok(())
     }
 
     fn render_standard_text<W: Write>(
@@ -1024,6 +986,56 @@ impl MarkdownStreamer {
             }
         }
         Ok(())
+    }
+
+    fn update_block_state(&mut self, classified: &ClassifiedLine) {
+        match &classified.kind {
+            BlockKind::FenceOpen {
+                fence_char,
+                fence_len,
+                indent,
+                lang,
+            } => {
+                self.list_context.pop_to_indent(*indent);
+                self.active_fence = Some((*fence_char, *fence_len, *indent));
+                self.code_lang = lang.clone();
+            }
+            BlockKind::FenceClose => {
+                self.active_fence = None;
+            }
+            BlockKind::FenceContent => {}
+            BlockKind::MathOpen => {
+                self.exit_block_context();
+                self.in_math_block = true;
+            }
+            BlockKind::MathClose => {
+                self.in_math_block = false;
+            }
+            BlockKind::MathContent => {}
+            BlockKind::TableSeparator => {
+                self.table_header_printed = true;
+            }
+            BlockKind::TableRow => {
+                if !self.in_table {
+                    self.exit_block_context();
+                    self.in_table = true;
+                }
+            }
+            BlockKind::Header { .. } => {
+                self.exit_block_context();
+            }
+            BlockKind::ThematicBreak => {
+                self.exit_block_context();
+            }
+            BlockKind::ListItem { .. } => {
+                self.in_table = false;
+                self.table_header_printed = false;
+            }
+            BlockKind::BlankLine | BlockKind::Paragraph => {
+                self.in_table = false;
+                self.table_header_printed = false;
+            }
+        }
     }
 
     fn exit_block_context(&mut self) {
@@ -1238,6 +1250,7 @@ impl MarkdownStreamer {
     }
 
     fn render_stream_table_row<W: Write>(&mut self, w: &mut W, row_str: &str) -> io::Result<()> {
+        self.flush_pending_inline(w)?;
         self.commit_newline(w)?;
         let term_width = self.get_width();
 
@@ -1334,7 +1347,6 @@ impl MarkdownStreamer {
             }
         }
         self.pending_newline = true;
-        self.table_header_printed = true;
         Ok(())
     }
 
@@ -1604,12 +1616,14 @@ impl MarkdownStreamer {
                 {
                     return ClassifiedLine {
                         blockquote_depth: 0,
+                        content: expanded.to_string(),
                         kind: BlockKind::FenceClose,
                     };
                 }
             }
             return ClassifiedLine {
                 blockquote_depth: 0,
+                content: expanded.to_string(),
                 kind: BlockKind::FenceContent,
             };
         }
@@ -1619,11 +1633,13 @@ impl MarkdownStreamer {
             if RE_MATH_BLOCK.is_match(trimmed) {
                 return ClassifiedLine {
                     blockquote_depth: 0,
+                    content: expanded.to_string(),
                     kind: BlockKind::MathClose,
                 };
             }
             return ClassifiedLine {
                 blockquote_depth: 0,
+                content: expanded.to_string(),
                 kind: BlockKind::MathContent,
             };
         }
@@ -1632,6 +1648,7 @@ impl MarkdownStreamer {
         if self.in_table && RE_TABLE_SEP.is_match(trimmed) {
             return ClassifiedLine {
                 blockquote_depth: 0,
+                content: expanded.to_string(),
                 kind: BlockKind::TableSeparator,
             };
         }
@@ -1640,6 +1657,7 @@ impl MarkdownStreamer {
         if RE_TABLE_ROW.is_match(trimmed) {
             return ClassifiedLine {
                 blockquote_depth: 0,
+                content: expanded.to_string(),
                 kind: BlockKind::TableRow,
             };
         }
@@ -1675,6 +1693,7 @@ impl MarkdownStreamer {
                         .to_string();
                     return ClassifiedLine {
                         blockquote_depth,
+                        content: content.clone(),
                         kind: BlockKind::FenceOpen {
                             fence_char: f_char,
                             fence_len: fence.len(),
@@ -1690,6 +1709,7 @@ impl MarkdownStreamer {
         if RE_MATH_BLOCK.is_match(clean) {
             return ClassifiedLine {
                 blockquote_depth,
+                content: content.clone(),
                 kind: BlockKind::MathOpen,
             };
         }
@@ -1701,6 +1721,7 @@ impl MarkdownStreamer {
             let text = Self::clean_atx_header_text_static(raw_text).to_string();
             return ClassifiedLine {
                 blockquote_depth,
+                content: content.clone(),
                 kind: BlockKind::Header { level, text },
             };
         }
@@ -1709,6 +1730,7 @@ impl MarkdownStreamer {
         if RE_HR.is_match(clean) {
             return ClassifiedLine {
                 blockquote_depth,
+                content: content.clone(),
                 kind: BlockKind::ThematicBreak,
             };
         }
@@ -1722,6 +1744,7 @@ impl MarkdownStreamer {
             let is_ordered = marker.chars().any(|c| c.is_numeric());
             return ClassifiedLine {
                 blockquote_depth,
+                content: content.clone(),
                 kind: BlockKind::ListItem {
                     indent,
                     marker,
@@ -1736,6 +1759,7 @@ impl MarkdownStreamer {
         if clean.is_empty() {
             return ClassifiedLine {
                 blockquote_depth,
+                content,
                 kind: BlockKind::BlankLine,
             };
         }
@@ -1743,6 +1767,7 @@ impl MarkdownStreamer {
         // Paragraph (fallback)
         ClassifiedLine {
             blockquote_depth,
+            content,
             kind: BlockKind::Paragraph,
         }
     }
@@ -1760,10 +1785,6 @@ impl MarkdownStreamer {
         } else {
             &text[..end]
         }
-    }
-
-    fn clean_atx_header_text<'a>(&self, text: &'a str) -> &'a str {
-        Self::clean_atx_header_text_static(text)
     }
 
     fn start_highlighter(&mut self, lang: &str) {
