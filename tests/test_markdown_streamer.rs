@@ -194,6 +194,27 @@ inline_tests! {
     blockquote_no_space_after_marker: { input: ">foo\n", contains: "foo" },
     blockquote_tab_after_marker: { input: ">\t\tfoo\n", contains: "foo" },
     list_tab_after_marker: { input: "-\t\tfoo\n", contains: "foo" },
+
+    // Ordered list `)` delimiter (critical LLM output pattern)
+    list_ordered_paren_single: { input: "1) First\n", contains: "1) First" },
+    list_ordered_paren_multi: { input: "1) First\n2) Second\n", contains: "2) Second" },
+    list_ordered_paren_styled: { input: "1) First\n", raw_contains: "\x1b[33m" },
+
+    // Inline code inside list items (high priority LLM pattern)
+    list_item_inline_code: { input: "- Use the `foo` command\n", contains: "• Use the foo command" },
+    list_item_inline_code_styled: { input: "- Use the `foo` command\n", raw_contains: "48;2;60;60;60m" },
+
+    // Bold around inline code (high priority LLM pattern)
+    bold_around_inline_code: { input: "The **`--force`** flag\n", contains: "The --force flag" },
+    bold_around_inline_code_styled: { input: "The **`--force`** flag\n", raw_contains: "\x1b[1m" },
+
+    // Strikethrough
+    strikethrough_basic: { input: "~~removed~~\n", raw_contains: "\x1b[9m" },
+    strikethrough_in_sentence: { input: "Use ~~old~~ new method\n", contains: "Use old new method" },
+
+    // Consecutive headings without blank lines
+    consecutive_headings_h2_h3: { input: "## Section\n### Subsection\n", contains: "Section" },
+    consecutive_headings_h2_h3_sub: { input: "## Section\n### Subsection\n", contains: "Subsection" },
 }
 
 #[test]
@@ -923,6 +944,335 @@ fn test_blockquote_empty() {
     assert!(
         raw.contains("│"),
         "Empty blockquote should render border. Output:\n{}",
+        raw
+    );
+}
+
+// --- Critical LLM Patterns: Ordered List `)` Delimiter ---
+
+#[test]
+fn test_list_ordered_paren_renders_as_list() {
+    let (_, clean) = render("1) Step one\n2) Step two\n3) Step three\n", 1000, 0);
+    assert!(
+        clean.contains("1)") && clean.contains("Step one"),
+        "Ordered list with ) delimiter should render. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("2)") && clean.contains("Step two"),
+        "Second item missing. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("3)") && clean.contains("Step three"),
+        "Third item missing. Output:\n{}",
+        clean
+    );
+}
+
+#[test]
+fn test_list_ordered_paren_has_styling() {
+    // `)` delimiter should get the same yellow marker styling as `.` delimiter
+    let (raw, _) = render("1) Step one\n", 1000, 0);
+    assert!(
+        raw.contains("\x1b[33m1)"),
+        "Ordered list with ) delimiter should have yellow styling. Output:\n{}",
+        raw
+    );
+}
+
+// --- High Priority: Inline Code in List Items ---
+
+#[test]
+fn test_list_item_with_inline_code() {
+    let (raw, clean) = render("- Use the `foo` command\n- Run `bar --verbose`\n", 1000, 0);
+    assert_eq!(
+        clean.matches("•").count(),
+        2,
+        "Should have two bullets. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("foo"),
+        "Inline code content 'foo' missing. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("bar --verbose"),
+        "Inline code content 'bar --verbose' missing. Output:\n{}",
+        clean
+    );
+    assert!(
+        raw.contains("48;2;60;60;60m"),
+        "Inline code should have background color in list items. Output:\n{}",
+        raw
+    );
+}
+
+#[test]
+fn test_list_item_multiple_inline_codes() {
+    let (_, clean) = render("- Replace `old` with `new`\n", 1000, 0);
+    assert!(
+        clean.contains("old") && clean.contains("new"),
+        "Multiple inline codes should render. Output:\n{}",
+        clean
+    );
+}
+
+#[test]
+fn test_ordered_list_item_with_inline_code() {
+    let (raw, clean) = render("1. Run `cargo test`\n2. Check `output.log`\n", 1000, 0);
+    assert!(
+        clean.contains("cargo test"),
+        "Inline code in ordered list missing. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("output.log"),
+        "Second inline code missing. Output:\n{}",
+        clean
+    );
+    assert!(
+        raw.contains("48;2;60;60;60m"),
+        "Should have code background styling. Output:\n{}",
+        raw
+    );
+}
+
+// --- High Priority: Links in List Items ---
+
+#[test]
+fn test_list_item_with_link() {
+    let (raw, clean) = render("- See [docs](https://example.com)\n", 1000, 0);
+    assert!(
+        clean.contains("•"),
+        "Should render as list item. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("docs"),
+        "Link text should be visible. Output:\n{}",
+        clean
+    );
+    assert!(
+        raw.contains("\x1b]8;;https://example.com\x1b\\"),
+        "OSC 8 link should be present. Output:\n{}",
+        raw
+    );
+}
+
+#[test]
+fn test_list_item_with_link_and_text() {
+    let (_, clean) = render("- Read the [API docs](https://api.example.com) for details\n", 1000, 0);
+    assert!(
+        clean.contains("API docs") && clean.contains("for details"),
+        "Link text and surrounding text should render. Output:\n{}",
+        clean
+    );
+}
+
+#[test]
+fn test_ordered_list_with_links() {
+    let (raw, _) = render(
+        "1. Visit [homepage](https://example.com)\n2. Click [signup](https://example.com/signup)\n",
+        1000,
+        0,
+    );
+    assert!(
+        raw.contains("\x1b]8;;https://example.com\x1b\\"),
+        "First link OSC 8 missing. Output:\n{}",
+        raw
+    );
+    assert!(
+        raw.contains("\x1b]8;;https://example.com/signup\x1b\\"),
+        "Second link OSC 8 missing. Output:\n{}",
+        raw
+    );
+}
+
+// --- High Priority: Bold Around Inline Code ---
+
+#[test]
+fn test_bold_wrapping_inline_code() {
+    let (raw, clean) = render("The **`--force`** flag is dangerous\n", 1000, 0);
+    assert!(
+        clean.contains("--force"),
+        "Code content should be present. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("flag is dangerous"),
+        "Surrounding text should be present. Output:\n{}",
+        clean
+    );
+    // Bold should be applied around the code span
+    let force_idx = raw.find("--force").expect("--force not found in raw");
+    let before = &raw[..force_idx];
+    assert!(
+        before.contains("\x1b[1m"),
+        "Bold should be active before inline code. Output:\n{}",
+        raw
+    );
+}
+
+#[test]
+fn test_italic_wrapping_inline_code() {
+    let (raw, clean) = render("Use *`command`* carefully\n", 1000, 0);
+    assert!(
+        clean.contains("command"),
+        "Code content missing. Output:\n{}",
+        clean
+    );
+    let cmd_idx = raw.find("command").expect("command not found in raw");
+    let before = &raw[..cmd_idx];
+    assert!(
+        before.contains("\x1b[3m"),
+        "Italic should be active before inline code. Output:\n{}",
+        raw
+    );
+}
+
+#[test]
+fn test_bold_code_in_list_item() {
+    // Combined pattern: bold around code inside a list item
+    let (raw, clean) = render("- Use **`--force`** to override\n", 1000, 0);
+    assert!(
+        clean.contains("•"),
+        "Should be a list item. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("--force"),
+        "Code content missing. Output:\n{}",
+        clean
+    );
+    assert!(
+        raw.contains("\x1b[1m"),
+        "Bold styling should be present. Output:\n{}",
+        raw
+    );
+    assert!(
+        raw.contains("48;2;60;60;60m"),
+        "Code background should be present. Output:\n{}",
+        raw
+    );
+}
+
+// --- Medium Priority: Strikethrough ---
+
+#[test]
+fn test_strikethrough_rendering() {
+    let (raw, clean) = render("Use ~~old method~~ new approach\n", 1000, 0);
+    assert!(
+        clean.contains("old method"),
+        "Strikethrough content should be present. Output:\n{}",
+        clean
+    );
+    assert!(
+        raw.contains("\x1b[9m"),
+        "Strikethrough ANSI code should be present. Output:\n{}",
+        raw
+    );
+    assert!(
+        raw.contains("\x1b[29m"),
+        "Strikethrough reset should be present. Output:\n{}",
+        raw
+    );
+}
+
+#[test]
+fn test_strikethrough_in_list() {
+    let (raw, _) = render("- ~~Remove this~~\n", 1000, 0);
+    assert!(
+        raw.contains("\x1b[9m"),
+        "Strikethrough should work inside list items. Output:\n{}",
+        raw
+    );
+}
+
+// --- Medium Priority: Consecutive Headings ---
+
+#[test]
+fn test_consecutive_headings_without_blank_line() {
+    let (raw, clean) = render("## Section\n### Subsection\n", 1000, 0);
+    assert!(
+        clean.contains("Section"),
+        "First heading missing. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("Subsection"),
+        "Second heading missing. Output:\n{}",
+        clean
+    );
+    // Both should have bold styling
+    let section_count = raw.matches("\x1b[1m").count();
+    assert!(
+        section_count >= 2,
+        "Both headings should have bold styling. Found {} bold sequences. Output:\n{}",
+        section_count,
+        raw
+    );
+}
+
+#[test]
+fn test_consecutive_headings_h1_h2_h3() {
+    let (_, clean) = render("# Main\n## Sub\n### Detail\n", 1000, 0);
+    assert!(
+        clean.contains("Main"),
+        "H1 content missing. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("Sub"),
+        "H2 content missing. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("Detail"),
+        "H3 content missing. Output:\n{}",
+        clean
+    );
+}
+
+#[test]
+fn test_heading_then_list_no_blank_line() {
+    // LLMs often output a heading immediately followed by a list
+    let (_, clean) = render("### Steps\n1. First\n2. Second\n", 1000, 0);
+    assert!(
+        clean.contains("Steps"),
+        "Heading missing. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("1.") && clean.contains("First"),
+        "First list item missing. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("2.") && clean.contains("Second"),
+        "Second list item missing. Output:\n{}",
+        clean
+    );
+}
+
+#[test]
+fn test_heading_then_code_block_no_blank_line() {
+    // LLMs often output heading + code block without blank line
+    let (raw, clean) = render("### Example\n```rust\nfn main() {}\n```\n", 1000, 0);
+    assert!(
+        clean.contains("Example"),
+        "Heading missing. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("fn main()"),
+        "Code content missing. Output:\n{}",
+        clean
+    );
+    assert!(
+        raw.contains("48;2;30;30;30m"),
+        "Code background missing. Output:\n{}",
         raw
     );
 }

@@ -652,6 +652,41 @@ fn classify_list_empty_marker_only() {
     );
 }
 
+// --- §5.2 Ordered List `)` Delimiter ---
+
+#[test]
+fn classify_ordered_list_paren_delimiter() {
+    // `1) item` — ordered list with `)` delimiter (common LLM output)
+    let s = make_streamer();
+    let result = s.classify_line("1) First");
+    assert_eq!(
+        result.kind,
+        BlockKind::ListItem {
+            indent: 0,
+            marker: "1)".to_string(),
+            separator: " ".to_string(),
+            content: "First".to_string(),
+            is_ordered: true,
+        }
+    );
+}
+
+#[test]
+fn classify_ordered_list_paren_multidigit() {
+    let s = make_streamer();
+    let result = s.classify_line("12) Twelfth");
+    assert_eq!(
+        result.kind,
+        BlockKind::ListItem {
+            indent: 0,
+            marker: "12)".to_string(),
+            separator: " ".to_string(),
+            content: "Twelfth".to_string(),
+            is_ordered: true,
+        }
+    );
+}
+
 // --- §2.2 Tab Expansion Edge Cases ---
 
 #[test]

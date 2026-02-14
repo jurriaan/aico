@@ -34,7 +34,7 @@ static RE_HEADER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(#{1,6})\s+(.
 static RE_HR: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[ ]{0,3}(?:[-*_][ \t]*){3,}$").unwrap());
 static RE_LIST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(\s*)([-*+]|\d+\.)(?:(\s+)(.*)|$)").unwrap());
+    LazyLock::new(|| Regex::new(r"^(\s*)([-*+]|\d+[.)])(?:(\s+)(.*)|$)").unwrap());
 static RE_BLOCKQUOTE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\s*>\s?)(.*)").unwrap());
 
 static RE_TABLE_ROW: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*\|(.*)\|\s*$").unwrap());
