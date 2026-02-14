@@ -1063,7 +1063,11 @@ fn test_list_item_with_link() {
 
 #[test]
 fn test_list_item_with_link_and_text() {
-    let (_, clean) = render("- Read the [API docs](https://api.example.com) for details\n", 1000, 0);
+    let (_, clean) = render(
+        "- Read the [API docs](https://api.example.com) for details\n",
+        1000,
+        0,
+    );
     assert!(
         clean.contains("API docs") && clean.contains("for details"),
         "Link text and surrounding text should render. Output:\n{}",

@@ -110,6 +110,11 @@ static RE_ANSI_PARTS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\x1b\[([0-
 
 // --- Helper Structs ---
 
+struct BlockLayout {
+    prefix: String,
+    avail_width: usize,
+}
+
 struct ListLevel {
     source_indent: usize,
     marker_width: usize,
@@ -456,7 +461,7 @@ fn parse_segments(text: &str, active_ticks: Option<usize>) -> Vec<ParsedSegment>
                 end = offset + search_start + close_idx + n;
                 while it
                     .peek()
-                    .map_or(false, |next| offset + next.get(0).unwrap().start() < end)
+                    .is_some_and(|next| offset + next.get(0).unwrap().start() < end)
                 {
                     it.next();
                 }
@@ -673,18 +678,12 @@ impl MarkdownStreamer {
                 self.render_stream_table_row(w, trimmed)?;
             }
             BlockKind::Header { level, text } => {
-                let prefix = self.build_block_prefix();
-                let term_width = self.get_width();
-                let prefix_width = self.margin + (self.blockquote_depth * 2);
-                let avail_width = term_width.saturating_sub(prefix_width + self.margin);
-                self.render_header(w, level, &text, &prefix, avail_width)?;
+                let layout = self.compute_block_layout();
+                self.render_header(w, level, &text, &layout)?;
             }
             BlockKind::ThematicBreak => {
-                let prefix = self.build_block_prefix();
-                let term_width = self.get_width();
-                let prefix_width = self.margin + (self.blockquote_depth * 2);
-                let avail_width = term_width.saturating_sub(prefix_width + self.margin);
-                self.render_thematic_break(w, &prefix, avail_width)?;
+                let layout = self.compute_block_layout();
+                self.render_thematic_break(w, &layout)?;
             }
             BlockKind::ListItem {
                 indent,
@@ -693,27 +692,14 @@ impl MarkdownStreamer {
                 content,
                 is_ordered,
             } => {
-                let prefix = self.build_block_prefix();
-                let term_width = self.get_width();
-                let prefix_width = self.margin + (self.blockquote_depth * 2);
-                let avail_width = term_width.saturating_sub(prefix_width + self.margin);
+                let layout = self.compute_block_layout();
                 self.render_list_item(
-                    w,
-                    indent,
-                    &marker,
-                    &separator,
-                    &content,
-                    is_ordered,
-                    &prefix,
-                    avail_width,
+                    w, indent, &marker, &separator, &content, is_ordered, &layout,
                 )?;
             }
             BlockKind::BlankLine | BlockKind::Paragraph => {
-                let prefix = self.build_block_prefix();
-                let term_width = self.get_width();
-                let prefix_width = self.margin + (self.blockquote_depth * 2);
-                let avail_width = term_width.saturating_sub(prefix_width + self.margin);
-                self.render_standard_text(w, &classified.content, &prefix, avail_width)?;
+                let layout = self.compute_block_layout();
+                self.render_standard_text(w, &classified.content, &layout)?;
             }
         }
         Ok(())
@@ -765,16 +751,29 @@ impl MarkdownStreamer {
         self.math_buffer.push(' ');
     }
 
+    fn compute_block_layout(&self) -> BlockLayout {
+        let prefix = self.build_block_prefix();
+        let term_width = self.get_width();
+        let prefix_width = self.margin + (self.blockquote_depth * 2);
+        let avail_width = term_width.saturating_sub(prefix_width + self.margin);
+        BlockLayout {
+            prefix,
+            avail_width,
+        }
+    }
+
     fn render_header<W: Write>(
         &mut self,
         w: &mut W,
         level: usize,
         text: &str,
-        prefix: &str,
-        avail: usize,
+        layout: &BlockLayout,
     ) -> io::Result<()> {
         self.flush_pending_inline(w)?;
         self.commit_newline(w)?;
+
+        let prefix = &layout.prefix;
+        let avail = layout.avail_width;
 
         queue!(w, Print(prefix))?;
         if level <= 2 {
@@ -820,6 +819,7 @@ impl MarkdownStreamer {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_list_item<W: Write>(
         &mut self,
         w: &mut W,
@@ -828,9 +828,11 @@ impl MarkdownStreamer {
         separator: &str,
         text: &str,
         is_ordered: bool,
-        prefix: &str,
-        avail: usize,
+        layout: &BlockLayout,
     ) -> io::Result<()> {
+        let prefix = &layout.prefix;
+        let avail = layout.avail_width;
+
         self.flush_pending_inline(w)?;
         self.commit_newline(w)?;
 
@@ -902,9 +904,11 @@ impl MarkdownStreamer {
     fn render_thematic_break<W: Write>(
         &mut self,
         w: &mut W,
-        prefix: &str,
-        avail: usize,
+        layout: &BlockLayout,
     ) -> io::Result<()> {
+        let prefix = &layout.prefix;
+        let avail = layout.avail_width;
+
         self.flush_pending_inline(w)?;
         self.commit_newline(w)?;
         queue!(
@@ -922,9 +926,11 @@ impl MarkdownStreamer {
         &mut self,
         w: &mut W,
         content: &str,
-        prefix: &str,
-        avail: usize,
+        layout: &BlockLayout,
     ) -> io::Result<()> {
+        let prefix = &layout.prefix;
+        let avail = layout.avail_width;
+
         self.commit_newline(w)?;
         let mut line_content = content.trim_end_matches(['\n', '\r']);
         if line_content.trim().is_empty() {
@@ -1691,20 +1697,20 @@ impl MarkdownStreamer {
             let fence = &caps[2];
             let indent_len = caps[1].len();
             let info = caps[3].trim();
-            if let Some(f_char) = fence.chars().next() {
-                if f_char != '`' || !info.contains('`') {
-                    let lang = info.split_whitespace().next().unwrap_or("bash").to_string();
-                    return ClassifiedLine {
-                        blockquote_depth,
-                        content: content.clone(),
-                        kind: BlockKind::FenceOpen {
-                            fence_char: f_char,
-                            fence_len: fence.len(),
-                            indent: indent_len,
-                            lang,
-                        },
-                    };
-                }
+            if let Some(f_char) = fence.chars().next()
+                && (f_char != '`' || !info.contains('`'))
+            {
+                let lang = info.split_whitespace().next().unwrap_or("bash").to_string();
+                return ClassifiedLine {
+                    blockquote_depth,
+                    content: content.clone(),
+                    kind: BlockKind::FenceOpen {
+                        fence_char: f_char,
+                        fence_len: fence.len(),
+                        indent: indent_len,
+                        lang,
+                    },
+                };
             }
         }
 
