@@ -189,6 +189,11 @@ inline_tests! {
 
     // §5.2 Ordered list start > 1
     list_ordered_start_3: { input: "3. Third\n", contains: "3. Third" },
+
+    // §2.2 Tab expansion
+    blockquote_no_space_after_marker: { input: ">foo\n", contains: "foo" },
+    blockquote_tab_after_marker: { input: ">\t\tfoo\n", contains: "foo" },
+    list_tab_after_marker: { input: "-\t\tfoo\n", contains: "foo" },
 }
 
 #[test]
@@ -919,6 +924,59 @@ fn test_blockquote_empty() {
         raw.contains("│"),
         "Empty blockquote should render border. Output:\n{}",
         raw
+    );
+}
+
+#[test]
+fn test_blockquote_no_space_after_marker() {
+    // `>bar` — space after `>` is optional per CommonMark §5.1
+    let (raw, clean) = render(">bar\n", 1000, 0);
+    assert!(
+        raw.contains("│"),
+        "Blockquote without space should render border. Output:\n{}",
+        raw
+    );
+    assert!(
+        clean.contains("bar"),
+        "Blockquote content should be preserved. Output:\n{}",
+        clean
+    );
+}
+
+#[test]
+fn test_blockquote_tab_indented_content() {
+    // CommonMark §2.2 example: `>\t\tfoo`
+    // After tab expansion at the block level, the `>` consumes one space
+    // from the first tab's expansion. The remaining spaces + second tab
+    // produce significant indentation for the content.
+    let (raw, clean) = render(">\t\tfoo\n", 1000, 0);
+    assert!(
+        raw.contains("│"),
+        "Blockquote with tab should render border. Output:\n{}",
+        raw
+    );
+    assert!(
+        clean.contains("foo"),
+        "Blockquote tab content should contain 'foo'. Output:\n{}",
+        clean
+    );
+}
+
+#[test]
+fn test_list_tab_indented_content() {
+    // CommonMark §2.2 example: `-\t\tfoo`
+    // The `-` marker is followed by a tab, which expands and provides
+    // the list item separator. The second tab adds indentation to content.
+    let (_, clean) = render("-\t\tfoo\n", 1000, 0);
+    assert!(
+        clean.contains("•"),
+        "List with tab should render bullet. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("foo"),
+        "List tab content should contain 'foo'. Output:\n{}",
+        clean
     );
 }
 

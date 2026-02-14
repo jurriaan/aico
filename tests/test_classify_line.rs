@@ -651,3 +651,44 @@ fn classify_list_empty_marker_only() {
         }
     );
 }
+
+// --- §2.2 Tab Expansion Edge Cases ---
+
+#[test]
+fn classify_blockquote_without_space() {
+    // `>bar` should still be a blockquote (space after > is optional)
+    let s = make_streamer();
+    let result = s.classify_line(">bar");
+    assert_eq!(result.blockquote_depth, 1);
+    assert_eq!(result.kind, BlockKind::Paragraph);
+    assert_eq!(result.content, "bar");
+}
+
+#[test]
+fn classify_blockquote_tab_after_marker() {
+    // `>\t\tfoo` — after tab expansion, `>` followed by tab.
+    // Tab at column 1 (after >) expands to 3 spaces (next tab stop at 4).
+    // The blockquote regex consumes `> ` (one space), leaving `  ` + tab-expanded content.
+    let s = make_streamer();
+    let result = s.classify_line(">\t\tfoo");
+    assert_eq!(result.blockquote_depth, 1);
+    // The content after blockquote stripping should preserve the indentation from tabs
+}
+
+#[test]
+fn classify_list_tab_after_marker() {
+    // `-\t\tfoo` — after tab expansion: `- ` then remaining spaces + `foo`
+    // The `-` marker is followed by tab-expanded spaces
+    let s = make_streamer();
+    let result = s.classify_line("-\t\tfoo");
+    match &result.kind {
+        BlockKind::ListItem { content, .. } => {
+            assert!(
+                content.contains("foo"),
+                "List item content should contain 'foo', got: {:?}",
+                content
+            );
+        }
+        other => panic!("Expected ListItem, got: {:?}", other),
+    }
+}
