@@ -200,27 +200,21 @@ impl InlineCodeState {
         self.buffer.clear();
     }
 
-    fn feed(&mut self, token: &str) -> Option<String> {
-        if let Some(n) = self.ticks {
-            if token.starts_with('`') && token.len() == n {
-                let result = self.normalize_content();
-                self.ticks = None;
-                self.buffer.clear();
-                return Some(result);
-            }
-            self.buffer.push_str(&token.replace('\n', " "));
-        }
-        None
+    fn push_content(&mut self, content: &str) {
+        self.buffer.push_str(&content.replace('\n', " "));
+    }
+
+    fn close(&mut self) -> String {
+        let result = Self::normalize_content_static(&self.buffer);
+        self.ticks = None;
+        self.buffer.clear();
+        result
     }
 
     fn append_space(&mut self) {
         if self.is_active() {
             self.buffer.push(' ');
         }
-    }
-
-    fn normalize_content(&self) -> String {
-        Self::normalize_content_static(&self.buffer)
     }
 
     fn normalize_content_static(s: &str) -> String {
@@ -329,6 +323,45 @@ impl InlinePart {
     }
 }
 
+// --- Block Classification ---
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BlockKind {
+    FenceOpen {
+        fence_char: char,
+        fence_len: usize,
+        indent: usize,
+        lang: String,
+    },
+    FenceClose,
+    FenceContent,
+    MathOpen,
+    MathClose,
+    MathContent,
+    TableSeparator,
+    TableRow,
+    Header {
+        level: usize,
+        text: String,
+    },
+    ThematicBreak,
+    ListItem {
+        indent: usize,
+        marker: String,
+        separator: String,
+        content: String,
+        is_ordered: bool,
+    },
+    BlankLine,
+    Paragraph,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassifiedLine {
+    pub blockquote_depth: usize,
+    pub kind: BlockKind,
+}
+
 #[derive(Debug, Clone)]
 enum ParsedSegment {
     /// A complete inline code span on a single line (e.g., `foo`).
@@ -357,33 +390,34 @@ enum ParsedSegment {
     Text(Range<usize>),
 }
 
-fn parse_segments(text: &str, active_ticks: Option<usize>) -> Vec<ParsedSegment> {
-    let find_closer = |t: &str, n: usize| -> Option<usize> {
-        let bytes = t.as_bytes();
-        let mut i = 0;
-        while i < bytes.len() {
-            if bytes[i] == b'`' {
-                let mut count = 0;
-                while i + count < bytes.len() && bytes[i + count] == b'`' {
-                    count += 1;
-                }
-                if count == n {
-                    return Some(i);
-                }
-                i += count;
-            } else {
-                i += 1;
+fn find_backtick_closer(text: &str, n: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'`' {
+            let mut count = 0;
+            while i + count < bytes.len() && bytes[i + count] == b'`' {
+                count += 1;
             }
+            if count == n {
+                return Some(i);
+            }
+            i += count;
+        } else {
+            i += 1;
         }
-        None
-    };
+    }
+    None
+}
+
+fn parse_segments(text: &str, active_ticks: Option<usize>) -> Vec<ParsedSegment> {
 
     let mut segments = Vec::new();
     let mut pos = 0;
 
     // Handle active multi-line code span
     if let Some(n) = active_ticks {
-        if let Some(close_idx) = find_closer(text, n) {
+        if let Some(close_idx) = find_backtick_closer(text, n) {
             if close_idx > 0 {
                 segments.push(ParsedSegment::CodeSpanContent(pos..close_idx));
             }
@@ -420,7 +454,7 @@ fn parse_segments(text: &str, active_ticks: Option<usize>) -> Vec<ParsedSegment>
             let ticks = code.as_str();
             let n = ticks.len();
             let search_start = m.end();
-            if let Some(close_idx) = find_closer(&rest[search_start..], n) {
+            if let Some(close_idx) = find_backtick_closer(&rest[search_start..], n) {
                 end = offset + search_start + close_idx + n;
                 while it
                     .peek()
@@ -1305,6 +1339,26 @@ impl MarkdownStreamer {
     }
 
     pub fn render_inline(&mut self, text: &str, def_bg: Option<Color>, restore_fg: Option<&str>) {
+        let mut parts = self.build_inline_parts(text, def_bg, restore_fg);
+        self.resolve_delimiters(&mut parts);
+
+        for part in parts {
+            for s in &part.pre_style {
+                self.scratch_buffer.push_str(s);
+            }
+            self.scratch_buffer.push_str(&part.content());
+            for s in &part.post_style {
+                self.scratch_buffer.push_str(s);
+            }
+        }
+    }
+
+    fn build_inline_parts(
+        &mut self,
+        text: &str,
+        def_bg: Option<Color>,
+        restore_fg: Option<&str>,
+    ) -> Vec<InlinePart> {
         let active_ticks = self.inline_code.ticks;
         let segments = parse_segments(text, active_ticks);
         let mut parts: Vec<InlinePart> = Vec::new();
@@ -1323,15 +1377,13 @@ impl MarkdownStreamer {
                     self.inline_code.open(*delimiter_len);
                 }
                 ParsedSegment::CodeSpanContent(range) => {
-                    self.inline_code.feed(&text[range.clone()]);
+                    self.inline_code.push_content(&text[range.clone()]);
                 }
-                ParsedSegment::CodeSpanCloser { range, delimiter_len: _ } => {
-                    let tok = &text[range.clone()];
-                    if let Some(content) = self.inline_code.feed(tok) {
-                        let formatted =
-                            self.format_inline_code_content(&content, def_bg, restore_fg);
-                        parts.push(InlinePart::text(formatted));
-                    }
+                ParsedSegment::CodeSpanCloser { range: _, delimiter_len: _ } => {
+                    let content = self.inline_code.close();
+                    let formatted =
+                        self.format_inline_code_content(&content, def_bg, restore_fg);
+                    parts.push(InlinePart::text(formatted));
                 }
                 ParsedSegment::Escape(r) => {
                     parts.push(InlinePart::text(text[r.start + 1..r.end].to_string()));
@@ -1401,17 +1453,7 @@ impl MarkdownStreamer {
             }
         }
 
-        self.resolve_delimiters(&mut parts);
-
-        for part in parts {
-            for s in &part.pre_style {
-                self.scratch_buffer.push_str(s);
-            }
-            self.scratch_buffer.push_str(&part.content());
-            for s in &part.post_style {
-                self.scratch_buffer.push_str(s);
-            }
-        }
+        parts
     }
 
     fn resolve_delimiters(&self, parts: &mut [InlinePart]) {
@@ -1549,8 +1591,163 @@ impl MarkdownStreamer {
         expanded
     }
 
-    fn clean_atx_header_text<'a>(&self, text: &'a str) -> &'a str {
-        // Strip trailing hashes per Spec §4.2
+    pub fn classify_line(&self, expanded: &str) -> ClassifiedLine {
+        let trimmed = expanded.trim_end();
+
+        // 1. Continuation contexts (checked before blockquote stripping)
+
+        // Active code fence: check for close or treat as content
+        if let Some((f_char, min_len, _indent)) = self.active_fence {
+            if let Some(caps) = RE_CODE_FENCE.captures(trimmed) {
+                let fence = &caps[2];
+                if fence.starts_with(f_char) && fence.len() >= min_len && caps[3].trim().is_empty()
+                {
+                    return ClassifiedLine {
+                        blockquote_depth: 0,
+                        kind: BlockKind::FenceClose,
+                    };
+                }
+            }
+            return ClassifiedLine {
+                blockquote_depth: 0,
+                kind: BlockKind::FenceContent,
+            };
+        }
+
+        // Active math block
+        if self.in_math_block {
+            if RE_MATH_BLOCK.is_match(trimmed) {
+                return ClassifiedLine {
+                    blockquote_depth: 0,
+                    kind: BlockKind::MathClose,
+                };
+            }
+            return ClassifiedLine {
+                blockquote_depth: 0,
+                kind: BlockKind::MathContent,
+            };
+        }
+
+        // Table separator (only when already in a table)
+        if self.in_table && RE_TABLE_SEP.is_match(trimmed) {
+            return ClassifiedLine {
+                blockquote_depth: 0,
+                kind: BlockKind::TableSeparator,
+            };
+        }
+
+        // Table row (before blockquote stripping, matching current precedence)
+        if RE_TABLE_ROW.is_match(trimmed) {
+            return ClassifiedLine {
+                blockquote_depth: 0,
+                kind: BlockKind::TableRow,
+            };
+        }
+
+        // 2. Strip blockquotes and count depth
+        let mut content = expanded.to_string();
+        let mut blockquote_depth = 0;
+        loop {
+            let trimmed_content = content.clone();
+            if let Some(caps) = RE_BLOCKQUOTE.captures(&trimmed_content) {
+                blockquote_depth += 1;
+                content = caps.get(2).map_or("", |m| m.as_str()).to_string();
+            } else {
+                break;
+            }
+        }
+
+        let clean = content.trim_end();
+
+        // 3. Post-blockquote classification
+
+        // Code fence open
+        if let Some(caps) = RE_CODE_FENCE.captures(clean) {
+            let fence = &caps[2];
+            let indent_len = caps[1].len();
+            let info = caps[3].trim();
+            if let Some(f_char) = fence.chars().next() {
+                if f_char != '`' || !info.contains('`') {
+                    let lang = info
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("bash")
+                        .to_string();
+                    return ClassifiedLine {
+                        blockquote_depth,
+                        kind: BlockKind::FenceOpen {
+                            fence_char: f_char,
+                            fence_len: fence.len(),
+                            indent: indent_len,
+                            lang,
+                        },
+                    };
+                }
+            }
+        }
+
+        // Math block open
+        if RE_MATH_BLOCK.is_match(clean) {
+            return ClassifiedLine {
+                blockquote_depth,
+                kind: BlockKind::MathOpen,
+            };
+        }
+
+        // Header
+        if let Some(caps) = RE_HEADER.captures(clean) {
+            let level = caps.get(1).map_or(0, |m| m.len());
+            let raw_text = caps.get(2).map_or("", |m| m.as_str());
+            let text = Self::clean_atx_header_text_static(raw_text).to_string();
+            return ClassifiedLine {
+                blockquote_depth,
+                kind: BlockKind::Header { level, text },
+            };
+        }
+
+        // Thematic break (must be checked before list to handle `* * *`)
+        if RE_HR.is_match(clean) {
+            return ClassifiedLine {
+                blockquote_depth,
+                kind: BlockKind::ThematicBreak,
+            };
+        }
+
+        // List item
+        if let Some(caps) = RE_LIST.captures(clean) {
+            let indent = caps.get(1).map_or(0, |m| m.len());
+            let marker = caps.get(2).map_or("", |m| m.as_str()).to_string();
+            let separator = caps.get(3).map_or(" ", |m| m.as_str()).to_string();
+            let content_text = caps.get(4).map_or("", |m| m.as_str()).to_string();
+            let is_ordered = marker.chars().any(|c| c.is_numeric());
+            return ClassifiedLine {
+                blockquote_depth,
+                kind: BlockKind::ListItem {
+                    indent,
+                    marker,
+                    separator,
+                    content: content_text,
+                    is_ordered,
+                },
+            };
+        }
+
+        // Blank line
+        if clean.is_empty() {
+            return ClassifiedLine {
+                blockquote_depth,
+                kind: BlockKind::BlankLine,
+            };
+        }
+
+        // Paragraph (fallback)
+        ClassifiedLine {
+            blockquote_depth,
+            kind: BlockKind::Paragraph,
+        }
+    }
+
+    fn clean_atx_header_text_static(text: &str) -> &str {
         let mut end = text.len();
         let bytes = text.as_bytes();
         while end > 0 && bytes[end - 1] == b'#' {
@@ -1563,6 +1760,10 @@ impl MarkdownStreamer {
         } else {
             &text[..end]
         }
+    }
+
+    fn clean_atx_header_text<'a>(&self, text: &'a str) -> &'a str {
+        Self::clean_atx_header_text_static(text)
     }
 
     fn start_highlighter(&mut self, lang: &str) {
