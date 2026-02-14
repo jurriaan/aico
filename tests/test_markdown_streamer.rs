@@ -709,3 +709,23 @@ fn test_code_block_full_width_background_sequence() {
         background_block
     );
 }
+
+#[test]
+fn test_table_pipe_in_inline_code() {
+    // Pipe characters inside inline code spans should NOT be treated as column separators.
+    let input = "| A | `B | C` |\n|---|---|\n| 1 | `2 | 3` |\n";
+    let (_, clean) = render(input, 40, 0);
+
+    // The pipe inside the code span should be preserved as literal content.
+    // This assertion will fail if the pipe is incorrectly treated as a column separator.
+    assert!(
+        clean.contains("B | C"),
+        "Pipe in inline code was incorrectly split into columns. Output:\n{}",
+        clean
+    );
+    assert!(
+        clean.contains("2 | 3"),
+        "Pipe in inline code was incorrectly split into columns. Output:\n{}",
+        clean
+    );
+}

@@ -9,6 +9,7 @@ use crossterm::{
 use regex::Regex;
 use std::fmt::Write as _;
 use std::io::{self, Write};
+use std::ops::Range;
 use std::sync::LazyLock;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Theme, ThemeSet};
@@ -76,10 +77,24 @@ static RE_LINK: LazyLock<Regex> = LazyLock::new(|| {
 });
 static RE_OSC8: LazyLock<Regex> = LazyLock::new(|| Regex::new(OSC8_PATTERN).unwrap());
 
-static RE_TOKENIZER: LazyLock<Regex> = LazyLock::new(|| {
+static RE_AUTOLINK: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"<([a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<> \x00-\x1f]+)>").unwrap()
+});
+
+static RE_OPAQUE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
-        r"({}|{}|`+|\\[\s\S]|\$[^\$\s](?:[^\$\n]*?[^\$\s])?\$|~~|~|\*\*\*|___|\*\*|__|\*|_|\$|[^~*_`$\\\x1b]+)",
-        OSC8_PATTERN, ANSI_REGEX_PATTERN
+        r"(?x)
+        (?P<code>`+) |
+        (?P<link>{}) |
+        (?P<autolink>{}) |
+        (?P<math>\$[^\$\s](?:[^\$\n]*?[^\$\s])?\$ | \$) |
+        (?P<escape>\\[\s\S]) |
+        (?P<ansi>{}|{}) |
+        (?P<delim>~~|~|\*\*\*|___|\*\*|__|\*|_)",
+        RE_LINK.as_str(),
+        RE_AUTOLINK.as_str(),
+        OSC8_PATTERN,
+        ANSI_REGEX_PATTERN
     ))
     .unwrap()
 });
@@ -193,7 +208,7 @@ impl InlineCodeState {
                 self.buffer.clear();
                 return Some(result);
             }
-            self.buffer.push_str(token);
+            self.buffer.push_str(&token.replace('\n', " "));
         }
         None
     }
@@ -205,14 +220,18 @@ impl InlineCodeState {
     }
 
     fn normalize_content(&self) -> String {
-        if self.buffer.len() >= 2
-            && self.buffer.starts_with(' ')
-            && self.buffer.ends_with(' ')
-            && !self.buffer.trim().is_empty()
+        Self::normalize_content_static(&self.buffer)
+    }
+
+    fn normalize_content_static(s: &str) -> String {
+        if s.len() >= 2
+            && s.starts_with(' ')
+            && s.ends_with(' ')
+            && s.chars().any(|c| c != ' ')
         {
-            self.buffer[1..self.buffer.len() - 1].to_string()
+            s[1..s.len() - 1].to_string()
         } else {
-            self.buffer.clone()
+            s.to_string()
         }
     }
 
@@ -308,6 +327,161 @@ impl InlinePart {
             *len = len.saturating_sub(amount);
         }
     }
+}
+
+#[derive(Debug, Clone)]
+enum ParsedSegment {
+    /// A complete inline code span on a single line (e.g., `foo`).
+    CodeSpan {
+        range: Range<usize>,
+        delimiter_len: usize,
+    },
+    /// The opening backticks of a multi-line span.
+    CodeSpanOpener {
+        range: Range<usize>,
+        delimiter_len: usize,
+    },
+    /// Text content inside an active multi-line code span.
+    CodeSpanContent(Range<usize>),
+    /// The closing backticks of a multi-line span.
+    CodeSpanCloser {
+        range: Range<usize>,
+        delimiter_len: usize,
+    },
+    Link(Range<usize>),
+    Autolink(Range<usize>),
+    Math(Range<usize>),
+    Escape(Range<usize>),
+    Ansi(Range<usize>),
+    Delim(Range<usize>),
+    Text(Range<usize>),
+}
+
+fn parse_segments(text: &str, active_ticks: Option<usize>) -> Vec<ParsedSegment> {
+    let find_closer = |t: &str, n: usize| -> Option<usize> {
+        let bytes = t.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'`' {
+                let mut count = 0;
+                while i + count < bytes.len() && bytes[i + count] == b'`' {
+                    count += 1;
+                }
+                if count == n {
+                    return Some(i);
+                }
+                i += count;
+            } else {
+                i += 1;
+            }
+        }
+        None
+    };
+
+    let mut segments = Vec::new();
+    let mut pos = 0;
+
+    // Handle active multi-line code span
+    if let Some(n) = active_ticks {
+        if let Some(close_idx) = find_closer(text, n) {
+            if close_idx > 0 {
+                segments.push(ParsedSegment::CodeSpanContent(pos..close_idx));
+            }
+            let close_start = close_idx;
+            let close_end = close_idx + n;
+            segments.push(ParsedSegment::CodeSpanCloser {
+                range: close_start..close_end,
+                delimiter_len: n,
+            });
+            pos = close_end;
+        } else {
+            if !text.is_empty() {
+                segments.push(ParsedSegment::CodeSpanContent(pos..text.len()));
+            }
+            return segments;
+        }
+    }
+
+    let rest = &text[pos..];
+    let offset = pos;
+    let mut it = RE_OPAQUE.captures_iter(rest).peekable();
+    let mut last_match_end = 0;
+
+    while let Some(caps) = it.next() {
+        let m = caps.get(0).unwrap();
+        if m.start() > last_match_end {
+            segments.push(ParsedSegment::Text(offset + last_match_end..offset + m.start()));
+        }
+
+        let start = offset + m.start();
+        let mut end = offset + m.end();
+
+        if let Some(code) = caps.name("code") {
+            let ticks = code.as_str();
+            let n = ticks.len();
+            let search_start = m.end();
+            if let Some(close_idx) = find_closer(&rest[search_start..], n) {
+                end = offset + search_start + close_idx + n;
+                while it
+                    .peek()
+                    .map_or(false, |next| offset + next.get(0).unwrap().start() < end)
+                {
+                    it.next();
+                }
+                segments.push(ParsedSegment::CodeSpan {
+                    range: start..end,
+                    delimiter_len: n,
+                });
+                last_match_end = search_start + close_idx + n;
+                continue;
+            } else {
+                segments.push(ParsedSegment::CodeSpanOpener {
+                    range: start..end,
+                    delimiter_len: n,
+                });
+                if end < text.len() {
+                    segments.push(ParsedSegment::CodeSpanContent(end..text.len()));
+                }
+                return segments;
+            }
+        } else if caps.name("link").is_some() {
+            segments.push(ParsedSegment::Link(start..end));
+        } else if caps.name("autolink").is_some() {
+            segments.push(ParsedSegment::Autolink(start..end));
+        } else if caps.name("math").is_some() {
+            segments.push(ParsedSegment::Math(start..end));
+        } else if caps.name("escape").is_some() {
+            segments.push(ParsedSegment::Escape(start..end));
+        } else if caps.name("ansi").is_some() {
+            segments.push(ParsedSegment::Ansi(start..end));
+        } else if caps.name("delim").is_some() {
+            segments.push(ParsedSegment::Delim(start..end));
+        }
+        last_match_end = m.end();
+    }
+
+    if offset + last_match_end < text.len() {
+        segments.push(ParsedSegment::Text(offset + last_match_end..text.len()));
+    }
+    segments
+}
+
+fn split_table_row<'a>(text: &'a str, segments: &[ParsedSegment]) -> Vec<&'a str> {
+    let mut cells = Vec::new();
+    let mut start = 0;
+
+    for seg in segments {
+        if let ParsedSegment::Text(range) = seg {
+            for (i, c) in text[range.clone()].char_indices() {
+                if c == '|' {
+                    cells.push(&text[start..range.start + i]);
+                    start = range.start + i + 1;
+                }
+            }
+        }
+    }
+    cells.push(&text[start..]);
+    cells
 }
 
 pub struct MarkdownStreamer {
@@ -422,8 +596,9 @@ impl MarkdownStreamer {
 
     fn flush_pending_inline<W: Write>(&mut self, writer: &mut W) -> io::Result<()> {
         if let Some((ticks, buffer)) = self.inline_code.flush_incomplete() {
-            queue!(writer, Print("`".repeat(ticks)))?;
-            queue!(writer, Print(&buffer))?;
+            let prefix = "`".repeat(ticks);
+            let formatted = self.format_inline_code_content(&format!("{}{}", prefix, buffer), None, None);
+            queue!(writer, Print(formatted))?;
             self.inline_code.reset();
         }
         Ok(())
@@ -789,10 +964,14 @@ impl MarkdownStreamer {
             }
 
             self.scratch_buffer.clear();
+            if self.inline_code.is_active() {
+                self.inline_code.append_space();
+            }
             self.render_inline(line_content, None, None);
-            self.inline_code.append_space();
 
             let lines = self.wrap_ansi(&self.scratch_buffer, avail);
+            let has_visible_content = self.visible_width(&self.scratch_buffer) > 0;
+            
             for (i, line) in lines.iter().enumerate() {
                 if i > 0 {
                     queue!(w, Print("\n"))?;
@@ -806,7 +985,7 @@ impl MarkdownStreamer {
                     ResetColor
                 )?;
             }
-            if !lines.is_empty() {
+            if !lines.is_empty() && has_visible_content {
                 self.pending_newline = true;
             }
         }
@@ -1027,7 +1206,11 @@ impl MarkdownStreamer {
     fn render_stream_table_row<W: Write>(&mut self, w: &mut W, row_str: &str) -> io::Result<()> {
         self.commit_newline(w)?;
         let term_width = self.get_width();
-        let cells: Vec<&str> = row_str.trim().trim_matches('|').split('|').collect();
+
+        let trimmed_row = row_str.trim().trim_matches('|');
+        let segments = parse_segments(trimmed_row, None);
+        let cells = split_table_row(trimmed_row, &segments);
+
         if cells.is_empty() {
             return Ok(());
         }
@@ -1122,101 +1305,104 @@ impl MarkdownStreamer {
     }
 
     pub fn render_inline(&mut self, text: &str, def_bg: Option<Color>, restore_fg: Option<&str>) {
-        // Pre-process autolinks (Spec §6.4)
-        static RE_AUTOLINK: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(r"<([a-zA-Z][a-zA-Z0-9+.-]{1,31}:[^<> \x00-\x1f]+)>").unwrap()
-        });
-
-        let text_autolinked = RE_AUTOLINK.replace_all(text, |c: &regex::Captures| {
-            let url = &c[1];
-            format!("\x1b]8;;{}\x1b\\{}\x1b]8;;\x1b\\", url, url)
-        });
-
-        // Pre-process links
-        let text_linked = RE_LINK.replace_all(&text_autolinked, |c: &regex::Captures| {
-            format!(
-                "\x1b]8;;{}\x1b\\\x1b[33;4m{}\x1b[24;39m\x1b]8;;\x1b\\",
-                &c[2], &c[1]
-            )
-        });
-
+        let active_ticks = self.inline_code.ticks;
+        let segments = parse_segments(text, active_ticks);
         let mut parts: Vec<InlinePart> = Vec::new();
-        let caps_iter = RE_TOKENIZER.captures_iter(&text_linked);
-        let tokens_raw: Vec<&str> = caps_iter.map(|c| c.get(1).unwrap().as_str()).collect();
 
-        // Pass 1: Build basic tokens
-        for (i, tok) in tokens_raw.iter().enumerate() {
-            if self.inline_code.is_active() {
-                if tok.starts_with('`') {
+        for seg in &segments {
+            match seg {
+                ParsedSegment::CodeSpan { range, delimiter_len } => {
+                    let n = *delimiter_len;
+                    let content_range = range.start + n..range.end - n;
+                    let raw_content = &text[content_range];
+                    let normalized = InlineCodeState::normalize_content_static(raw_content);
+                    let formatted = self.format_inline_code_content(&normalized, def_bg, restore_fg);
+                    parts.push(InlinePart::text(formatted));
+                }
+                ParsedSegment::CodeSpanOpener { range: _, delimiter_len } => {
+                    self.inline_code.open(*delimiter_len);
+                }
+                ParsedSegment::CodeSpanContent(range) => {
+                    self.inline_code.feed(&text[range.clone()]);
+                }
+                ParsedSegment::CodeSpanCloser { range, delimiter_len: _ } => {
+                    let tok = &text[range.clone()];
                     if let Some(content) = self.inline_code.feed(tok) {
                         let formatted =
                             self.format_inline_code_content(&content, def_bg, restore_fg);
                         parts.push(InlinePart::text(formatted));
                     }
-                } else {
-                    self.inline_code.feed(tok);
                 }
-                continue;
-            }
+                ParsedSegment::Escape(r) => {
+                    parts.push(InlinePart::text(text[r.start + 1..r.end].to_string()));
+                }
+                ParsedSegment::Math(r) => {
+                    let tok = &text[r.clone()];
+                    if tok.len() > 1 && tok.starts_with('$') && tok.ends_with('$') {
+                        parts.push(InlinePart::text(unicodeit::replace(&tok[1..tok.len() - 1])));
+                    } else {
+                        parts.push(InlinePart::text(tok.to_string()));
+                    }
+                }
+                ParsedSegment::Autolink(r) => {
+                    let url = &text[r.start + 1..r.end - 1];
+                    parts.push(InlinePart::text(format!(
+                        "\x1b]8;;{}\x1b\\{}\x1b]8;;\x1b\\",
+                        url, url
+                    )));
+                }
+                ParsedSegment::Link(r) => {
+                    if let Some(caps) = RE_LINK.captures(&text[r.clone()]) {
+                        let link_text = caps.get(1).map_or("", |m| m.as_str());
+                        let url = caps.get(2).map_or("", |m| m.as_str());
+                        parts.push(InlinePart::text(format!(
+                            "\x1b]8;;{}\x1b\\\x1b[33;4m{}\x1b[24;39m\x1b]8;;\x1b\\",
+                            url, link_text
+                        )));
+                    }
+                }
+                ParsedSegment::Ansi(r) => {
+                    parts.push(InlinePart::text(text[r.clone()].to_string()));
+                }
+                ParsedSegment::Delim(r) => {
+                    let tok = &text[r.clone()];
+                    let c = tok.chars().next().unwrap();
 
-            if tok.starts_with('`') {
-                self.inline_code.open(tok.len());
-                continue;
-            }
+                    let prev_char = if r.start > 0 {
+                        text[..r.start].chars().last().unwrap_or(' ')
+                    } else {
+                        ' '
+                    };
+                    let next_char = text[r.end..].chars().next().unwrap_or(' ');
 
-            if tok.starts_with('\\') && tok.len() > 1 {
-                parts.push(InlinePart::text(tok[1..].to_string()));
-                continue;
-            }
+                    let is_ws_next = next_char.is_whitespace();
+                    let is_ws_prev = prev_char.is_whitespace();
+                    let is_punct_next = !next_char.is_alphanumeric() && !is_ws_next;
+                    let is_punct_prev = !prev_char.is_alphanumeric() && !is_ws_prev;
+                    let left_flanking =
+                        !is_ws_next && (!is_punct_next || (is_ws_prev || is_punct_prev));
+                    let right_flanking =
+                        !is_ws_prev && (!is_punct_prev || (is_ws_next || is_punct_next));
 
-            if tok.starts_with('$') && tok.ends_with('$') && tok.len() > 1 {
-                parts.push(InlinePart::text(unicodeit::replace(&tok[1..tok.len() - 1])));
-                continue;
-            }
+                    let (can_open, can_close) = if c == '_' {
+                        (
+                            left_flanking && (!right_flanking || is_punct_prev),
+                            right_flanking && (!left_flanking || is_punct_next),
+                        )
+                    } else {
+                        (left_flanking, right_flanking)
+                    };
 
-            if let Some(c) = tok.chars().next()
-                && (c == '*' || c == '_' || c == '~')
-            {
-                let prev_char = if i > 0 {
-                    tokens_raw[i - 1].chars().last().unwrap_or(' ')
-                } else {
-                    ' '
-                };
-                let next_char = if i + 1 < tokens_raw.len() {
-                    tokens_raw[i + 1].chars().next().unwrap_or(' ')
-                } else {
-                    ' '
-                };
-
-                // Inline Flanking Logic
-                let is_ws_next = next_char.is_whitespace();
-                let is_ws_prev = prev_char.is_whitespace();
-                let is_punct_next = !next_char.is_alphanumeric() && !is_ws_next;
-                let is_punct_prev = !prev_char.is_alphanumeric() && !is_ws_prev;
-                let left_flanking =
-                    !is_ws_next && (!is_punct_next || (is_ws_prev || is_punct_prev));
-                let right_flanking =
-                    !is_ws_prev && (!is_punct_prev || (is_ws_next || is_punct_next));
-
-                let (can_open, can_close) = if c == '_' {
-                    (
-                        left_flanking && (!right_flanking || is_punct_prev),
-                        right_flanking && (!left_flanking || is_punct_next),
-                    )
-                } else {
-                    (left_flanking, right_flanking)
-                };
-
-                parts.push(InlinePart::delimiter(c, tok.len(), can_open, can_close));
-            } else {
-                parts.push(InlinePart::text(tok.to_string()));
+                    parts.push(InlinePart::delimiter(c, tok.len(), can_open, can_close));
+                }
+                ParsedSegment::Text(r) => {
+                    parts.push(InlinePart::text(text[r.clone()].to_string()));
+                }
             }
         }
 
-        // Pass 2: Delimiter Matching
         self.resolve_delimiters(&mut parts);
 
-        // Pass 3: Render
         for part in parts {
             for s in &part.pre_style {
                 self.scratch_buffer.push_str(s);
