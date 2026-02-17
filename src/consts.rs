@@ -6,7 +6,7 @@ pub const STATIC_CONTEXT_INTRO: &str = "The following XML block contains the bas
 
 pub const STATIC_CONTEXT_ANCHOR: &str = "I accept this baseline context. I will ensure strictly verbatim matching against the `<context>` blocks, preserving all whitespace.";
 
-pub const FLOATING_CONTEXT_INTRO: &str = "UPDATED CONTEXT: The files below have been modified during this session. This block contains their **current on-disk state**. It **strictly supersedes** any previous code blocks or diffs found in the history above. Use this as the definitive ground truth for these paths:";
+pub const FLOATING_CONTEXT_INTRO: &str = "UPDATED CONTEXT: The files below have been modified during this session. This block contains their **current on-disk state**. It **strictly supersedes** any previous code blocks or diffs found in the history above. Use this as the definitive ground truth for these paths. For any path not listed here, the original Baseline Context remains the authoritative ground truth:";
 
 pub const FLOATING_CONTEXT_ANCHOR: &str = "I accept this **updated** context. I acknowledge that it supersedes all previous versions found in the history. I will ensure strictly verbatim matching against *this* text for these files.";
 
