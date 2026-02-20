@@ -437,69 +437,60 @@ fn parse_segments(text: &str, active_ticks: Option<usize>) -> Vec<ParsedSegment>
         }
     }
 
-    let rest = &text[pos..];
-    let offset = pos;
-    let mut it = RE_OPAQUE.captures_iter(rest).peekable();
-    let mut last_match_end = 0;
-
-    while let Some(caps) = it.next() {
-        let m = caps.get(0).unwrap();
-        if m.start() > last_match_end {
-            segments.push(ParsedSegment::Text(
-                offset + last_match_end..offset + m.start(),
-            ));
-        }
-
-        let start = offset + m.start();
-        let mut end = offset + m.end();
-
-        if let Some(code) = caps.name("code") {
-            let ticks = code.as_str();
-            let n = ticks.len();
-            let search_start = m.end();
-            if let Some(close_idx) = find_backtick_closer(&rest[search_start..], n) {
-                end = offset + search_start + close_idx + n;
-                while it
-                    .peek()
-                    .is_some_and(|next| offset + next.get(0).unwrap().start() < end)
-                {
-                    it.next();
-                }
-                segments.push(ParsedSegment::CodeSpan {
-                    range: start..end,
-                    delimiter_len: n,
-                });
-                last_match_end = search_start + close_idx + n;
-                continue;
-            } else {
-                segments.push(ParsedSegment::CodeSpanOpener {
-                    range: start..end,
-                    delimiter_len: n,
-                });
-                if end < text.len() {
-                    segments.push(ParsedSegment::CodeSpanContent(end..text.len()));
-                }
-                return segments;
+    while pos < text.len() {
+        let rest = &text[pos..];
+        if let Some(caps) = RE_OPAQUE.captures(rest) {
+            let m = caps.get(0).unwrap();
+            if m.start() > 0 {
+                segments.push(ParsedSegment::Text(pos..pos + m.start()));
             }
-        } else if caps.name("link").is_some() {
-            segments.push(ParsedSegment::Link(start..end));
-        } else if caps.name("autolink").is_some() {
-            segments.push(ParsedSegment::Autolink(start..end));
-        } else if caps.name("math").is_some() {
-            segments.push(ParsedSegment::Math(start..end));
-        } else if caps.name("escape").is_some() {
-            segments.push(ParsedSegment::Escape(start..end));
-        } else if caps.name("ansi").is_some() {
-            segments.push(ParsedSegment::Ansi(start..end));
-        } else if caps.name("delim").is_some() {
-            segments.push(ParsedSegment::Delim(start..end));
+
+            let start = pos + m.start();
+            let end = pos + m.end();
+
+            if let Some(code) = caps.name("code") {
+                let ticks = code.as_str();
+                let n = ticks.len();
+                let search_start = m.end();
+                if let Some(close_idx) = find_backtick_closer(&rest[search_start..], n) {
+                    let span_end = pos + search_start + close_idx + n;
+                    segments.push(ParsedSegment::CodeSpan {
+                        range: start..span_end,
+                        delimiter_len: n,
+                    });
+                    pos = span_end;
+                } else {
+                    segments.push(ParsedSegment::CodeSpanOpener {
+                        range: start..end,
+                        delimiter_len: n,
+                    });
+                    if end < text.len() {
+                        segments.push(ParsedSegment::CodeSpanContent(end..text.len()));
+                    }
+                    return segments;
+                }
+            } else {
+                if caps.name("link").is_some() {
+                    segments.push(ParsedSegment::Link(start..end));
+                } else if caps.name("autolink").is_some() {
+                    segments.push(ParsedSegment::Autolink(start..end));
+                } else if caps.name("math").is_some() {
+                    segments.push(ParsedSegment::Math(start..end));
+                } else if caps.name("escape").is_some() {
+                    segments.push(ParsedSegment::Escape(start..end));
+                } else if caps.name("ansi").is_some() {
+                    segments.push(ParsedSegment::Ansi(start..end));
+                } else if caps.name("delim").is_some() {
+                    segments.push(ParsedSegment::Delim(start..end));
+                }
+                pos = end;
+            }
+        } else {
+            segments.push(ParsedSegment::Text(pos..text.len()));
+            break;
         }
-        last_match_end = m.end();
     }
 
-    if offset + last_match_end < text.len() {
-        segments.push(ParsedSegment::Text(offset + last_match_end..text.len()));
-    }
     segments
 }
 

@@ -215,6 +215,12 @@ inline_tests! {
     // Consecutive headings without blank lines
     consecutive_headings_h2_h3: { input: "## Section\n### Subsection\n", contains: "Section" },
     consecutive_headings_h2_h3_sub: { input: "## Section\n### Subsection\n", contains: "Subsection" },
+
+    // BUG REPRO: $1 and $2 triggers math overlap
+    math_overlap_bug: {
+        input: "Replace the rigid `$1` / `$2` assignment with a `while` loop to parse arguments.",
+        clean: "Replace the rigid $1 / $2 assignment with a while loop to parse arguments.\n"
+    },
 }
 
 #[test]
