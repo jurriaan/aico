@@ -588,6 +588,11 @@ fn test_stress_consistency_suite() {
             vec![("win.txt", "line1\r\nline2\r\n")],
             "File: win.txt\r\n<<<<<<< SEARCH\r\nline1\r\n=======\r\nmodified\r\n>>>>>>> REPLACE\r\n",
         ),
+        (
+            "Panic Case (Trailing Space)",
+            vec![("src/main.rs", "fn main() {\n    println!(\"Hello\");\n}\n")],
+            "File: src/main.rs\n<<<<<<< SEARCH\n    println!(\"Hello\");\n=======\n    println!(\"World\");\n>>>>>>> REPLACE\n ",
+        ),
     ];
 
     for (name, files, input) in cases {

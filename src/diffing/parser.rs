@@ -446,9 +446,19 @@ impl<'a> StreamParser<'a> {
 
         if cursor < chunk.len() {
             let tail = &chunk[cursor..];
-            if !self.is_incomplete(tail) {
-                items.push(StreamYieldItem::Text(tail.to_string()));
-                cursor = chunk.len();
+            let mut tail_limit = tail.len();
+
+            if self.is_incomplete(tail) {
+                if let Some(last_newline) = tail.rfind('\n') {
+                    tail_limit = last_newline + 1;
+                } else {
+                    tail_limit = 0;
+                }
+            }
+
+            if tail_limit > 0 {
+                items.push(StreamYieldItem::Text(tail[..tail_limit].to_string()));
+                cursor += tail_limit;
             }
         }
 
@@ -545,15 +555,16 @@ impl<'a> StreamParser<'a> {
         // Process any final tokens received.
         self.feed(last_chunk);
 
+        let mut items: Vec<_> = self.by_ref().collect();
+
         // Force flush if we are stuck waiting for a newline at EOF for a complete block
         if self.is_incomplete(&self.buffer)
             && self.buffer.contains("<<<<<<< SEARCH")
             && self.buffer.contains(">>>>>>> REPLACE")
         {
             self.buffer.push('\n');
+            items.extend(self.by_ref());
         }
-
-        let mut items: Vec<_> = self.by_ref().collect();
 
         // Anything remaining in the buffer is now considered a trailing segment.
         if !self.buffer.is_empty() {
