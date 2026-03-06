@@ -33,7 +33,7 @@
         target =
           if stdenv.isLinux then pkgs.pkgsMusl.stdenv.hostPlatform.config else stdenv.hostPlatform.config;
 
-        rustToolchain = pkgs.rust-bin.stable."1.93.0".default.override {
+        rustToolchain = pkgs.rust-bin.stable."1.94.0".default.override {
           extensions = [
             "rust-src"
             "clippy"
