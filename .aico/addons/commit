@@ -51,14 +51,13 @@ fi
 
 # 2. Gather Git context
 GIT_DIFF_OUTPUT="$(git diff --staged --unified=0 --color=never)"
-GIT_LOG_OUTPUT="$(git log --pretty=format:'%s' -n 20)"
+GIT_LOG_OUTPUT="$(git log --pretty=format:\"%s\" -n 20)"
 AICO_CHAT_LOG="$(aico dump-history)"
 
 # 3. Build the prompt
 SYSTEM_PROMPT="You are an expert AI assistant named \`commit-bot\`. Your sole purpose is to generate a high-quality Git commit message in the Conventional Commit format. You are a tool, not a conversationalist. You have been given a git diff of staged changes, a recent git log, and a log of the developer's conversation with another AI assistant. Use all of this information to understand the 'why' behind the changes. The diff is the most important piece of context, as that is what will be committed. Ensure your generated message accurately and concisely summarizes all the changes present in the diff; do not omit any significant changes."
 
-PROMPT=$(
-  cat <<EOF
+PROMPT="
 <chat_log>
 $AICO_CHAT_LOG
 </chat_log>
@@ -78,13 +77,13 @@ The commit message you generate will be used for the changes shown in the <git_d
 
 <thinking_process>
 1.  **Analyze the Diff**: Scrutinize the <git_diff> to identify the primary intent. Is it a new feature, a bug fix, a refactor, or something else? The diff reveals what changed, which is crucial for determining the type and scope.
-2.  **Analyze the Chat Log**: Read the \`<chat_log>\` to understand the developer's reasoning and the "why" behind the changes. **CRITICAL**: The chat log often contains future plans or abandoned ideas. You MUST ignore anything in the chat log that is not physically reflected in the <git_diff>. Use the log only to explain the "why" of the existing diff.
+2.  **Analyze the Chat Log**: Read the \`<chat_log>\` to understand the developer's reasoning and the 'why' behind the changes. **CRITICAL**: The chat log often contains future plans or abandoned ideas. You MUST ignore anything in the chat log that is not physically reflected in the <git_diff>. Use the log only to explain the 'why' of the existing diff.
 3.  **Determine Type**: Based on your analysis, select the most appropriate type.
     - \`feat\`: A new feature.
     - \`fix\`: A bug fix.
     - Other allowed types: \`docs\`, \`style\`, \`refactor\`, \`perf\`, \`test\`, \`ci\`, \`chore\`.
 4.  **Determine Scope**: Identify the primary module or component affected (e.g., \`api\`, \`auth\`, \`script\`). The scope MUST be a noun surrounded by parenthesis. If multiple areas are impacted, omit it.
-5.  **Craft Message**: Write a short description of the code changes in the diff in the imperative mood (e.g., "add feature" not "added feature"). The description MUST immediately follow the colon and space.
+5.  **Craft Message**: Write a short description of the code changes in the diff in the imperative mood (e.g., \"add feature\" not \"added feature\"). The description MUST immediately follow the colon and space.
 6.  **Assemble Subject**: Combine these parts into the final \`<type>(<scope>): <message>\` format. The scope is optional.
 7.  **Write Body (Optional)**: If the change is complex and the subject line is insufficient, add a concise body (1-2 sentences) explaining the 'why' behind the change. Use the \`<chat_log>\` for insights here. Separate the body from the subject with a single blank line.
 </thinking_process>
@@ -115,9 +114,7 @@ The commit message you generate will be used for the changes shown in the <git_d
 - DO NOT reference proposed changes, future plans, or logic discussed in the chat log if they do not appear in the staged <git_diff>.
 - DO NOT return the thinking process or any other xml tags in the output.
 </negative_constraints>
-</instructions>
-EOF
-)
+</instructions>"
 
 # 4. Invoke aico to get the commit message
 AI_COMMIT_MSG=$(echo "$PROMPT" | aico prompt --passthrough --no-history --system-prompt "$SYSTEM_PROMPT" --model "$MODEL_NAME" 2>/dev/null)
