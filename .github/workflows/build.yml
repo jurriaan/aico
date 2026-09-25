@@ -23,14 +23,14 @@ jobs:
         with:
           packages: musl-tools gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu
           version: 1.3
-      - run: wget http://ports.ubuntu.com/ubuntu-ports/ubuntu-ports/pool/universe/m/musl/musl-dev_1.2.4-2_arm64.deb
-      - run: wget http://ports.ubuntu.com/ubuntu-ports/ubuntu-ports/pool/universe/m/musl/musl_1.2.4-2_arm64.deb
-      - run: wget http://ports.ubuntu.com/ubuntu-ports/ubuntu-ports/pool/universe/m/musl/musl-dev_1.2.4-2_riscv64.deb
-      - run: wget http://ports.ubuntu.com/ubuntu-ports/ubuntu-ports/pool/universe/m/musl/musl_1.2.4-2_riscv64.deb
-      - run: sudo dpkg -i --force architecture musl_1.2.4-2_arm64.deb
-      - run: sudo dpkg -i --force architecture --force depends musl-dev_1.2.4-2_arm64.deb
-      - run: sudo dpkg -i --force architecture musl_1.2.4-2_riscv64.deb
-      - run: sudo dpkg -i --force architecture --force depends musl-dev_1.2.4-2_riscv64.deb
+      - run: wget http://ports.ubuntu.com/ubuntu-ports/ubuntu-ports/pool/universe/m/musl/musl-dev_1.2.6-1_arm64.deb
+      - run: wget http://ports.ubuntu.com/ubuntu-ports/ubuntu-ports/pool/universe/m/musl/musl_1.2.6-1_arm64.deb
+      - run: wget http://ports.ubuntu.com/ubuntu-ports/ubuntu-ports/pool/universe/m/musl/musl-dev_1.2.6-1_riscv64.deb
+      - run: wget http://ports.ubuntu.com/ubuntu-ports/ubuntu-ports/pool/universe/m/musl/musl_1.2.6-1_riscv64.deb
+      - run: sudo dpkg -i --force architecture musl_1.2.6-1_arm64.deb
+      - run: sudo dpkg -i --force architecture --force depends musl-dev_1.2.6-1_arm64.deb
+      - run: sudo dpkg -i --force architecture musl_1.2.6-1_riscv64.deb
+      - run: sudo dpkg -i --force architecture --force depends musl-dev_1.2.6-1_riscv64.deb
       - name: Check out repository code
         uses: actions/checkout@v4
         with:
@@ -43,7 +43,7 @@ jobs:
           rustflags: ''
       - uses: jdx/mise-action@v3
         with:
-          version: 2026.3.3
+          version: 2026.9.13
           add_shims_to_path: false
       - run: script/setup
       - run: script/build
@@ -72,7 +72,7 @@ jobs:
           components: 'cargo, rust-std, rustc, rustfmt, clippy'
       - uses: jdx/mise-action@v3
         with:
-          version: 2026.3.3
+          version: 2026.9.13
           add_shims_to_path: false
       - run: script/lint
       - shell: bash

@@ -33,7 +33,7 @@
         target =
           if stdenv.isLinux then pkgs.pkgsMusl.stdenv.hostPlatform.config else stdenv.hostPlatform.config;
 
-        rustToolchain = pkgs.rust-bin.stable."1.94.0".default.override {
+        rustToolchain = pkgs.rust-bin.stable."1.98.1".default.override {
           extensions = [
             "rust-src"
             "clippy"
@@ -151,7 +151,7 @@
               mkdir -p $out/bin
               cp ${
                 pkgs.fetchurl {
-                  url = "https://raw.githubusercontent.com/aureliojargas/clitest/master/clitest";
+                  url = "https://raw.githubusercontent.com/aureliojargas/clitest/0.5.0/clitest";
                   hash = "sha256-8JBOJa9kVzTj7/JHFBLE6HE62XA3SZCw9CtWj8TiL5Q=";
                   executable = true;
                 }
